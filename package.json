@@ -1,29 +1,31 @@
 {
-    "name": "fetchary",
-    "version": "0.0.1",
-    "description": "Watch changes. Keep the proof.",
-    "keywords": [
-        "scrap"
-    ],
-    "homepage": "https://github.com/oliverjessner/fetchary#readme",
-    "bugs": {
-        "url": "https://github.com/oliverjessner/fetchary/issues"
-    },
-    "author": {
-        "name": "oliverjessner",
-        "url": "https://oliverjessner.at"
-    },
-    "repository": {
-        "type": "git",
-        "url": "git+https://github.com/oliverjessner/fetchary.git"
-    },
-    "license": "MIT",
-    "type": "commonjs",
-    "main": "index.js",
-    "directories": {
-        "doc": "docs"
-    },
-    "scripts": {
-        "test": "echo \"Error: no test specified\" && exit 1"
+  "name": "fetchary",
+  "version": "0.1.0",
+  "description": "Watch changes. Keep the proof.",
+  "keywords": ["archive", "change-detection", "monitoring", "web"],
+  "homepage": "https://github.com/oliverjessner/fetchary#readme",
+  "bugs": { "url": "https://github.com/oliverjessner/fetchary/issues" },
+  "author": { "name": "oliverjessner", "url": "https://oliverjessner.at" },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/oliverjessner/fetchary.git"
+  },
+  "license": "MIT",
+  "type": "commonjs",
+  "main": "src/index.js",
+  "types": "src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.d.ts",
+      "require": "./src/index.js",
+      "import": "./src/index.js"
     }
+  },
+  "bin": { "fetchary": "cli/index.js" },
+  "files": ["cli", "src", "docs", "README.md", "LICENSE"],
+  "engines": { "node": ">=22.5" },
+  "scripts": {
+    "test": "node --test",
+    "test:coverage": "node --test --experimental-test-coverage"
+  }
 }
