@@ -1,8 +1,8 @@
-# Watchive CLI
+# fetchary CLI
 
-> **Watchive 👁️ — Watch changes. Keep the proof.**
+> **fetchary 👁️ — Watch changes. Keep the proof.**
 
-Watchive is a small command-line tool for monitoring web pages, archiving raw HTML responses, and tracking changes over time.
+fetchary is a small command-line tool for monitoring web pages, archiving raw HTML responses, and tracking changes over time.
 
 The core workflow is intentionally simple:
 
@@ -12,66 +12,66 @@ The core workflow is intentionally simple:
 4. Compare its SHA-256 hash with the latest archived version.
 5. Save a new version only when the page changed.
 
-Watchive is designed for research, journalism, investigations, documentation, and any workflow where it matters to know **what a web page looked like at a specific point in time**.
+fetchary is designed for research, journalism, investigations, documentation, and any workflow where it matters to know **what a web page looked like at a specific point in time**.
 
 ## Installation
 
 ```bash
-npm install -g watchive
+npm install -g fetchary
 ```
 
 Check the installed version:
 
 ```bash
-watchive --version
+fetchary --version
 ```
 
 Show help:
 
 ```bash
-watchive --help
+fetchary --help
 ```
 
 ## Usage
 
 ```bash
-watchive <command> [arguments] [options]
+fetchary <command> [arguments] [options]
 ```
 
 ## Commands
 
-### `watchive add`
+### `fetchary add`
 
-Add a URL to Watchive.
+Add a URL to fetchary.
 
 ```bash
-watchive add <url>
+fetchary add <url>
 ```
 
 Example:
 
 ```bash
-watchive add https://example.com/news
+fetchary add https://example.com/news
 ```
 
-Watchive immediately performs the first fetch and stores the initial version.
+fetchary immediately performs the first fetch and stores the initial version.
 
 Optional metadata:
 
 ```bash
-watchive add https://example.com/news --name "Example News"
+fetchary add https://example.com/news --name "Example News"
 ```
 
 Add a tag:
 
 ```bash
-watchive add https://example.com/news --tag research
+fetchary add https://example.com/news --tag research
 ```
 
 Combine options:
 
 ```bash
-watchive add https://example.com/news \
+fetchary add https://example.com/news \
   --name "Example News" \
   --tag research
 ```
@@ -92,12 +92,12 @@ Example output:
 
 ---
 
-### `watchive list`
+### `fetchary list`
 
 List all monitored URLs.
 
 ```bash
-watchive list
+fetchary list
 ```
 
 Example output:
@@ -111,37 +111,37 @@ ID   NAME           URL                         LAST CHECK      LAST CHANGE
 Filter by tag:
 
 ```bash
-watchive list --tag research
+fetchary list --tag research
 ```
 
 Return machine-readable output:
 
 ```bash
-watchive list --json
+fetchary list --json
 ```
 
 ---
 
-### `watchive fetch`
+### `fetchary fetch`
 
 Fetch monitored URLs and check for changes.
 
 Fetch all active URLs:
 
 ```bash
-watchive fetch
+fetchary fetch
 ```
 
 Fetch one URL:
 
 ```bash
-watchive fetch 12
+fetchary fetch 12
 ```
 
 Fetch multiple URLs:
 
 ```bash
-watchive fetch 12 14 18
+fetchary fetch 12 14 18
 ```
 
 Example output:
@@ -165,46 +165,46 @@ When a page changes:
   version:  7
 ```
 
-When a page has not changed, Watchive updates only `last_checked_at`.
+When a page has not changed, fetchary updates only `last_checked_at`.
 
 A new archived HTML version is created only if the response body differs from the previous version.
 
 ---
 
-### `watchive status`
+### `fetchary status`
 
-Show a short overview of the local Watchive installation.
+Show a short overview of the local fetchary installation.
 
 ```bash
-watchive status
+fetchary status
 ```
 
 Example:
 
 ```text
-Watchive 👁️
+fetchary 👁️
 
 Sources:        27
 Versions:       143
 Changed today:  4
 Last fetch:     8 min ago
-Database:       ~/.watchive/watchive.sqlite
+Database:       ~/.fetchary/fetchary.sqlite
 ```
 
 ---
 
-### `watchive show`
+### `fetchary show`
 
 Show detailed information about a monitored URL.
 
 ```bash
-watchive show <id>
+fetchary show <id>
 ```
 
 Example:
 
 ```bash
-watchive show 12
+fetchary show 12
 ```
 
 Output:
@@ -222,18 +222,18 @@ Current hash:   89fa21...
 
 ---
 
-### `watchive history`
+### `fetchary history`
 
 Show all archived versions of a URL.
 
 ```bash
-watchive history <id>
+fetchary history <id>
 ```
 
 Example:
 
 ```bash
-watchive history 12
+fetchary history 12
 ```
 
 Output:
@@ -248,31 +248,31 @@ VERSION   FETCHED               STATUS   SIZE
 Machine-readable output:
 
 ```bash
-watchive history 12 --json
+fetchary history 12 --json
 ```
 
 ---
 
-### `watchive diff`
+### `fetchary diff`
 
 Compare archived versions.
 
-By default, Watchive compares the latest version with the previous version.
+By default, fetchary compares the latest version with the previous version.
 
 ```bash
-watchive diff <id>
+fetchary diff <id>
 ```
 
 Example:
 
 ```bash
-watchive diff 12
+fetchary diff 12
 ```
 
 Compare two specific versions:
 
 ```bash
-watchive diff 12 6 8
+fetchary diff 12 6 8
 ```
 
 Example output:
@@ -288,8 +288,8 @@ Example output:
 Optional output modes:
 
 ```bash
-watchive diff 12 --html
-watchive diff 12 --raw
+fetchary diff 12 --html
+fetchary diff 12 --raw
 ```
 
 `--raw` compares the raw archived HTML.
@@ -298,106 +298,106 @@ watchive diff 12 --raw
 
 ---
 
-### `watchive open`
+### `fetchary open`
 
 Open an archived HTML version in the default browser.
 
 Open the latest version:
 
 ```bash
-watchive open <id>
+fetchary open <id>
 ```
 
 Example:
 
 ```bash
-watchive open 12
+fetchary open 12
 ```
 
 Open a specific version:
 
 ```bash
-watchive open 12 4
+fetchary open 12 4
 ```
 
-Watchive opens the local archived HTML file and does not request the live website again.
+fetchary opens the local archived HTML file and does not request the live website again.
 
 ---
 
-### `watchive edit`
+### `fetchary edit`
 
 Edit metadata for a monitored URL.
 
 Change the name:
 
 ```bash
-watchive edit 12 --name "Tesla Press"
+fetchary edit 12 --name "Tesla Press"
 ```
 
 Assign or change a tag:
 
 ```bash
-watchive edit 12 --tag automotive
+fetchary edit 12 --tag automotive
 ```
 
 Change the monitored URL:
 
 ```bash
-watchive edit 12 --url https://example.com/new-url
+fetchary edit 12 --url https://example.com/new-url
 ```
 
 ---
 
-### `watchive disable`
+### `fetchary disable`
 
 Temporarily stop monitoring a URL without deleting it or its archive.
 
 ```bash
-watchive disable <id>
+fetchary disable <id>
 ```
 
 Example:
 
 ```bash
-watchive disable 12
+fetchary disable 12
 ```
 
 Disabled URLs are skipped by:
 
 ```bash
-watchive fetch
+fetchary fetch
 ```
 
 ---
 
-### `watchive enable`
+### `fetchary enable`
 
 Re-enable a disabled URL.
 
 ```bash
-watchive enable <id>
+fetchary enable <id>
 ```
 
 Example:
 
 ```bash
-watchive enable 12
+fetchary enable 12
 ```
 
 ---
 
-### `watchive remove`
+### `fetchary remove`
 
 Remove a URL from active monitoring.
 
 ```bash
-watchive remove <id>
+fetchary remove <id>
 ```
 
 Example:
 
 ```bash
-watchive remove 12
+fetchary remove 12
 ```
 
 By default, archived versions are kept.
@@ -412,31 +412,31 @@ Example output:
 Delete the URL and all archived versions:
 
 ```bash
-watchive remove 12 --purge
+fetchary remove 12 --purge
 ```
 
 `--purge` is destructive.
 
 ---
 
-### `watchive export`
+### `fetchary export`
 
 Export a monitored source and its archived versions.
 
 ```bash
-watchive export <id>
+fetchary export <id>
 ```
 
 Example:
 
 ```bash
-watchive export 12
+fetchary export 12
 ```
 
 Example export structure:
 
 ```text
-watchive-export-12/
+fetchary-export-12/
 ├── metadata.json
 ├── versions/
 │   ├── 001.html
@@ -448,7 +448,7 @@ watchive-export-12/
 Specify an output directory:
 
 ```bash
-watchive export 12 --output ./research
+fetchary export 12 --output ./research
 ```
 
 The export should contain enough metadata to independently verify archived versions.
@@ -462,26 +462,26 @@ The following options should work where applicable:
 --quiet       Suppress normal output
 --verbose     Show additional diagnostic information
 --help        Show help
---version     Show Watchive version
+--version     Show fetchary version
 ```
 
 Examples:
 
 ```bash
-watchive list --json
+fetchary list --json
 ```
 
 ```bash
-watchive fetch --quiet
+fetchary fetch --quiet
 ```
 
 ```bash
-watchive fetch 12 --verbose
+fetchary fetch 12 --verbose
 ```
 
 ## Exit codes
 
-Watchive uses exit codes so it can be used with shell scripts, cron jobs, CI jobs, and other automation.
+fetchary uses exit codes so it can be used with shell scripts, cron jobs, CI jobs, and other automation.
 
 ```text
 0    Command completed successfully, no changes detected
@@ -494,7 +494,7 @@ Watchive uses exit codes so it can be used with shell scripts, cron jobs, CI job
 Example:
 
 ```bash
-watchive fetch
+fetchary fetch
 
 if [ $? -eq 10 ]; then
   echo "At least one page changed"
@@ -503,11 +503,11 @@ fi
 
 ## Storage
 
-Watchive stores all data locally by default.
+fetchary stores all data locally by default.
 
 ```text
-~/.watchive/
-├── watchive.sqlite
+~/.fetchary/
+├── fetchary.sqlite
 └── pages/
     ├── 1/
     ├── 2/
@@ -519,7 +519,7 @@ Each monitored URL gets its own directory.
 Each archived version gets its own subdirectory:
 
 ```text
-~/.watchive/pages/12/8/
+~/.fetchary/pages/12/8/
 ├── response.html
 └── metadata.json
 ```
@@ -528,21 +528,21 @@ Example `metadata.json`:
 
 ```json
 {
-  "url": "https://example.com/news",
-  "finalUrl": "https://example.com/news",
-  "fetchedAt": "2026-08-31T11:42:16+02:00",
-  "status": 200,
-  "contentType": "text/html",
-  "contentLength": 96256,
-  "sha256": "89fa21...",
-  "etag": "\"abc123\"",
-  "lastModified": "Mon, 31 Aug 2026 08:12:00 GMT"
+    "url": "https://example.com/news",
+    "finalUrl": "https://example.com/news",
+    "fetchedAt": "2026-08-31T11:42:16+02:00",
+    "status": 200,
+    "contentType": "text/html",
+    "contentLength": 96256,
+    "sha256": "89fa21...",
+    "etag": "\"abc123\"",
+    "lastModified": "Mon, 31 Aug 2026 08:12:00 GMT"
 }
 ```
 
 ## Data model
 
-Watchive uses SQLite for metadata and indexing.
+fetchary uses SQLite for metadata and indexing.
 
 A minimal schema can consist of two tables.
 
@@ -586,7 +586,7 @@ The raw HTML itself is stored on disk rather than inside SQLite.
 
 ## Change detection
 
-Watchive uses the response body's SHA-256 hash as its primary change detector.
+fetchary uses the response body's SHA-256 hash as its primary change detector.
 
 Simplified logic:
 
@@ -613,7 +613,7 @@ This preserves the fetched source as closely as possible.
 
 ## HTTP metadata
 
-For every archived version, Watchive should retain relevant HTTP information where available:
+For every archived version, fetchary should retain relevant HTTP information where available:
 
 ```text
 Requested URL
@@ -635,14 +635,14 @@ headers.json
 
 ## Automation
 
-Watchive itself does not need a scheduler.
+fetchary itself does not need a scheduler.
 
 Use the operating system's scheduler instead.
 
 Example cron job:
 
 ```cron
-*/15 * * * * watchive fetch
+*/15 * * * * fetchary fetch
 ```
 
 This checks all active URLs every 15 minutes.
@@ -650,28 +650,28 @@ This checks all active URLs every 15 minutes.
 Example with logging:
 
 ```cron
-*/15 * * * * watchive fetch >> ~/.watchive/watchive.log 2>&1
+*/15 * * * * fetchary fetch >> ~/.fetchary/fetchary.log 2>&1
 ```
 
 ## MVP
 
-The first usable Watchive release only needs:
+The first usable fetchary release only needs:
 
 ```text
-watchive add <url>
-watchive list
-watchive fetch [id...]
-watchive show <id>
-watchive history <id>
-watchive diff <id>
-watchive remove <id>
+fetchary add <url>
+fetchary list
+fetchary fetch [id...]
+fetchary show <id>
+fetchary history <id>
+fetchary diff <id>
+fetchary remove <id>
 ```
 
 Everything else can be added later.
 
 ## Non-goals for v0.1
 
-Watchive v0.1 intentionally does not need:
+fetchary v0.1 intentionally does not need:
 
 ```text
 Browser automation
@@ -696,7 +696,7 @@ The initial product philosophy is:
 Add a company imprint:
 
 ```bash
-watchive add https://example.com/impressum \
+fetchary add https://example.com/impressum \
   --name "Example GmbH Impressum" \
   --tag investigation
 ```
@@ -704,42 +704,42 @@ watchive add https://example.com/impressum \
 Run checks:
 
 ```bash
-watchive fetch
+fetchary fetch
 ```
 
 Inspect the source:
 
 ```bash
-watchive show 1
+fetchary show 1
 ```
 
 View its archive:
 
 ```bash
-watchive history 1
+fetchary history 1
 ```
 
 Compare the latest changes:
 
 ```bash
-watchive diff 1
+fetchary diff 1
 ```
 
 Open the archived response:
 
 ```bash
-watchive open 1
+fetchary open 1
 ```
 
 Export the evidence:
 
 ```bash
-watchive export 1 --output ./research
+fetchary export 1 --output ./research
 ```
 
 ## Philosophy
 
-Watchive should remain small and predictable.
+fetchary should remain small and predictable.
 
 It is not a crawler, scraping framework, browser automation platform, or monitoring SaaS.
 
