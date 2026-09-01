@@ -7,11 +7,12 @@ const path = require('node:path');
 const test = require('node:test');
 const { main } = require('../cli/index');
 
-async function runCli(args) {
+async function runCli(args, options = {}) {
   let stdout = '';
   let stderr = '';
   const code = await main(args, {
-    stdout: { write: chunk => { stdout += chunk; } },
+    color: options.color,
+    stdout: { isTTY: options.isTTY, write: chunk => { stdout += chunk; } },
     stderr: { write: chunk => { stderr += chunk; } },
   });
   return { code, stdout, stderr };
@@ -55,26 +56,39 @@ test('CLI wraps add/list/fetch/show/history/diff and uses documented exit codes'
   assert.equal(diff.code, 0, diff.stderr);
   assert.equal(JSON.parse(diff.stdout).changed, true);
 
+  const coloredDiff = await runCli(['diff', '1', ...base], { color: true, isTTY: true });
+  assert.match(coloredDiff.stdout, /\x1b\[31m- first\x1b\[0m/);
+  assert.match(coloredDiff.stdout, /\x1b\[34m\+ second\x1b\[0m/);
+  const plainDiff = await runCli(['diff', '1', '--no-color', ...base], { color: true, isTTY: true });
+  assert.equal(plainDiff.stdout, '- first\n+ second\n');
+
   const disabled = await runCli(['disable', '1', '--json', ...base]);
   assert.equal(JSON.parse(disabled.stdout).enabled, false);
   const skipped = await runCli(['fetch', '--json', ...base]);
   assert.equal(skipped.code, 0);
   assert.deepEqual(JSON.parse(skipped.stdout), []);
-  assert.equal((await runCli(['enable', '1', ...base])).code, 0);
+  const enabled = await runCli(['enable', '1', ...base], { color: true });
+  assert.equal(enabled.code, 0);
+  assert.match(enabled.stdout, /\x1b\[32m✓ Enabled\x1b\[0m \x1b\[34m#1\x1b\[0m/);
+  const unchangedHuman = await runCli(['fetch', '1', ...base], { color: true });
+  assert.equal(unchangedHuman.code, 0);
+  assert.match(unchangedHuman.stdout, /\x1b\[90munchanged\x1b\[0m/);
 
   const scheduled = await runCli(['schedule', '1', '15m', '--json', ...base]);
   assert.equal(JSON.parse(scheduled.stdout).intervalSeconds, 900);
   assert.equal(JSON.parse((await runCli(['schedules', '--json', ...base])).stdout).length, 1);
-  assert.equal((await runCli(['unschedule', '1', ...base])).code, 0);
+  const unscheduled = await runCli(['unschedule', '1', ...base], { color: true });
+  assert.equal(unscheduled.code, 0);
+  assert.match(unscheduled.stdout, /\x1b\[33m✓ Unscheduled\x1b\[0m/);
   assert.deepEqual(JSON.parse((await runCli(['schedules', '--json', ...base])).stdout), []);
   assert.equal(JSON.parse((await runCli(['status', '--json', ...base])).stdout).versions, 2);
   const exported = await runCli(['export', '1', '--output', dataDir, '--json', ...base]);
   assert.equal(JSON.parse(exported.stdout).versions, 2);
 
   status = 503;
-  const failed = await runCli(['fetch', '1', ...base]);
+  const failed = await runCli(['fetch', '1', ...base], { color: true });
   assert.equal(failed.code, 3);
-  assert.match(failed.stderr, /HTTP 503/);
+  assert.match(failed.stderr, /\x1b\[31mError: fetch failed with HTTP 503\x1b\[0m/);
 
   const invalid = await runCli(['show', ...base]);
   assert.equal(invalid.code, 2);

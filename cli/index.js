@@ -40,13 +40,27 @@ Global options:
   --json                      Machine-readable output
   --quiet                     Suppress normal output
   --verbose                   Show diagnostic information
+  --no-color                  Disable colored terminal output
   --data-dir <path>           Override the storage directory
   --help                      Show help
   --version                   Show version
 `;
 
 const VALUE_OPTIONS = new Set(['name', 'tag', 'url', 'output', 'data-dir', 'poll-interval', 'every']);
-const FLAG_OPTIONS = new Set(['json', 'quiet', 'verbose', 'help', 'version', 'purge', 'raw', 'html', 'now']);
+const FLAG_OPTIONS = new Set(['json', 'quiet', 'verbose', 'no-color', 'help', 'version', 'purge', 'raw', 'html', 'now']);
+const ANSI = Object.freeze({
+  red: '\x1b[31m',
+  green: '\x1b[32m',
+  yellow: '\x1b[33m',
+  blue: '\x1b[34m',
+  cyan: '\x1b[36m',
+  gray: '\x1b[90m',
+  reset: '\x1b[0m',
+});
+
+function colorize(value, color, enabled) {
+  return enabled ? `${ANSI[color]}${value}${ANSI.reset}` : value;
+}
 
 function parseArgs(argv) {
   const positionals = [];
@@ -127,8 +141,9 @@ async function openFile(file) {
   });
 }
 
-async function execute(fetchary, parsed, write) {
+async function execute(fetchary, parsed, write, format = {}) {
   const { command, args, options } = parsed;
+  const color = (value, name) => colorize(value, name, format.color);
   const emit = value => { if (!options.quiet) write(value); };
   const emitValue = (value, human) => emit(options.json ? `${JSON.stringify(value, null, 2)}\n` : `${human}\n`);
 
@@ -136,7 +151,7 @@ async function execute(fetchary, parsed, write) {
     case 'add': {
       requireArgs(args, 1);
       const source = await fetchary.add(args[0], { name: options.name, tag: options.tag, every: options.every });
-      emitValue(source, `✓ Added #${source.id} ${source.url}\n✓ Saved version ${source.version}`);
+      emitValue(source, `${color('✓ Added', 'green')} ${color(`#${source.id}`, 'blue')} ${color(source.url, 'cyan')}\n${color('✓ Saved', 'green')} version ${color(String(source.version), 'blue')}`);
       return 0;
     }
     case 'list': {
@@ -159,9 +174,11 @@ async function execute(fetchary, parsed, write) {
       const human = [
         `Fetching ${results.length} source${results.length === 1 ? '' : 's'}...`,
         '',
-        ...results.map(result => `#${result.id} ${result.changed ? `changed → version ${result.version}` : 'unchanged'}`),
+        ...results.map(result => `${color(`#${result.id}`, 'blue')} ${result.changed
+          ? `${color('changed', 'yellow')} → version ${color(String(result.version), 'blue')}`
+          : color('unchanged', 'gray')}`),
         '',
-        `${changed} changed, ${results.length - changed} unchanged`,
+        `${color(String(changed), changed ? 'yellow' : 'gray')} ${color('changed', changed ? 'yellow' : 'gray')}, ${color(String(results.length - changed), 'gray')} ${color('unchanged', 'gray')}`,
       ].join('\n');
       emitValue(value, human);
       return changed ? 10 : 0;
@@ -169,13 +186,13 @@ async function execute(fetchary, parsed, write) {
     case 'status': {
       requireArgs(args, 0);
       const status = await fetchary.status();
-      emitValue(status, `Fetchary 👁️\n\nSources:        ${status.sources}\nVersions:       ${status.versions}\nChanged today:  ${status.changedToday}\nLast fetch:     ${relativeTime(status.lastFetch)}\nDatabase:       ${status.database}`);
+      emitValue(status, `Fetchary 👁️\n\nSources:        ${color(String(status.sources), 'blue')}\nVersions:       ${color(String(status.versions), 'blue')}\nChanged today:  ${color(String(status.changedToday), status.changedToday ? 'yellow' : 'gray')}\nLast fetch:     ${color(relativeTime(status.lastFetch), 'gray')}\nDatabase:       ${color(status.database, 'cyan')}`);
       return 0;
     }
     case 'show': {
       requireArgs(args, 1);
       const source = await fetchary.get(args[0]);
-      emitValue(source, `ID:             ${source.id}\nName:           ${source.name || '-'}\nTag:            ${source.tag || '-'}\nURL:            ${source.url}\nEnabled:        ${source.enabled ? 'yes' : 'no'}\nCreated:        ${localDate(source.createdAt)}\nLast checked:   ${localDate(source.lastCheckedAt)}\nLast changed:   ${localDate(source.lastChangedAt)}\nVersions:       ${source.versions}\nCurrent hash:   ${source.currentHash || '-'}`);
+      emitValue(source, `ID:             ${color(String(source.id), 'blue')}\nName:           ${source.name || '-'}\nTag:            ${color(source.tag || '-', 'blue')}\nURL:            ${color(source.url, 'cyan')}\nEnabled:        ${color(source.enabled ? 'yes' : 'no', source.enabled ? 'green' : 'yellow')}\nCreated:        ${color(localDate(source.createdAt), 'gray')}\nLast checked:   ${color(localDate(source.lastCheckedAt), 'gray')}\nLast changed:   ${color(localDate(source.lastChangedAt), 'gray')}\nVersions:       ${color(String(source.versions), 'blue')}\nCurrent hash:   ${color(source.currentHash || '-', 'gray')}`);
       return 0;
     }
     case 'history': {
@@ -198,9 +215,13 @@ async function execute(fetchary, parsed, write) {
       });
       if (options.html && !options.json) {
         const lines = result.diff.map(part => `<div class="${part.type}">${part.type === 'added' ? '+' : '-'} ${htmlEscape(part.value)}</div>`).join('\n');
-        emit(`<!doctype html><meta charset="utf-8"><title>Fetchary diff</title><style>body{font-family:monospace;white-space:pre-wrap}.added{background:#dfd}.removed{background:#fdd}</style>${lines}\n`);
+        emit(`<!doctype html><meta charset="utf-8"><title>Fetchary diff</title><style>body{font-family:monospace;white-space:pre-wrap}.added{color:#1d4ed8;background:#dbeafe}.removed{color:#b91c1c;background:#fee2e2}</style>${lines}\n`);
       } else {
-        emitValue(result, result.diff.length ? result.diff.map(part => `${part.type === 'added' ? '+' : '-'} ${part.value}`).join('\n') : 'No differences.');
+        const humanDiff = result.diff.map(part => {
+          const line = `${part.type === 'added' ? '+' : '-'} ${part.value}`;
+          return color(line, part.type === 'added' ? 'blue' : 'red');
+        }).join('\n');
+        emitValue(result, humanDiff || 'No differences.');
       }
       return 0;
     }
@@ -208,7 +229,7 @@ async function execute(fetchary, parsed, write) {
       requireArgs(args, 1, 2);
       const archived = await fetchary.version(args[0], args[1]);
       await openFile(archived.file);
-      emitValue(archived, `✓ Opened ${archived.file}`);
+      emitValue(archived, `${color('✓ Opened', 'green')} ${color(archived.file, 'cyan')}`);
       return 0;
     }
     case 'edit': {
@@ -216,14 +237,15 @@ async function execute(fetchary, parsed, write) {
       const changes = {};
       for (const key of ['name', 'tag', 'url']) if (options[key] !== undefined) changes[key] = options[key];
       const source = await fetchary.edit(args[0], changes);
-      emitValue(source, `✓ Updated #${source.id}`);
+      emitValue(source, `${color('✓ Updated', 'green')} ${color(`#${source.id}`, 'blue')}`);
       return 0;
     }
     case 'enable':
     case 'disable': {
       requireArgs(args, 1);
       const source = await fetchary[command](args[0]);
-      emitValue(source, `✓ ${command === 'enable' ? 'Enabled' : 'Disabled'} #${source.id}`);
+      const stateColor = command === 'enable' ? 'green' : 'yellow';
+      emitValue(source, `${color(`✓ ${command === 'enable' ? 'Enabled' : 'Disabled'}`, stateColor)} ${color(`#${source.id}`, 'blue')}`);
       return 0;
     }
     case 'remove': {
@@ -232,26 +254,28 @@ async function execute(fetchary, parsed, write) {
       const sourceId = Number(args[0]);
       await fetchary.remove(sourceId, { purge: options.purge });
       const result = { sourceId, purged: Boolean(options.purge), versions };
-      emitValue(result, options.purge ? `✓ Removed #${sourceId} and purged ${versions} archived version${versions === 1 ? '' : 's'}` : `✓ Removed #${sourceId} from monitoring\n  ${versions} archived version${versions === 1 ? '' : 's'} kept`);
+      emitValue(result, options.purge
+        ? `${color('✓ Removed', 'red')} ${color(`#${sourceId}`, 'blue')} ${color(`and purged ${versions} archived version${versions === 1 ? '' : 's'}`, 'red')}`
+        : `${color('✓ Removed', 'yellow')} ${color(`#${sourceId}`, 'blue')} from monitoring\n  ${color(`${versions} archived version${versions === 1 ? '' : 's'} kept`, 'gray')}`);
       return 0;
     }
     case 'export': {
       requireArgs(args, 1);
       const result = await fetchary.export(args[0], { output: options.output });
-      emitValue(result, `✓ Exported ${result.versions} version${result.versions === 1 ? '' : 's'} to ${result.directory}`);
+      emitValue(result, `${color('✓ Exported', 'green')} ${color(String(result.versions), 'blue')} version${result.versions === 1 ? '' : 's'} to ${color(result.directory, 'cyan')}`);
       return 0;
     }
     case 'schedule': {
       requireArgs(args, 2);
       const schedule = await fetchary.schedule(args[0], args[1], { now: options.now });
-      emitValue(schedule, `✓ Scheduled #${schedule.sourceId} every ${schedule.every}\n  Next run: ${localDate(schedule.nextRunAt)}`);
+      emitValue(schedule, `${color('✓ Scheduled', 'green')} ${color(`#${schedule.sourceId}`, 'blue')} every ${color(schedule.every, 'blue')}\n  Next run: ${color(localDate(schedule.nextRunAt), 'cyan')}`);
       return 0;
     }
     case 'unschedule': {
       requireArgs(args, 1);
       await fetchary.unschedule(args[0]);
       const result = { sourceId: Number(args[0]), enabled: false };
-      emitValue(result, `✓ Unscheduled #${args[0]}`);
+      emitValue(result, `${color('✓ Unscheduled', 'yellow')} ${color(`#${args[0]}`, 'blue')}`);
       return 0;
     }
     case 'schedules': {
@@ -269,7 +293,7 @@ async function execute(fetchary, parsed, write) {
       requireArgs(args, 0);
       const pollInterval = options['poll-interval'] == null ? undefined : Number(options['poll-interval']);
       const runner = await fetchary.run({ pollInterval });
-      emit('Fetchary scheduler running. Press Ctrl+C to stop.\n');
+      emit(`${color('Fetchary scheduler running.', 'green')} ${color('Press Ctrl+C to stop.', 'gray')}\n`);
       await new Promise(resolve => {
         const stop = async () => {
           process.off('SIGINT', stop);
@@ -290,11 +314,21 @@ async function execute(fetchary, parsed, write) {
 async function main(argv = process.argv.slice(2), io = {}) {
   const stdout = io.stdout || process.stdout;
   const stderr = io.stderr || process.stderr;
+  const stdoutColorSupport = io.color ?? Boolean(stdout.isTTY
+    && !Object.hasOwn(process.env, 'NO_COLOR')
+    && process.env.TERM !== 'dumb');
+  const stderrColorSupport = io.color ?? Boolean(stderr.isTTY
+    && !Object.hasOwn(process.env, 'NO_COLOR')
+    && process.env.TERM !== 'dumb');
+  let color = Boolean(stdoutColorSupport && !argv.includes('--no-color'));
+  let errorColor = Boolean(stderrColorSupport && !argv.includes('--no-color'));
   let parsed;
   try { parsed = parseArgs(argv); } catch (error) {
-    stderr.write(`Error: ${error.message}\nRun "fetchary --help" for usage.\n`);
+    stderr.write(`${colorize(`Error: ${error.message}`, 'red', errorColor)}\n${colorize('Run "fetchary --help" for usage.', 'gray', errorColor)}\n`);
     return 2;
   }
+  color = Boolean(stdoutColorSupport && !parsed.options['no-color']);
+  errorColor = Boolean(stderrColorSupport && !parsed.options['no-color']);
   if (parsed.options.version) {
     stdout.write(`${pkg.version}\n`);
     return 0;
@@ -307,12 +341,12 @@ async function main(argv = process.argv.slice(2), io = {}) {
   let fetchary;
   try {
     fetchary = await createFetchary({ dataDir: parsed.options['data-dir'] || process.env.FETCHARY_DATA_DIR });
-    if (parsed.options.verbose && !parsed.options.quiet) stderr.write(`Using ${fetchary.dataDir}\n`);
-    return await execute(fetchary, parsed, value => stdout.write(value));
+    if (parsed.options.verbose && !parsed.options.quiet) stderr.write(`${colorize('Using', 'gray', errorColor)} ${colorize(fetchary.dataDir, 'cyan', errorColor)}\n`);
+    return await execute(fetchary, parsed, value => stdout.write(value), { color });
   } catch (error) {
     const json = parsed.options.json;
     const payload = { error: error.name, message: error.message };
-    stderr.write(json ? `${JSON.stringify(payload)}\n` : `Error: ${error.message}\n`);
+    stderr.write(json ? `${JSON.stringify(payload)}\n` : `${colorize(`Error: ${error.message}`, 'red', errorColor)}\n`);
     if (error instanceof CliUsageError || error instanceof FetcharyValidationError || error instanceof FetcharyIntervalError) return 2;
     if (error instanceof FetcharyFetchError) return 3;
     return 1;

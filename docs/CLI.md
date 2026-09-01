@@ -296,6 +296,10 @@ fetchary diff 12 --raw
 
 `--html` may generate or open a rendered HTML diff.
 
+In terminal output, removed lines are red and added lines are blue. Colors are
+disabled automatically when output is redirected and can be disabled explicitly
+with `--no-color` or the `NO_COLOR` environment variable.
+
 ---
 
 ### `fetchary open`
@@ -461,9 +465,15 @@ The following options should work where applicable:
 --json        Return machine-readable JSON
 --quiet       Suppress normal output
 --verbose     Show additional diagnostic information
+--no-color    Disable colored terminal output
 --help        Show help
 --version     Show fetchary version
 ```
+
+Human-readable terminal output uses green for successful actions, yellow for
+changes and disabled states, red for errors and destructive removals, blue for
+new values, cyan for URLs and paths, and gray for unchanged or secondary details.
+Color is never added to JSON or redirected output.
 
 Examples:
 
@@ -631,26 +641,6 @@ Response headers may optionally be stored separately:
 
 ```text
 headers.json
-```
-
-## Automation
-
-fetchary itself does not need a scheduler.
-
-Use the operating system's scheduler instead.
-
-Example cron job:
-
-```cron
-*/15 * * * * fetchary fetch
-```
-
-This checks all active URLs every 15 minutes.
-
-Example with logging:
-
-```cron
-*/15 * * * * fetchary fetch >> ~/.fetchary/fetchary.log 2>&1
 ```
 
 ## MVP

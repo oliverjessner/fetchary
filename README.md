@@ -89,7 +89,7 @@ fetchary schedules [--json]
 fetchary run [--poll-interval <milliseconds>]
 ```
 
-Global flags include `--json`, `--quiet`, `--verbose`, `--help`, `--version`, and `--data-dir`. `FETCHARY_DATA_DIR` can also select the storage directory.
+Global flags include `--json`, `--quiet`, `--verbose`, `--no-color`, `--help`, `--version`, and `--data-dir`. `FETCHARY_DATA_DIR` can also select the storage directory. Terminal output uses color for status and context: green for success, yellow for changes, red for errors and removals, blue for new values, cyan for destinations, and gray for unchanged or secondary details.
 
 Examples:
 
