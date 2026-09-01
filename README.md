@@ -8,14 +8,24 @@ Fetchary monitors web pages, archives their raw HTTP response bodies, and record
 
 Fetchary requires Node.js 22.5 or newer.
 
+Install the library from npm:
+
 ```bash
 npm install fetchary
 ```
 
-Install the CLI globally:
+Install the CLI globally from npm:
 
 ```bash
 npm install --global fetchary
+fetchary --version
+```
+
+Or install the CLI with Homebrew:
+
+```bash
+brew tap oliverjessner/tap
+brew install fetchary
 fetchary --version
 ```
 
