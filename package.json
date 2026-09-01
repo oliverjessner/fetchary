@@ -25,6 +25,7 @@
   "files": ["cli", "src", "docs", "README.md", "LICENSE"],
   "engines": { "node": ">=22.5" },
   "scripts": {
+    "publish": "node ./scripts/publish.js",
     "test": "node --test",
     "test:coverage": "node --test --experimental-test-coverage"
   }
