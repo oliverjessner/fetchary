@@ -45,7 +45,7 @@ fetchary <command> [arguments] [options]
 Add a URL to fetchary.
 
 ```bash
-fetchary add <url>
+fetchary add <url> [--name <name>] [--tag <tag>] [--every <interval>]
 ```
 
 Example:
@@ -86,9 +86,19 @@ Example output:
 #### Options
 
 ```text
---name <name>    Human-readable name
---tag <tag>      Assign a tag
+--name <name>       Human-readable name
+--tag <tag>         Assign a tag
+--every <interval>  Schedule recurring fetches, for example 15m, 2h, or 3d
 ```
+
+Add a URL and schedule checks every 30 minutes:
+
+```bash
+fetchary add https://example.com/news --every 30m
+```
+
+The initial fetch happens immediately. Recurring checks require a running
+`fetchary run` process; `--every` saves the schedule without starting the runner.
 
 ---
 
@@ -457,18 +467,120 @@ fetchary export 12 --output ./research
 
 The export should contain enough metadata to independently verify archived versions.
 
+---
+
+### `fetchary schedule`
+
+Create, update, or re-enable a recurring fetch schedule for an existing source.
+
+```bash
+fetchary schedule <id> <interval> [--now]
+```
+
+Intervals use a positive whole number followed by `m` (minutes), `h` (hours), or
+`d` (days). The minimum interval is `1m`; examples include `15m`, `2h`, and `3d`.
+
+```bash
+fetchary schedule 12 15m
+```
+
+The next check is due one interval after scheduling. Use `--now` to fetch the
+source immediately before saving the schedule:
+
+```bash
+fetchary schedule 12 15m --now
+```
+
+#### Options
+
+```text
+--now           Fetch immediately, then schedule the next check after the interval
+--json          Return the saved schedule as JSON
+```
+
+Schedules persist in SQLite. Recurring checks run only while `fetchary run` is
+active for the same data directory. Scheduling a source does not start a background
+process, and disabled sources are skipped by the runner.
+
+---
+
+### `fetchary unschedule`
+
+Disable a source's recurring schedule while keeping the source and its archive.
+Manual fetches remain available.
+
+```bash
+fetchary unschedule <id>
+```
+
+Example:
+
+```bash
+fetchary unschedule 12
+```
+
+Use `fetchary schedule` to re-enable the schedule.
+
+---
+
+### `fetchary schedules`
+
+List active schedules with their source ID, interval, last run, and next run.
+
+```bash
+fetchary schedules [--json]
+```
+
+Return machine-readable output:
+
+```bash
+fetchary schedules --json
+```
+
+---
+
+### `fetchary run`
+
+Run the scheduler in the foreground to fetch sources when their schedules are due.
+
+```bash
+fetchary run [--poll-interval <milliseconds>]
+```
+
+#### Options
+
+```text
+--poll-interval <milliseconds>  How often to check for due schedules (default: 1000, minimum: 10)
+```
+
+The polling interval controls how often the runner checks for work; each source's
+schedule determines how often it is fetched.
+
+```bash
+fetchary schedule 12 15m
+fetchary run --poll-interval 2000
+```
+
+Stop with `Ctrl+C` or `SIGTERM`. Only one runner may manage a data directory at a
+time. Fetch failures do not stop the runner; the source is retried at its next
+scheduled check. Due schedules are checked when the runner starts again.
+
 ## Global options
 
 The following options should work where applicable:
 
 ```text
---json        Return machine-readable JSON
---quiet       Suppress normal output
---verbose     Show additional diagnostic information
---no-color    Disable colored terminal output
---help        Show help
---version     Show fetchary version
+--json             Return machine-readable JSON
+--quiet            Suppress normal output
+--verbose          Show additional diagnostic information
+--no-color         Disable colored terminal output
+--help             Show help
+--version          Show fetchary version
+--data-dir <path>  Override the storage directory
 ```
+
+`FETCHARY_DATA_DIR` also selects the storage directory; `--data-dir` takes
+precedence. Use the same directory when creating schedules and running the scheduler.
 
 Human-readable terminal output uses green for successful actions, yellow for
 changes and disabled states, red for errors and destructive removals, blue for
@@ -676,6 +788,9 @@ Web UI
 Built-in scheduling
 Notifications
 ```
+
+Built-in scheduling is available in v0.2 through `schedule`, `unschedule`,
+`schedules`, and `run`.
 
 The initial product philosophy is:
 
