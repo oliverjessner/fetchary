@@ -11,7 +11,13 @@ const {
   FetcharyIntervalError,
 } = require('../src');
 
-class CliUsageError extends Error {}
+class CliUsageError extends Error {
+  constructor(message, details = {}) {
+    super(message);
+    this.usage = details.usage;
+    this.example = details.example;
+  }
+}
 
 const HELP = `Fetchary 👁️ — ${pkg.version}
 
@@ -43,11 +49,34 @@ Global options:
   --no-color                  Disable colored terminal output
   --data-dir <path>           Override the storage directory
   --help                      Show help
+  --example                   Show common examples
   --version                   Show version
 `;
 
+const EXAMPLES = `Fetchary examples
+
+Add a page and check it every 15 minutes:
+  fetchary add https://example.com/news --name "Example News" --tag news --every 15m
+
+List sources and fetch one of them:
+  fetchary list
+  fetchary fetch 1
+
+Inspect and compare archived versions:
+  fetchary history 1
+  fetchary diff 1
+  fetchary open 1
+
+Export an archive:
+  fetchary export 1 --output ./research
+
+Run scheduled checks:
+  fetchary schedules
+  fetchary run
+`;
+
 const VALUE_OPTIONS = new Set(['name', 'tag', 'url', 'output', 'data-dir', 'poll-interval', 'every']);
-const FLAG_OPTIONS = new Set(['json', 'quiet', 'verbose', 'no-color', 'help', 'version', 'purge', 'raw', 'html', 'now']);
+const FLAG_OPTIONS = new Set(['json', 'quiet', 'verbose', 'no-color', 'help', 'example', 'version', 'purge', 'raw', 'html', 'now']);
 const ANSI = Object.freeze({
   red: '\x1b[31m',
   green: '\x1b[32m',
@@ -119,8 +148,12 @@ function size(value) {
 
 function table(rows, columns) {
   if (!rows.length) return '';
-  const widths = columns.map(column => Math.max(column.label.length, ...rows.map(row => String(column.value(row)).length)));
-  const render = (values) => values.map((value, index) => String(value).padEnd(widths[index])).join('  ').trimEnd();
+  const visibleLength = value => String(value).replace(/\x1b\[[0-9;]*m/g, '').length;
+  const widths = columns.map(column => Math.max(column.label.length, ...rows.map(row => visibleLength(column.value(row)))));
+  const render = (values) => values.map((value, index) => {
+    const rendered = String(value);
+    return `${rendered}${' '.repeat(widths[index] - visibleLength(rendered))}`;
+  }).join('  ').trimEnd();
   return [render(columns.map(column => column.label)), ...rows.map(row => render(columns.map(column => column.value(row))))].join('\n');
 }
 
@@ -161,6 +194,7 @@ async function execute(fetchary, parsed, write, format = {}) {
         { label: 'ID', value: row => row.id },
         { label: 'NAME', value: row => row.name || '-' },
         { label: 'URL', value: row => row.url },
+        { label: 'VERSION', value: row => row.currentVersionId ?? '-' },
         { label: 'LAST CHECK', value: row => relativeTime(row.lastCheckedAt) },
         { label: 'LAST CHANGE', value: row => relativeTime(row.lastChangedAt) },
       ]) : 'No monitored sources.');
@@ -196,19 +230,29 @@ async function execute(fetchary, parsed, write, format = {}) {
       return 0;
     }
     case 'history': {
-      requireArgs(args, 1);
+      if (args.length !== 1) {
+        throw new CliUsageError('invalid number of arguments', {
+          usage: 'fetchary history <id>',
+          example: 'fetchary history 1',
+        });
+      }
       const versions = await fetchary.history(args[0]);
       emitValue(versions, versions.length ? table(versions, [
         { label: 'VERSION', value: row => row.id },
+        { label: 'CHANGE', value: row => row.id === 1 ? 'initial' : 'changed' },
         { label: 'FETCHED', value: row => localDate(row.fetchedAt) },
-        { label: 'STATUS', value: row => row.status },
+        { label: 'STATUS', value: row => row.status === 200 ? color(String(row.status), 'green') : row.status },
         { label: 'SIZE', value: row => size(row.contentLength) },
       ]) : 'No archived versions.');
       return 0;
     }
     case 'diff': {
-      requireArgs(args, 1, 3);
-      if (args.length === 2) throw new CliUsageError('diff requires both from and to versions');
+      if (args.length !== 1 && args.length !== 3) {
+        throw new CliUsageError(args.length === 2 ? 'diff requires both from and to versions' : 'invalid number of arguments', {
+          usage: 'fetchary diff <id> or fetchary diff <id> <version1> <version2>',
+          example: 'fetchary diff 4 1 2',
+        });
+      }
       const result = await fetchary.diff(args[0], {
         ...(args.length === 3 ? { from: args[1], to: args[2] } : {}),
         mode: options.raw ? 'raw' : 'text',
@@ -337,6 +381,10 @@ async function main(argv = process.argv.slice(2), io = {}) {
     stdout.write(HELP);
     return 0;
   }
+  if (parsed.options.example) {
+    stdout.write(EXAMPLES);
+    return 0;
+  }
 
   let fetchary;
   try {
@@ -346,7 +394,15 @@ async function main(argv = process.argv.slice(2), io = {}) {
   } catch (error) {
     const json = parsed.options.json;
     const payload = { error: error.name, message: error.message };
-    stderr.write(json ? `${JSON.stringify(payload)}\n` : `${colorize(`Error: ${error.message}`, 'red', errorColor)}\n`);
+    if (json) {
+      stderr.write(`${JSON.stringify(payload)}\n`);
+    } else {
+      stderr.write(`${colorize(`Error: ${error.message}`, 'red', errorColor)}\n`);
+      if (error instanceof CliUsageError && error.usage) {
+        stderr.write(`\n${colorize('Usage:', 'gray', errorColor)}   ${error.usage}\n`);
+        if (error.example) stderr.write(`${colorize('Example:', 'gray', errorColor)} ${error.example}\n`);
+      }
+    }
     if (error instanceof CliUsageError || error instanceof FetcharyValidationError || error instanceof FetcharyIntervalError) return 2;
     if (error instanceof FetcharyFetchError) return 3;
     return 1;

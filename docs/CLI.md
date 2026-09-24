@@ -113,10 +113,12 @@ fetchary list
 Example output:
 
 ```text
-ID   NAME           URL                         LAST CHECK      LAST CHANGE
-1    Example News   https://example.com/news    2 min ago       3 days ago
-2    Press          https://example.org/press   2 min ago       17 min ago
+ID   NAME           URL                         VERSION   LAST CHECK   LAST CHANGE
+1    Example News   https://example.com/news    7         2 min ago    3 days ago
+2    Press          https://example.org/press   3         2 min ago    17 min ago
 ```
+
+`VERSION` is the latest archived version for the source.
 
 Filter by tag:
 
@@ -249,11 +251,16 @@ fetchary history 12
 Output:
 
 ```text
-VERSION   FETCHED               STATUS   SIZE
-8         2026-08-31 11:42      200      94 KB
-7         2026-08-29 09:14      200      93 KB
-6         2026-08-25 16:31      200      92 KB
+VERSION   CHANGE    FETCHED               STATUS   SIZE
+8         changed   2026-08-31 11:42      200      94 KB
+7         changed   2026-08-29 09:14      200      93 KB
+6         changed   2026-08-25 16:31      200      92 KB
 ```
+
+The first archived response is marked `initial`; every later version is marked
+`changed`. Fetchary only creates a new version when the response bytes differ
+from the previous archive. In terminal output, HTTP status `200` is shown in
+green.
 
 Machine-readable output:
 
@@ -575,6 +582,7 @@ The following options should work where applicable:
 --verbose          Show additional diagnostic information
 --no-color         Disable colored terminal output
 --help             Show help
+--example          Show common examples
 --version          Show fetchary version
 --data-dir <path>  Override the storage directory
 ```

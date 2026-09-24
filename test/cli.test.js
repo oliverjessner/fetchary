@@ -37,6 +37,9 @@ test('CLI wraps add/list/fetch/show/history/diff and uses documented exit codes'
   const listed = await runCli(['list', '--json', ...base]);
   assert.equal(listed.code, 0, listed.stderr);
   assert.equal(JSON.parse(listed.stdout)[0].name, 'Test page');
+  const humanList = await runCli(['list', ...base]);
+  assert.match(humanList.stdout, /^ID\s+NAME\s+URL\s+VERSION\s+LAST CHECK\s+LAST CHANGE/m);
+  assert.match(humanList.stdout, /^1\s+Test page\s+https:\/\/example\.test\/page\s+1\s+/m);
   const shown = await runCli(['show', '1', '--json', ...base]);
   assert.equal(JSON.parse(shown.stdout).tag, 'test');
   const edited = await runCli(['edit', '1', '--name', 'Edited page', '--json', ...base]);
@@ -53,9 +56,22 @@ test('CLI wraps add/list/fetch/show/history/diff and uses documented exit codes'
 
   const history = await runCli(['history', '1', '--json', ...base]);
   assert.equal(JSON.parse(history.stdout).length, 2);
+  const invalidHistory = await runCli(['history', ...base]);
+  assert.equal(invalidHistory.code, 2);
+  assert.equal(invalidHistory.stderr, 'Error: invalid number of arguments\n\nUsage:   fetchary history <id>\nExample: fetchary history 1\n');
+  const humanHistory = await runCli(['history', '1', ...base]);
+  assert.match(humanHistory.stdout, /^VERSION\s+CHANGE\s+FETCHED\s+STATUS\s+SIZE/m);
+  assert.match(humanHistory.stdout, /^2\s+changed\s+/m);
+  assert.match(humanHistory.stdout, /^1\s+initial\s+/m);
+  const coloredHistory = await runCli(['history', '1', ...base], { color: true, isTTY: true });
+  assert.match(coloredHistory.stdout, /\x1b\[32m200\x1b\[0m/);
   const diff = await runCli(['diff', '1', '--json', ...base]);
   assert.equal(diff.code, 0, diff.stderr);
   assert.equal(JSON.parse(diff.stdout).changed, true);
+
+  const invalidDiff = await runCli(['diff', ...base]);
+  assert.equal(invalidDiff.code, 2);
+  assert.equal(invalidDiff.stderr, 'Error: invalid number of arguments\n\nUsage:   fetchary diff <id> or fetchary diff <id> <version1> <version2>\nExample: fetchary diff 4 1 2\n');
 
   const coloredDiff = await runCli(['diff', '1', ...base], { color: true, isTTY: true });
   assert.match(coloredDiff.stdout, /\x1b\[31m- first\x1b\[0m/);
@@ -101,4 +117,12 @@ test('CLI wraps add/list/fetch/show/history/diff and uses documented exit codes'
   assert.equal(help.code, 0);
   assert.equal(help.stdout.split('\n')[0], `Fetchary 👁️ — ${pkg.version}`);
   assert.match(help.stdout, /Usage: fetchary/);
+  assert.match(help.stdout, /--example\s+Show common examples/);
+
+  const examples = await runCli(['--example']);
+  assert.equal(examples.code, 0);
+  assert.match(examples.stdout, /^Fetchary examples\n/);
+  assert.match(examples.stdout, /fetchary add https:\/\/example\.com\/news/);
+  assert.match(examples.stdout, /fetchary diff 1/);
+  assert.match(examples.stdout, /fetchary run/);
 });
