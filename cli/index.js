@@ -2,8 +2,10 @@
 'use strict';
 
 const path = require('node:path');
+const fs = require('node:fs');
 const { spawn } = require('node:child_process');
 const pkg = require('../package.json');
+const { textHash } = require('../src/diff');
 const {
   createFetchary,
   FetcharyFetchError,
@@ -180,6 +182,24 @@ function table(rows, columns) {
   return [render(columns.map(column => column.label)), ...rows.map(row => render(columns.map(column => column.value(row))))].join('\n');
 }
 
+async function classifyVersions(versions) {
+  const hashes = new Map(await Promise.all(versions.map(async version => [
+    version.id,
+    textHash(await fs.promises.readFile(version.file, 'utf8')),
+  ])));
+  return versions.map(version => {
+    if (version.id === 1) return { ...version, change: 'initial', rawChanged: false, contentChanged: null };
+    const previousHash = hashes.get(version.id - 1);
+    const contentChanged = previousHash == null ? null : hashes.get(version.id) !== previousHash;
+    return {
+      ...version,
+      change: contentChanged == null ? 'unknown' : contentChanged ? 'content' : 'raw only',
+      rawChanged: true,
+      contentChanged,
+    };
+  });
+}
+
 function htmlEscape(value) {
   return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
 }
@@ -228,18 +248,22 @@ async function execute(fetchary, parsed, write, format = {}) {
       const target = args.length === 0 ? undefined : args.length === 1 ? args[0] : args;
       const value = await fetchary.fetch(target);
       const results = Array.isArray(value) ? value : [value];
-      const changed = results.filter(result => result.changed).length;
+      const contentChanged = results.filter(result => result.contentChanged).length;
+      const rawOnly = results.filter(result => result.rawChanged && !result.contentChanged).length;
+      const unchanged = results.length - contentChanged - rawOnly;
       const human = [
         `Fetching ${results.length} source${results.length === 1 ? '' : 's'}...`,
         '',
-        ...results.map(result => `${color(`#${result.id}`, 'blue')} ${result.changed
-          ? `${color('changed', 'yellow')} → version ${color(String(result.version), 'blue')}`
-          : color('unchanged', 'gray')}`),
+        ...results.map(result => `${color(`#${result.id}`, 'blue')} ${result.contentChanged
+          ? `${color('content changed', 'yellow')} → version ${color(String(result.version), 'blue')}`
+          : result.rawChanged
+            ? `${color('raw changed', 'yellow')}, ${color('content unchanged', 'gray')} → version ${color(String(result.version), 'blue')}`
+            : color('unchanged', 'gray')}`),
         '',
-        `${color(String(changed), changed ? 'yellow' : 'gray')} ${color('changed', changed ? 'yellow' : 'gray')}, ${color(String(results.length - changed), 'gray')} ${color('unchanged', 'gray')}`,
+        `${color(String(contentChanged), contentChanged ? 'yellow' : 'gray')} ${color('content changed', contentChanged ? 'yellow' : 'gray')}, ${color(String(rawOnly), rawOnly ? 'yellow' : 'gray')} ${color('raw only', rawOnly ? 'yellow' : 'gray')}, ${color(String(unchanged), 'gray')} ${color('unchanged', 'gray')}`,
       ].join('\n');
       emitValue(value, human);
-      return changed ? 10 : 0;
+      return contentChanged ? 10 : 0;
     }
     case 'status': {
       requireArgs(args, command, 0);
@@ -258,9 +282,10 @@ async function execute(fetchary, parsed, write, format = {}) {
         throw usageError(command);
       }
       const versions = await fetchary.history(args[0]);
-      emitValue(versions, versions.length ? table(versions, [
+      const classified = await classifyVersions(versions);
+      emitValue(classified, classified.length ? table(classified, [
         { label: 'VERSION', value: row => row.id },
-        { label: 'CHANGE', value: row => row.id === 1 ? 'initial' : 'changed' },
+        { label: 'CHANGE', value: row => row.change },
         { label: 'FETCHED', value: row => localDate(row.fetchedAt) },
         { label: 'STATUS', value: row => row.status === 200 ? color(String(row.status), 'green') : row.status },
         { label: 'SIZE', value: row => size(row.contentLength) },

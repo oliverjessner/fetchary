@@ -1,5 +1,7 @@
 'use strict';
 
+const crypto = require('node:crypto');
+
 const NAMED_ENTITIES = Object.freeze({ amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' });
 
 function decodeEntities(value) {
@@ -22,6 +24,10 @@ function htmlToText(html) {
     .replace(/ *\n */g, '\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim());
+}
+
+function textHash(html) {
+  return crypto.createHash('sha256').update(htmlToText(html)).digest('hex');
 }
 
 function lines(value) {
@@ -76,4 +82,4 @@ function lineDiff(before, after) {
   return result;
 }
 
-module.exports = { htmlToText, lineDiff };
+module.exports = { htmlToText, textHash, lineDiff };

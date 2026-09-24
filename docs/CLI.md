@@ -9,8 +9,8 @@ The core workflow is intentionally simple:
 1. Add a URL.
 2. Fetch the page.
 3. Store the raw HTML.
-4. Compare its SHA-256 hash with the latest archived version.
-5. Save a new version only when the page changed.
+4. Compare its raw SHA-256 and visible-text hash with the latest archived version.
+5. Archive changed response bytes and report visible content changes separately.
 
 fetchary is designed for research, journalism, investigations, documentation, and any workflow where it matters to know **what a web page looked like at a specific point in time**.
 
@@ -164,24 +164,17 @@ Example output:
 Fetching 3 sources...
 
 #12 Example News     unchanged
-#14 Press Release    changed → version 7
-#18 Company Page     unchanged
+#14 Press Release    content changed → version 7
+#18 Company Page     raw changed, content unchanged → version 4
 
-1 changed, 2 unchanged
+1 content changed, 1 raw only, 1 unchanged
 ```
 
-When a page changes:
-
-```text
-✓ #14 changed
-  previous: 4d37a3...
-  current:  89fa21...
-  version:  7
-```
-
-When a page has not changed, fetchary updates only `last_checked_at`.
-
-A new archived HTML version is created only if the response body differs from the previous version.
+`content changed` means the visible text differs. `raw changed, content unchanged`
+means that the exact HTML bytes changed—for example because of a rotating CSRF
+token or script nonce—while the text shown by the page stayed the same. Both are
+archived as exact versions. When the raw bytes are identical, fetchary updates
+only `last_checked_at`.
 
 ---
 
@@ -254,15 +247,14 @@ Output:
 
 ```text
 VERSION   CHANGE    FETCHED               STATUS   SIZE
-8         changed   2026-08-31 11:42      200      94 KB
-7         changed   2026-08-29 09:14      200      93 KB
-6         changed   2026-08-25 16:31      200      92 KB
+8         content   2026-08-31 11:42      200      94 KB
+7         raw only  2026-08-29 09:14      200      93 KB
+6         content   2026-08-25 16:31      200      92 KB
 ```
 
-The first archived response is marked `initial`; every later version is marked
-`changed`. Fetchary only creates a new version when the response bytes differ
-from the previous archive. In terminal output, HTTP status `200` is shown in
-green.
+The first archived response is marked `initial`. Later versions are classified
+as `content` when visible text changed or `raw only` when only the exact HTML
+bytes changed. In terminal output, HTTP status `200` is shown in green.
 
 Machine-readable output:
 
@@ -616,11 +608,11 @@ fetchary fetch 12 --verbose
 fetchary uses exit codes so it can be used with shell scripts, cron jobs, CI jobs, and other automation.
 
 ```text
-0    Command completed successfully, no changes detected
+0    Command completed successfully, no visible content changes detected
 1    General error
 2    Invalid arguments
 3    Fetch failed
-10   At least one monitored page changed
+10   At least one monitored page had a visible content change
 ```
 
 Example:
@@ -629,7 +621,7 @@ Example:
 fetchary fetch
 
 if [ $? -eq 10 ]; then
-  echo "At least one page changed"
+  echo "At least one page had a visible content change"
 fi
 ```
 
@@ -667,6 +659,7 @@ Example `metadata.json`:
     "contentType": "text/html",
     "contentLength": 96256,
     "sha256": "89fa21...",
+    "textSha256": "52b14c...",
     "etag": "\"abc123\"",
     "lastModified": "Mon, 31 Aug 2026 08:12:00 GMT"
 }
@@ -702,10 +695,10 @@ CREATE TABLE versions (
     id INTEGER PRIMARY KEY,
     url_id INTEGER NOT NULL,
     fetched_at TEXT NOT NULL,
-    status_code INTEGER,
-    final_url TEXT,
+    status_code INTEGER NOT NULL,
+    final_url TEXT NOT NULL,
     content_type TEXT,
-    content_length INTEGER,
+    content_length INTEGER NOT NULL,
     hash TEXT NOT NULL,
     file TEXT NOT NULL,
     etag TEXT,
@@ -718,7 +711,9 @@ The raw HTML itself is stored on disk rather than inside SQLite.
 
 ## Change detection
 
-fetchary uses the response body's SHA-256 hash as its primary change detector.
+fetchary keeps two change signals: the response body's SHA-256 detects exact raw
+changes for archiving, while a hash of the extracted visible text determines
+whether page content changed.
 
 Simplified logic:
 
@@ -736,7 +731,9 @@ Same hash?
 └── no  → archive HTML
           create version
           update current_hash
-          update last_changed_at
+          compare visible-text hash
+          ├── same      → report raw only
+          └── different → update last_changed_at and report content changed
 ```
 
 The original HTTP response body should be archived without DOM cleanup, readability extraction, normalization, or AI processing.

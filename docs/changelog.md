@@ -4,6 +4,7 @@
 - fetchary list shows VERSION
 - fetchary history shows STATUS
 - overall a much better struct for the CLI interface a lot of fallbacks if commands or parameter are omited
+- new naming for changed
 
 # 0.1.1
 

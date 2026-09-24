@@ -7,7 +7,7 @@ const path = require('node:path');
 const { EventEmitter } = require('node:events');
 const { openDatabase, transaction } = require('./storage/database');
 const { parseInterval } = require('./intervals');
-const { htmlToText, lineDiff } = require('./diff');
+const { htmlToText, textHash, lineDiff } = require('./diff');
 const { acquireLock, releaseLock } = require('./scheduler');
 const {
   FetcharyError,
@@ -178,7 +178,13 @@ class Fetchary extends EventEmitter {
       try { fs.rmSync(path.join(this.dataDir, 'pages', String(sourceId)), { recursive: true, force: true }); } catch {}
       throw error;
     }
-    return { ...this._requireSource(sourceId), version: result.version, changed: result.changed };
+    return {
+      ...this._requireSource(sourceId),
+      version: result.version,
+      changed: result.changed,
+      rawChanged: result.rawChanged,
+      contentChanged: result.contentChanged,
+    };
   }
 
   async list(options = {}) {
@@ -271,6 +277,7 @@ class Fetchary extends EventEmitter {
 
     const fetchedAt = isoNow();
     const hash = crypto.createHash('sha256').update(body).digest('hex');
+    const contentHash = textHash(body.toString('utf8'));
     const status = Number(response.status);
     const finalUrl = response.url || source.url;
     const contentType = response.headers?.get?.('content-type') || null;
@@ -285,8 +292,15 @@ class Fetchary extends EventEmitter {
         if (!current) throw new FetcharyNotFoundError(`source ${id} does not exist`, { sourceId: id });
         if (current.current_hash === hash) {
           this.db.prepare('UPDATE urls SET last_checked_at = ? WHERE id = ?').run(fetchedAt, id);
-          return { changed: false, version: Number(current.current_version_id) };
+          return { rawChanged: false, contentChanged: false, version: Number(current.current_version_id) };
         }
+
+        let previousContentHash = null;
+        if (current.current_version_id != null) {
+          const previous = this.db.prepare('SELECT file FROM versions WHERE url_id = ? AND version_number = ?').get(id, current.current_version_id);
+          if (previous) previousContentHash = textHash(fs.readFileSync(previous.file, 'utf8'));
+        }
+        const contentChanged = previousContentHash == null || previousContentHash !== contentHash;
 
         const latest = this.db.prepare('SELECT COALESCE(MAX(version_number), 0) AS number FROM versions WHERE url_id = ?').get(id);
         const versionNumber = Number(latest.number) + 1;
@@ -303,6 +317,7 @@ class Fetchary extends EventEmitter {
           contentType,
           contentLength: body.length,
           sha256: hash,
+          textSha256: contentHash,
           etag,
           lastModified,
         };
@@ -314,10 +329,20 @@ class Fetchary extends EventEmitter {
           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(id, versionNumber, source.url, fetchedAt, status, finalUrl, contentType, body.length, hash, file, etag, lastModified);
         this.db.prepare(`
-          UPDATE urls SET last_checked_at = ?, last_changed_at = ?, current_hash = ?, current_version_id = ?
+          UPDATE urls SET
+            last_checked_at = ?,
+            last_changed_at = CASE WHEN ? THEN ? ELSE last_changed_at END,
+            current_hash = ?,
+            current_version_id = ?
           WHERE id = ?
-        `).run(fetchedAt, fetchedAt, hash, versionNumber, id);
-        return { changed: true, previousHash: current.current_hash, version: versionNumber, file };
+        `).run(fetchedAt, contentChanged ? 1 : 0, fetchedAt, hash, versionNumber, id);
+        return {
+          rawChanged: true,
+          contentChanged,
+          previousHash: current.current_hash,
+          version: versionNumber,
+          file,
+        };
       });
     } catch (cause) {
       if (createdVersionDir) {
@@ -335,17 +360,22 @@ class Fetchary extends EventEmitter {
       id,
       sourceId: id,
       url: source.url,
-      changed: outcome.changed,
-      ...(outcome.changed && outcome.previousHash ? { previousHash: outcome.previousHash } : {}),
+      changed: outcome.contentChanged,
+      rawChanged: outcome.rawChanged,
+      contentChanged: outcome.contentChanged,
+      ...(outcome.rawChanged && outcome.previousHash ? { previousHash: outcome.previousHash } : {}),
       hash,
+      contentHash,
       version: outcome.version,
       fetchedAt,
       status,
       contentLength: body.length,
     };
-    if (outcome.changed) {
+    if (outcome.rawChanged) {
       const archivedVersion = await this.version(id, outcome.version);
       this._emit('version', archivedVersion);
+    }
+    if (outcome.contentChanged) {
       this._emit('change', result);
       await this._hook('onChange', result);
     }

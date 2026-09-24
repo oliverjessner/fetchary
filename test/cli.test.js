@@ -61,7 +61,7 @@ test('CLI wraps add/list/fetch/show/history/diff and uses documented exit codes'
   assert.equal(invalidHistory.stderr, 'Error: invalid number of arguments\n\nUsage:   fetchary history <id>\nExample: fetchary history 1\n');
   const humanHistory = await runCli(['history', '1', ...base]);
   assert.match(humanHistory.stdout, /^VERSION\s+CHANGE\s+FETCHED\s+STATUS\s+SIZE/m);
-  assert.match(humanHistory.stdout, /^2\s+changed\s+/m);
+  assert.match(humanHistory.stdout, /^2\s+content\s+/m);
   assert.match(humanHistory.stdout, /^1\s+initial\s+/m);
   const coloredHistory = await runCli(['history', '1', ...base], { color: true, isTTY: true });
   assert.match(coloredHistory.stdout, /\x1b\[32m200\x1b\[0m/);
@@ -161,4 +161,34 @@ test('invalid argument counts include command usage and an example', async t => 
     assert.equal(result.stderr.includes(`Usage:   ${item.usage}\n`), true, item.args[0]);
     assert.equal(result.stderr.includes(`Example: ${item.example}\n`), true, item.args[0]);
   }
+});
+
+test('CLI distinguishes raw-only changes from visible content changes', async t => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fetchary-cli-changes-'));
+  t.after(() => fs.rmSync(dataDir, { recursive: true, force: true }));
+  let body = '<h1>same</h1><script nonce="one">ignored</script>\n';
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(body, { headers: { 'content-type': 'text/html' } });
+  t.after(() => { globalThis.fetch = originalFetch; });
+  const base = ['--data-dir', dataDir];
+
+  await runCli(['add', 'https://example.test/dynamic', ...base]);
+  body = '<h1>same</h1><script nonce="two">ignored</script>\n';
+  const rawOnly = await runCli(['fetch', '1', ...base]);
+  assert.equal(rawOnly.code, 0, rawOnly.stderr);
+  assert.match(rawOnly.stdout, /raw changed, content unchanged → version 2/);
+  assert.match(rawOnly.stdout, /0 content changed, 1 raw only, 0 unchanged/);
+
+  let history = JSON.parse((await runCli(['history', '1', '--json', ...base])).stdout);
+  assert.equal(history[0].change, 'raw only');
+  assert.equal(history[0].contentChanged, false);
+
+  body = '<h1>different</h1><script nonce="three">ignored</script>\n';
+  const content = await runCli(['fetch', '1', ...base]);
+  assert.equal(content.code, 10, content.stderr);
+  assert.match(content.stdout, /content changed → version 3/);
+
+  history = JSON.parse((await runCli(['history', '1', '--json', ...base])).stdout);
+  assert.equal(history[0].change, 'content');
+  assert.equal(history[0].contentChanged, true);
 });

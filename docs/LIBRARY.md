@@ -40,7 +40,7 @@ console.log(source.id);
 
 const result = await fetchary.fetch(source.id);
 
-console.log(result.changed);
+console.log(result.contentChanged, result.rawChanged);
 
 await fetchary.close();
 ```
@@ -287,8 +287,11 @@ Example result for one source:
   id: 12,
   url: "https://example.com/news",
   changed: true,
+  rawChanged: true,
+  contentChanged: true,
   previousHash: "4d37a3...",
   hash: "89fa21...",
+  contentHash: "52b14c...",
   version: 8,
   fetchedAt: "2026-08-31T11:42:16.000Z",
   status: 200,
@@ -303,7 +306,10 @@ Unchanged response:
   id: 12,
   url: "https://example.com/news",
   changed: false,
+  rawChanged: false,
+  contentChanged: false,
   hash: "89fa21...",
+  contentHash: "52b14c...",
   version: 8,
   fetchedAt: "2026-08-31T12:42:16.000Z",
   status: 200,
@@ -311,7 +317,13 @@ Unchanged response:
 }
 ```
 
-If the HTML has not changed, no new archived version is created.
+`changed` is an alias for `contentChanged` and reports a visible-text change.
+`rawChanged` reports whether the exact response bytes changed and a new version
+was archived. A response can therefore have `rawChanged: true` and
+`contentChanged: false` when only a rotating token, nonce, or other HTML detail
+changed.
+
+If the raw HTML bytes have not changed, no new archived version is created.
 
 Only `last_checked_at` is updated.
 
@@ -832,7 +844,7 @@ fetchary.on('fetch', result => {
 
 ### `change`
 
-Emitted only when a new version is archived.
+Emitted only when the visible text content changes.
 
 ```js
 fetchary.on('change', result => {
@@ -1114,7 +1126,7 @@ The response body is stored as raw HTML.
 
 It should not be normalized, cleaned, parsed, rewritten, or processed before hashing and archiving.
 
-The SHA-256 hash is calculated from the same bytes that are written to the archive.
+The raw SHA-256 hash is calculated from the same bytes that are written to the archive.
 
 This is important so that the archived file and recorded hash correspond exactly.
 
@@ -1129,16 +1141,16 @@ HTTP request
 ↓
 response body
 ↓
-SHA-256
+raw SHA-256 + visible-text SHA-256
 ↓
-compare with current hash
+compare with the previous version
 ↓
-unchanged?
+raw unchanged?
 ├── yes → update last checked
-└── no  → write archive
-          insert version
-          update current hash
-          emit change event
+└── no  → write archive and emit version event
+          visible text changed?
+          ├── no  → report raw-only change
+          └── yes → update last changed and emit change event
 ```
 
 There must be only one implementation of this flow.
@@ -1190,8 +1202,10 @@ const fetchary = await createFetchary();
 
 const result = await fetchary.fetch(id);
 
-if (result.changed) {
-    console.log(`changed → version ${result.version}`);
+if (result.contentChanged) {
+    console.log(`content changed → version ${result.version}`);
+} else if (result.rawChanged) {
+    console.log(`raw changed, content unchanged → version ${result.version}`);
 } else {
     console.log('unchanged');
 }

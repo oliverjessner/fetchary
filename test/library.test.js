@@ -23,7 +23,7 @@ function tempDir(t) {
   return directory;
 }
 
-test('archives exact response bytes, hashes them, and only creates changed versions', async t => {
+test('archives exact response bytes and distinguishes raw from visible content changes', async t => {
   const dataDir = tempDir(t);
   const first = Buffer.from([0x3c, 0x68, 0x31, 0x3e, 0xc3, 0xa4, 0x3c, 0x2f, 0x68, 0x31, 0x3e, 0x0a]);
   const second = Buffer.from('<h1>changed</h1>\n');
@@ -49,6 +49,8 @@ test('archives exact response bytes, hashes them, and only creates changed versi
   const source = await fetchary.add('https://example.com/page', { name: 'Page', tag: 'research' });
   assert.equal(source.version, 1);
   assert.equal(source.changed, true);
+  assert.equal(source.rawChanged, true);
+  assert.equal(source.contentChanged, true);
   assert.equal(source.versions, 1);
   const archived = await fetchary.version(source.id);
   assert.deepEqual(fs.readFileSync(archived.file), first);
@@ -59,12 +61,16 @@ test('archives exact response bytes, hashes them, and only creates changed versi
 
   const unchanged = await fetchary.fetch(source.id);
   assert.equal(unchanged.changed, false);
+  assert.equal(unchanged.rawChanged, false);
+  assert.equal(unchanged.contentChanged, false);
   assert.equal(unchanged.version, 1);
   assert.equal((await fetchary.history(source.id)).length, 1);
 
   body = second;
   const changed = await fetchary.fetch(source.id);
   assert.equal(changed.changed, true);
+  assert.equal(changed.rawChanged, true);
+  assert.equal(changed.contentChanged, true);
   assert.equal(changed.version, 2);
   assert.equal(changed.previousHash, archived.hash);
   assert.deepEqual(fs.readFileSync((await fetchary.version(source.id, 2)).file), second);
@@ -76,6 +82,18 @@ test('archives exact response bytes, hashes them, and only creates changed versi
   assert.equal(diff.to, 2);
   assert.equal(diff.changed, true);
   assert.deepEqual(diff.diff.map(item => item.type), ['removed', 'added']);
+  const lastContentChange = (await fetchary.get(source.id)).lastChangedAt;
+
+  body = Buffer.from('<h1>changed</h1><script nonce="dynamic">ignored</script>\n');
+  const rawOnly = await fetchary.fetch(source.id);
+  assert.equal(rawOnly.changed, false);
+  assert.equal(rawOnly.rawChanged, true);
+  assert.equal(rawOnly.contentChanged, false);
+  assert.equal(rawOnly.version, 3);
+  assert.equal((await fetchary.history(source.id)).length, 3);
+  assert.equal((await fetchary.get(source.id)).lastChangedAt, lastContentChange);
+  assert.equal((await fetchary.diff(source.id)).changed, false);
+  assert.deepEqual(events, { fetch: 4, change: 2, version: 3 });
 });
 
 test('source lifecycle, filtering, pagination, export, and removal use the public API', async t => {
@@ -200,4 +218,64 @@ test('interval parsing, persistent schedules, due execution, and runner lock', a
   assert.equal((await fetchary.schedules())[0].lastRunAt != null, true);
   await fetchary.unschedule(source.id);
   assert.deepEqual(await fetchary.schedules(), []);
+});
+
+test('storage migrates required version metadata while keeping content type nullable', async t => {
+  const dataDir = tempDir(t);
+  const databasePath = path.join(dataDir, 'fetchary.sqlite');
+  const legacy = new DatabaseSync(databasePath);
+  legacy.exec(`
+    CREATE TABLE urls (
+      id INTEGER PRIMARY KEY,
+      url TEXT NOT NULL UNIQUE,
+      name TEXT,
+      tag TEXT,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL,
+      last_checked_at TEXT,
+      last_changed_at TEXT,
+      current_hash TEXT,
+      current_version_id INTEGER,
+      removed_at TEXT
+    );
+    CREATE TABLE versions (
+      id INTEGER PRIMARY KEY,
+      url_id INTEGER NOT NULL,
+      version_number INTEGER NOT NULL,
+      requested_url TEXT NOT NULL,
+      fetched_at TEXT NOT NULL,
+      status_code INTEGER,
+      final_url TEXT,
+      content_type TEXT,
+      content_length INTEGER,
+      hash TEXT NOT NULL,
+      file TEXT NOT NULL,
+      etag TEXT,
+      last_modified TEXT,
+      UNIQUE (url_id, version_number),
+      FOREIGN KEY (url_id) REFERENCES urls(id) ON DELETE CASCADE
+    );
+    INSERT INTO urls (id, url, created_at) VALUES (1, 'https://example.com/', '2026-09-24T00:00:00.000Z');
+    INSERT INTO versions (
+      id, url_id, version_number, requested_url, fetched_at, status_code,
+      final_url, content_type, content_length, hash, file
+    ) VALUES (
+      1, 1, 1, 'https://example.com/', '2026-09-24T00:00:00.000Z', 200,
+      'https://example.com/', NULL, 4, 'hash', '/tmp/response.html'
+    );
+  `);
+  legacy.close();
+
+  const fetchary = await createFetchary({ dataDir, fetch: async () => new Response('test') });
+  await fetchary.close();
+
+  const migrated = new DatabaseSync(databasePath, { readOnly: true });
+  const columns = new Map(migrated.prepare('PRAGMA table_info(versions)').all().map(column => [column.name, column]));
+  assert.equal(Number(columns.get('status_code').notnull), 1);
+  assert.equal(Number(columns.get('final_url').notnull), 1);
+  assert.equal(Number(columns.get('content_length').notnull), 1);
+  assert.equal(Number(columns.get('content_type').notnull), 0);
+  assert.equal(migrated.prepare('SELECT COUNT(*) AS count FROM versions').get().count, 1);
+  assert.equal(migrated.prepare('SELECT content_type FROM versions WHERE id = 1').get().content_type, null);
+  migrated.close();
 });

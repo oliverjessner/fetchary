@@ -1,27 +1,101 @@
 # Fetchary
 
-> **Fetchary 👁️ — Watch changes. Keep the proof.**
+> **A local-first evidence layer for the public web.**
 
-Fetchary monitors web pages, archives their raw HTTP response bodies, and records a new version only when the bytes change. It can be used as a command-line tool or embedded as a Node.js library. Both interfaces use the same core, SQLite database, archive, change detector, and scheduler.
+Fetchary monitors public web resources and preserves exactly what the server returned.
 
-## Requirements and installation
+Every response body is stored byte-for-byte, hashed with SHA-256, and versioned only when its contents change. The result is a small, inspectable archive you can query, diff, export, and independently verify.
+
+Fetchary works as both a command-line tool and a Node.js library. Both interfaces use the same core, SQLite database, archive, change detector, and scheduler.
+
+```text
+URL
+ ↓
+HTTP response
+ ↓
+exact response body
+ ↓
+SHA-256
+ ↓
+versioned local archive
+```
+
+No cloud account. No proprietary storage. No rewriting of captured content.
+
+## Why Fetchary?
+
+Web pages change.
+
+Statements get edited. Documents disappear. Product pages are updated. Terms change. Public records are replaced.
+
+Traditional monitoring tools usually tell you **that something changed**.
+
+Fetchary also keeps **what was actually returned**.
+
+Each archived version contains the exact response bytes used to calculate its SHA-256 hash. This makes captures reproducible and independently verifiable after the original resource has changed or disappeared.
+
+Fetchary is deliberately small. It performs normal HTTP requests and stores their results locally instead of trying to reproduce an entire browser.
+
+## Core principles
+
+### Local-first
+
+Your database and archived responses stay on your machine.
+
+By default Fetchary stores its data in:
+
+```text
+~/.fetchary/
+├── fetchary.sqlite
+└── pages/
+```
+
+No account or external service is required.
+
+### Byte-exact archiving
+
+Fetchary does not clean, normalize, parse, or rewrite a response before archiving it.
+
+The bytes written to disk are the same bytes used to calculate the SHA-256 hash.
+
+### Change-aware
+
+A new version is created only when the response body actually changes.
+
+Repeated identical responses update the source's last-check time without duplicating the archived content.
+
+### Independently verifiable
+
+Exports include archived versions, metadata, and SHA-256 hashes.
+
+You can verify a capture using standard system tools:
+
+```bash
+shasum -a 256 fetchary-export-12/versions/001.html
+```
+
+### Composable
+
+Use Fetchary interactively from the terminal, run it continuously as a monitor, call it from cron or CI, or embed it directly into a Node.js application.
+
+## Installation
 
 Fetchary requires Node.js 22.5 or newer.
 
-Install the library from npm:
+### npm library
 
 ```bash
 npm install fetchary
 ```
 
-Install the CLI globally from npm:
+### CLI
 
 ```bash
 npm install --global fetchary
 fetchary --version
 ```
 
-Or install the CLI with Homebrew:
+### Homebrew
 
 ```bash
 brew tap oliverjessner/tap
@@ -29,43 +103,62 @@ brew install fetchary
 fetchary --version
 ```
 
-## Library quick start
+## Quick start
 
-```js
-import { createFetchary } from 'fetchary';
+Add a public web resource:
 
-const fetchary = await createFetchary();
-
-const source = await fetchary.add('https://example.com/news', {
-  name: 'Example News',
-  tag: 'research',
-  every: '30m',
-});
-
-const result = await fetchary.fetch(source.id);
-console.log(result.changed, result.hash);
-
-await fetchary.close();
+```bash
+fetchary add https://example.com/news \
+  --name "Example News" \
+  --tag research
 ```
 
-CommonJS is supported too:
+Fetch it:
 
-```js
-const { createFetchary } = require('fetchary');
+```bash
+fetchary fetch
 ```
 
-By default, the library and CLI share `~/.fetchary`. Use an isolated location when needed:
+Check its history:
 
-```js
-const fetchary = await createFetchary({
-  dataDir: './data/fetchary',
-  timeout: 15_000,
-  userAgent: 'MyResearchBot/1.0',
-  fetch: customFetch,
-});
+```bash
+fetchary history 1
 ```
 
-The optional Fetch-compatible implementation makes tests, proxies, and custom HTTP handling deterministic.
+Compare two versions:
+
+```bash
+fetchary diff 1
+```
+
+Export the evidence:
+
+```bash
+fetchary export 1 --output ./research
+```
+
+## Monitoring
+
+Sources can be checked manually or on a persistent schedule.
+
+```bash
+fetchary schedule 1 15m
+fetchary run
+```
+
+Supported intervals use minutes, hours, or days:
+
+```text
+15m
+2h
+3d
+```
+
+The minimum interval is one minute.
+
+Schedules are persisted in SQLite.
+
+Only one Fetchary runner may manage a data directory at a time. Fetch failures are isolated and do not stop the runner.
 
 ## CLI
 
@@ -89,97 +182,238 @@ fetchary schedules [--json]
 fetchary run [--poll-interval <milliseconds>]
 ```
 
-Global flags include `--json`, `--quiet`, `--verbose`, `--no-color`, `--help`, `--example`, `--version`, and `--data-dir`. Run `fetchary --example` for common, copyable CLI examples. `FETCHARY_DATA_DIR` can also select the storage directory. Terminal output uses color for status and context: green for success, yellow for changes, red for errors and removals, blue for new values, cyan for destinations, and gray for unchanged or secondary details.
+Global flags:
 
-Examples:
-
-```bash
-fetchary add https://example.com/impressum \
-  --name "Example GmbH" \
-  --tag investigation
-
-fetchary fetch
-fetchary diff 1
-fetchary export 1 --output ./research
+```text
+--json
+--quiet
+--verbose
+--no-color
+--help
+--example
+--version
+--data-dir
 ```
 
-CLI exit codes are suitable for cron and CI:
+`FETCHARY_DATA_DIR` can also be used to select a custom storage directory.
 
-| Code | Meaning |
-| ---: | --- |
-| `0` | Success; a fetch detected no changes |
-| `1` | General error |
-| `2` | Invalid arguments or validation error |
-| `3` | HTTP fetch failed |
-| `10` | At least one fetched page changed |
+Run:
+
+```bash
+fetchary --example
+```
+
+for common CLI examples.
+
+### Exit codes
+
+Fetchary's exit codes are suitable for shell scripts, cron jobs, and CI pipelines.
+
+| Code | Meaning                               |
+| ---: | ------------------------------------- |
+|  `0` | Success; no change detected           |
+|  `1` | General error                         |
+|  `2` | Invalid arguments or validation error |
+|  `3` | HTTP fetch failed                     |
+| `10` | At least one fetched resource changed |
+
+This makes workflows such as this possible:
+
+```bash
+fetchary fetch || {
+  code=$?
+
+  if [ "$code" = "10" ]; then
+    echo "A monitored resource changed."
+  fi
+}
+```
+
+## Node.js library
+
+Fetchary can also be embedded directly into an application.
+
+```js
+import { createFetchary } from 'fetchary';
+
+const fetchary = await createFetchary();
+
+const source = await fetchary.add('https://example.com/news', {
+    name: 'Example News',
+    tag: 'research',
+    every: '30m',
+});
+
+const result = await fetchary.fetch(source.id);
+
+console.log(result.changed);
+console.log(result.hash);
+
+await fetchary.close();
+```
+
+CommonJS is supported as well:
+
+```js
+const { createFetchary } = require('fetchary');
+```
+
+By default the CLI and library share:
+
+```text
+~/.fetchary
+```
+
+Use a separate location when needed:
+
+```js
+const fetchary = await createFetchary({
+    dataDir: './data/fetchary',
+    timeout: 15_000,
+    userAgent: 'MyResearchBot/1.0',
+    fetch: customFetch,
+});
+```
+
+The optional Fetch-compatible implementation makes proxies, tests, and custom HTTP handling deterministic.
 
 ## Public API
 
 The instance returned by `createFetchary()` exposes:
 
-- Sources: `add`, `list`, `get`, `edit`, `enable`, `disable`, `remove`
-- Fetching and archives: `fetch`, `history`, `version`, `read`, `diff`, `export`
-- Scheduling: `schedule`, `unschedule`, `schedules`, `run`
-- Lifecycle: `on`, `close`
+### Sources
 
-Fetch one source, selected sources, or all enabled sources:
+```text
+add
+list
+get
+edit
+enable
+disable
+remove
+```
+
+### Fetching and archives
+
+```text
+fetch
+history
+version
+read
+diff
+export
+```
+
+### Scheduling
+
+```text
+schedule
+unschedule
+schedules
+run
+```
+
+### Lifecycle and events
+
+```text
+on
+close
+```
+
+Fetch one source:
 
 ```js
 await fetchary.fetch(12);
+```
+
+Fetch selected sources:
+
+```js
 await fetchary.fetch([12, 14, 18]);
+```
+
+Fetch all enabled sources:
+
+```js
 await fetchary.fetch();
 ```
 
-Read and compare local versions without contacting the live website:
+Read and compare archived versions without contacting the live website:
 
 ```js
 const html = await fetchary.read(12, 4);
+
 const latestTextDiff = await fetchary.diff(12);
-const rawDiff = await fetchary.diff(12, { from: 3, to: 4, mode: 'raw' });
-```
 
-All public TypeScript declarations ship with the package. Typed errors include `FetcharyFetchError`, `FetcharyNotFoundError`, `FetcharyIntervalError`, `FetcharyStorageError`, `FetcharyValidationError`, and `FetcharyRunnerError`.
-
-## Scheduling
-
-Schedules are stored in SQLite and accept minutes, hours, or days. The minimum interval is one minute.
-
-```js
-await fetchary.schedule(12, '15m');
-await fetchary.schedule(14, '2h');
-await fetchary.schedule(18, '3d', { now: true });
-
-const runner = await fetchary.run();
-
-process.on('SIGINT', async () => {
-  await runner.stop();
-  await fetchary.close();
+const rawDiff = await fetchary.diff(12, {
+    from: 3,
+    to: 4,
+    mode: 'raw',
 });
 ```
 
-The CLI equivalent is a long-running process:
+All public TypeScript declarations ship with the package.
 
-```bash
-fetchary schedule 12 15m
-fetchary run
+Typed errors include:
+
+```text
+FetcharyFetchError
+FetcharyNotFoundError
+FetcharyIntervalError
+FetcharyStorageError
+FetcharyValidationError
+FetcharyRunnerError
 ```
-
-Only one runner may manage a data directory at a time. Fetch errors emit an event and do not stop the runner. Scheduled requests call the same `fetchary.fetch(id)` path as manual requests.
 
 ## Events and hooks
 
+Fetchary can become part of larger collection and monitoring pipelines.
+
 ```js
-fetchary.on('fetch', result => console.log('checked', result.sourceId));
-fetchary.on('change', result => console.log('changed', result.sourceId));
-fetchary.on('version', version => console.log('archived', version.file));
-fetchary.on('fetch:error', event => console.error(event.sourceId, event.error));
+fetchary.on('fetch', result => {
+    console.log('checked', result.sourceId);
+});
+
+fetchary.on('change', result => {
+    console.log('changed', result.sourceId);
+});
+
+fetchary.on('version', version => {
+    console.log('archived', version.file);
+});
+
+fetchary.on('fetch:error', event => {
+    console.error(event.sourceId, event.error);
+});
 ```
 
-Available events are `fetch`, `change`, `version`, `fetch:error`, `scheduler:start`, and `scheduler:stop`. A conventional `error` event is also emitted when a listener is registered.
+Available events include:
 
-Lifecycle hooks can be passed as `hooks.beforeFetch`, `hooks.afterFetch`, `hooks.onChange`, and `hooks.onError`. Hook failures never roll back or prevent an archive operation.
+```text
+fetch
+change
+version
+fetch:error
+scheduler:start
+scheduler:stop
+```
 
-## Storage and verification
+A conventional `error` event is also emitted when a listener is registered.
+
+Lifecycle hooks can be supplied through:
+
+```text
+hooks.beforeFetch
+hooks.afterFetch
+hooks.onChange
+hooks.onError
+```
+
+Hook failures never roll back or prevent an archive operation.
+
+## Storage model
+
+Fetchary separates metadata from captured content.
 
 ```text
 ~/.fetchary/
@@ -191,9 +425,17 @@ Lifecycle hooks can be passed as `hooks.beforeFetch`, `hooks.afterFetch`, `hooks
             └── metadata.json
 ```
 
-SQLite contains source, version, and schedule metadata. The response body stays on disk. Fetchary never parses, normalizes, rewrites, or cleans a response before archiving it. SHA-256 is calculated from the exact same `Buffer` written to `response.html`; an unchanged hash updates only the source's last-check time.
+SQLite stores source, version, and schedule metadata.
 
-An export contains independently verifiable files:
+Captured response bodies remain ordinary files on disk.
+
+The SHA-256 hash is calculated from the exact same `Buffer` written to `response.html`.
+
+If the hash has not changed, Fetchary updates the source's last-check time but does not create another version.
+
+## Evidence exports
+
+Fetchary can export a source into a self-contained directory:
 
 ```text
 fetchary-export-12/
@@ -204,19 +446,66 @@ fetchary-export-12/
     └── 002.html
 ```
 
-For example, verify an exported file with:
+The archived files can be inspected without Fetchary and verified independently:
 
 ```bash
 shasum -a 256 fetchary-export-12/versions/001.html
 ```
 
-`remove` keeps archived files by default and hides the source from active monitoring. `remove(id, { purge: true })` or `fetchary remove <id> --purge` permanently deletes its metadata and archive.
+This makes the archive portable instead of tying evidence to a proprietary database or application.
 
-## Scope
+## Removing sources
 
-Fetchary performs normal HTTP requests. It intentionally does not provide browser automation, JavaScript rendering, screenshots, crawling, DOM-aware detection, AI analysis, cloud accounts, or notifications.
+By default, removing a source stops monitoring it but preserves its archive.
 
-The detailed behavior is specified in [the library documentation](docs/LIBRARY.md) and [the CLI documentation](docs/CLI.md).
+```bash
+fetchary remove 12
+```
+
+To permanently remove both metadata and archived files:
+
+```bash
+fetchary remove 12 --purge
+```
+
+The library equivalent is:
+
+```js
+await fetchary.remove(12, { purge: true });
+```
+
+## What Fetchary is not
+
+Fetchary intentionally does not try to be a complete browser or web crawler.
+
+It does not currently provide:
+
+- browser automation
+- JavaScript rendering
+- screenshots
+- crawling
+- DOM-aware change detection
+- AI analysis
+- cloud accounts
+- notifications
+
+Fetchary performs normal HTTP requests.
+
+That constraint is intentional: its job is to create a small, transparent, reproducible record of what an HTTP endpoint returned over time.
+
+For rendered-page archiving, screenshots, authenticated browser sessions, or large-scale crawling, dedicated browser-based archiving systems may be a better fit.
+
+## Fetchary vs. a traditional change detector
+
+A traditional change detector usually answers:
+
+> Did this page change?
+
+Fetchary is designed to answer:
+
+> What exactly did this endpoint return, when did its contents change, and can I still inspect and verify the archived versions later?
+
+That distinction is the core of the project.
 
 ## Development
 
@@ -225,8 +514,23 @@ npm test
 npm run test:coverage
 ```
 
-The test suite covers exact-byte archiving and hashing, unchanged and changed fetches, source lifecycle, exports, typed failures, interval parsing, persisted schedules, scheduler locking, core events, CLI JSON output, and documented exit codes.
+The test suite covers:
 
-## License
+- exact-byte archiving and hashing
+- changed and unchanged fetches
+- source lifecycle
+- exports
+- typed failures
+- interval parsing
+- persisted schedules
+- scheduler locking
+- core events
+- CLI JSON output
+- documented exit codes
 
-MIT
+## Documentation
+
+Detailed behavior is documented in:
+
+- [`docs/LIBRARY.md`](docs/LIBRARY.md)
+- [`docs/CLI.md`](docs/CLI.md)

@@ -58,9 +58,15 @@ export type FetchResult = {
   id: number;
   sourceId: number;
   url: string;
+  /** Whether the visible text content changed. */
   changed: boolean;
+  /** Whether the exact response bytes changed and a new version was archived. */
+  rawChanged: boolean;
+  /** Whether the visible text content changed. */
+  contentChanged: boolean;
   previousHash?: string;
   hash: string;
+  contentHash: string;
   version: number;
   fetchedAt: string;
   status: number;
@@ -81,7 +87,7 @@ export type FetcharyRunner = { stop(): Promise<void> };
 export declare class Fetchary extends EventEmitter {
   readonly dataDir: string;
   readonly databasePath: string;
-  add(url: string, options?: { name?: string; tag?: string; every?: string }): Promise<Source & { version: number; changed: boolean }>;
+  add(url: string, options?: { name?: string; tag?: string; every?: string }): Promise<Source & { version: number; changed: boolean; rawChanged: boolean; contentChanged: boolean }>;
   list(options?: { tag?: string }): Promise<Source[]>;
   get(id: number): Promise<Source>;
   fetch(): Promise<FetchResult[]>;
