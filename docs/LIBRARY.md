@@ -34,6 +34,7 @@ const fetchary = await createFetchary();
 const source = await fetchary.add('https://example.com/news', {
     name: 'Example News',
     tag: 'research',
+    ignoreSelectors: ['relative-time', '.timestamp'],
 });
 
 console.log(source.id);
@@ -159,6 +160,18 @@ const source = await fetchary.add('https://example.com/news', {
 });
 ```
 
+Ignore dynamic elements during comparison:
+
+```js
+const source = await fetchary.add('https://github.com/owner/repo', {
+    ignoreSelectors: ['relative-time', '.timestamp', '[data-updated]'],
+});
+```
+
+Selectors are trimmed, deduplicated, and validated before the initial fetch. A
+valid selector that matches no elements is allowed. The input array is not
+mutated.
+
 Options:
 
 ```ts
@@ -166,6 +179,7 @@ type AddOptions = {
     name?: string;
     tag?: string;
     every?: string;
+    ignoreSelectors?: string[];
 };
 ```
 
@@ -177,6 +191,7 @@ Example result:
   url: "https://example.com/news",
   name: "Example News",
   tag: "research",
+  ignoreSelectors: ["relative-time", ".timestamp"],
   enabled: true,
   version: 1,
   changed: true
@@ -238,6 +253,7 @@ Example:
   tag: "research",
   url: "https://example.com/news",
   enabled: true,
+  ignoreSelectors: ["relative-time", ".timestamp"],
   createdAt: "2026-08-30T12:22:00.000Z",
   lastCheckedAt: "2026-08-31T09:42:16.000Z",
   lastChangedAt: "2026-08-29T07:14:00.000Z",
@@ -322,6 +338,11 @@ Unchanged response:
 was archived. A response can therefore have `rawChanged: true` and
 `contentChanged: false` when only a rotating token, nonce, or other HTML detail
 changed.
+
+If a source has `ignoreSelectors`, Fetchary parses both raw HTML versions into
+temporary DOMs, removes every matched element (including its descendants), and
+then applies the existing text normalization. Raw SHA-256 hashing and archive
+writes still use the original response bytes.
 
 If the raw HTML bytes have not changed, no new archived version is created.
 
@@ -471,6 +492,9 @@ type DiffOptions = {
 };
 ```
 
+Text mode, which is the default, applies the source's current ignore selectors
+to both selected versions. Raw mode never applies selectors.
+
 Example result:
 
 ```js
@@ -522,6 +546,22 @@ await fetchary.edit(12, {
 });
 ```
 
+Replace all ignore selectors:
+
+```js
+await fetchary.edit(12, {
+    ignoreSelectors: ['relative-time', '.timestamp'],
+});
+```
+
+Clear all ignore selectors:
+
+```js
+await fetchary.edit(12, {
+    ignoreSelectors: [],
+});
+```
+
 Possible input:
 
 ```ts
@@ -529,6 +569,7 @@ type EditSourceInput = {
     url?: string;
     name?: string | null;
     tag?: string | null;
+    ignoreSelectors?: string[];
 };
 ```
 

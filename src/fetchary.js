@@ -7,7 +7,7 @@ const path = require('node:path');
 const { EventEmitter } = require('node:events');
 const { openDatabase, transaction } = require('./storage/database');
 const { parseInterval } = require('./intervals');
-const { htmlToText, textHash, lineDiff } = require('./diff');
+const { comparisonText, comparisonHash, validateIgnoreSelector, lineDiff } = require('./diff');
 const { acquireLock, releaseLock } = require('./scheduler');
 const {
   FetcharyError,
@@ -24,6 +24,17 @@ const DEFAULT_USER_AGENT = 'fetchary/0.1';
 function isoNow() { return new Date().toISOString(); }
 function asBoolean(value) { return Boolean(Number(value)); }
 
+function ignoreSelectorsFromRow(row) {
+  if (row.ignore_selectors == null) return [];
+  try {
+    const selectors = JSON.parse(row.ignore_selectors);
+    if (!Array.isArray(selectors) || selectors.some(selector => typeof selector !== 'string')) throw new TypeError('expected an array of strings');
+    return [...selectors];
+  } catch (cause) {
+    throw new FetcharyStorageError(`source ${row.id} has invalid stored ignore selectors`, { cause, sourceId: Number(row.id) });
+  }
+}
+
 function sourceFromRow(row) {
   if (!row) return null;
   const source = {
@@ -37,6 +48,7 @@ function sourceFromRow(row) {
     lastChangedAt: row.last_changed_at,
     currentHash: row.current_hash,
     currentVersionId: row.current_version_id == null ? null : Number(row.current_version_id),
+    ignoreSelectors: ignoreSelectorsFromRow(row),
     versions: Number(row.versions || 0),
   };
   if (row.schedule_enabled != null) {
@@ -91,6 +103,26 @@ function validateUrl(value) {
     throw new FetcharyValidationError('url must use http or https', { url: value });
   }
   return parsed.href;
+}
+
+function validateIgnoreSelectors(value) {
+  if (!Array.isArray(value)) throw new FetcharyValidationError('ignoreSelectors must be an array of CSS selectors');
+  const selectors = [];
+  const seen = new Set();
+  for (const rawSelector of value) {
+    const selector = typeof rawSelector === 'string' ? rawSelector.trim() : '';
+    if (!selector) {
+      throw new FetcharyValidationError(`invalid ignore selector ${JSON.stringify(typeof rawSelector === 'string' ? rawSelector : String(rawSelector))}`, { selector: rawSelector });
+    }
+    try { validateIgnoreSelector(selector); } catch (cause) {
+      throw new FetcharyValidationError(`invalid ignore selector ${JSON.stringify(selector)}`, { cause, selector });
+    }
+    if (!seen.has(selector)) {
+      seen.add(selector);
+      selectors.push(selector);
+    }
+  }
+  return selectors;
 }
 
 class Fetchary extends EventEmitter {
@@ -153,14 +185,15 @@ class Fetchary extends EventEmitter {
   async add(url, options = {}) {
     this._assertOpen();
     const normalizedUrl = validateUrl(url);
+    const ignoreSelectors = Object.hasOwn(options, 'ignoreSelectors') ? validateIgnoreSelectors(options.ignoreSelectors) : [];
     if (options.every != null) parseInterval(options.every);
     const now = isoNow();
     let sourceId;
     try {
       const result = this.db.prepare(`
-        INSERT INTO urls (url, name, tag, enabled, created_at)
-        VALUES (?, ?, ?, 1, ?)
-      `).run(normalizedUrl, options.name ?? null, options.tag ?? null, now);
+        INSERT INTO urls (url, name, tag, enabled, created_at, ignore_selectors)
+        VALUES (?, ?, ?, 1, ?, ?)
+      `).run(normalizedUrl, options.name ?? null, options.tag ?? null, now, JSON.stringify(ignoreSelectors));
       sourceId = Number(result.lastInsertRowid);
     } catch (cause) {
       if (String(cause.message).includes('UNIQUE')) {
@@ -209,9 +242,9 @@ class Fetchary extends EventEmitter {
     return rows.map(sourceFromRow);
   }
 
-  async get(id) {
+  async get(id, options = {}) {
     this._assertOpen();
-    return this._requireSource(id);
+    return this._requireSource(id, Boolean(options.includeRemoved));
   }
 
   async fetch(target) {
@@ -277,7 +310,7 @@ class Fetchary extends EventEmitter {
 
     const fetchedAt = isoNow();
     const hash = crypto.createHash('sha256').update(body).digest('hex');
-    const contentHash = textHash(body.toString('utf8'));
+    const contentHash = comparisonHash(body.toString('utf8'), { ignoreSelectors: source.ignoreSelectors });
     const status = Number(response.status);
     const finalUrl = response.url || source.url;
     const contentType = response.headers?.get?.('content-type') || null;
@@ -298,7 +331,7 @@ class Fetchary extends EventEmitter {
         let previousContentHash = null;
         if (current.current_version_id != null) {
           const previous = this.db.prepare('SELECT file FROM versions WHERE url_id = ? AND version_number = ?').get(id, current.current_version_id);
-          if (previous) previousContentHash = textHash(fs.readFileSync(previous.file, 'utf8'));
+          if (previous) previousContentHash = comparisonHash(fs.readFileSync(previous.file, 'utf8'), { ignoreSelectors: source.ignoreSelectors });
         }
         const contentChanged = previousContentHash == null || previousContentHash !== contentHash;
 
@@ -318,6 +351,8 @@ class Fetchary extends EventEmitter {
           contentLength: body.length,
           sha256: hash,
           textSha256: contentHash,
+          comparisonSha256: contentHash,
+          comparison: { ignoreSelectors: [...source.ignoreSelectors] },
           etag,
           lastModified,
         };
@@ -419,6 +454,7 @@ class Fetchary extends EventEmitter {
   async diff(sourceId, options = {}) {
     this._assertOpen();
     const id = validateId(sourceId);
+    const source = this._requireSource(id, true);
     const mode = options.mode ?? 'text';
     if (!['text', 'raw'].includes(mode)) throw new FetcharyValidationError('diff mode must be "text" or "raw"');
     let from = options.from;
@@ -430,8 +466,8 @@ class Fetchary extends EventEmitter {
       from ??= latest[1].id;
     }
     const [beforeHtml, afterHtml] = await Promise.all([this.read(id, from), this.read(id, to)]);
-    const before = mode === 'raw' ? beforeHtml : htmlToText(beforeHtml);
-    const after = mode === 'raw' ? afterHtml : htmlToText(afterHtml);
+    const before = mode === 'raw' ? beforeHtml : comparisonText(beforeHtml, { ignoreSelectors: source.ignoreSelectors });
+    const after = mode === 'raw' ? afterHtml : comparisonText(afterHtml, { ignoreSelectors: source.ignoreSelectors });
     const changes = lineDiff(before, after);
     return { sourceId: id, from: Number(from), to: Number(to), mode, changed: changes.length > 0, diff: changes };
   }
@@ -439,15 +475,18 @@ class Fetchary extends EventEmitter {
   async edit(id, changes = {}) {
     this._assertOpen();
     const source = this._requireSource(id);
-    const allowed = ['url', 'name', 'tag'];
+    const allowed = ['url', 'name', 'tag', 'ignoreSelectors'];
     const entries = Object.entries(changes).filter(([key]) => allowed.includes(key));
-    if (!entries.length) throw new FetcharyValidationError('provide at least one of url, name, or tag');
+    if (!entries.length) throw new FetcharyValidationError('provide at least one of url, name, tag, or ignoreSelectors');
     const assignments = [];
     const values = [];
     for (const [key, value] of entries) {
       if (key === 'url') {
         assignments.push('url = ?');
         values.push(validateUrl(value));
+      } else if (key === 'ignoreSelectors') {
+        assignments.push('ignore_selectors = ?');
+        values.push(JSON.stringify(validateIgnoreSelectors(value)));
       } else {
         if (value != null && typeof value !== 'string') throw new FetcharyValidationError(`${key} must be a string or null`);
         assignments.push(`${key} = ?`);

@@ -35,6 +35,7 @@ export type Source = {
   lastChangedAt: string | null;
   currentHash: string | null;
   currentVersionId: number | null;
+  ignoreSelectors: string[];
   versions: number;
   schedule: Omit<Schedule, 'sourceId'> | null;
 };
@@ -87,7 +88,7 @@ export type FetcharyRunner = { stop(): Promise<void> };
 export declare class Fetchary extends EventEmitter {
   readonly dataDir: string;
   readonly databasePath: string;
-  add(url: string, options?: { name?: string; tag?: string; every?: string }): Promise<Source & { version: number; changed: boolean; rawChanged: boolean; contentChanged: boolean }>;
+  add(url: string, options?: { name?: string; tag?: string; every?: string; ignoreSelectors?: string[] }): Promise<Source & { version: number; changed: boolean; rawChanged: boolean; contentChanged: boolean }>;
   list(options?: { tag?: string }): Promise<Source[]>;
   get(id: number): Promise<Source>;
   fetch(): Promise<FetchResult[]>;
@@ -97,7 +98,7 @@ export declare class Fetchary extends EventEmitter {
   version(sourceId: number, versionId?: number): Promise<Version>;
   read(sourceId: number, versionId?: number): Promise<string>;
   diff(sourceId: number, options?: { from?: number; to?: number; mode?: 'text' | 'raw' }): Promise<DiffResult>;
-  edit(id: number, changes: { url?: string; name?: string | null; tag?: string | null }): Promise<Source>;
+  edit(id: number, changes: { url?: string; name?: string | null; tag?: string | null; ignoreSelectors?: string[] }): Promise<Source>;
   enable(id: number): Promise<Source>;
   disable(id: number): Promise<Source>;
   remove(id: number, options?: { purge?: boolean }): Promise<void>;

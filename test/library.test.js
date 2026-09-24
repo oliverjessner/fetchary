@@ -96,6 +96,104 @@ test('archives exact response bytes and distinguishes raw from visible content c
   assert.deepEqual(events, { fetch: 4, change: 2, version: 3 });
 });
 
+test('ignore selectors filter comparisons without altering raw archived evidence', async t => {
+  const dataDir = tempDir(t);
+  const configuredSelectors = [' relative-time ', '.timestamp', '[data-updated]', '.does-not-exist', 'relative-time'];
+  const originalSelectors = [...configuredSelectors];
+  let body = Buffer.from('<p>Hello</p><relative-time>09:41</relative-time><div class="timestamp"><span>old</span></div><div data-updated>first</div>\n');
+  const fetchary = await createFetchary({ dataDir, fetch: async () => new Response(body, { headers: { 'content-type': 'text/html' } }) });
+  t.after(() => fetchary.close());
+  const events = { change: 0, version: 0 };
+  for (const name of Object.keys(events)) fetchary.on(name, () => events[name]++);
+
+  const source = await fetchary.add('https://example.com/dynamic', { ignoreSelectors: configuredSelectors });
+  assert.deepEqual(configuredSelectors, originalSelectors, 'caller array is not mutated');
+  assert.deepEqual(source.ignoreSelectors, ['relative-time', '.timestamp', '[data-updated]', '.does-not-exist']);
+  const first = await fetchary.version(source.id, 1);
+  assert.deepEqual(fs.readFileSync(first.file), body);
+
+  const secondBody = Buffer.from('<p>Hello</p><relative-time>09:43</relative-time><div class="timestamp"><span>new</span></div><div data-updated>second</div>\n');
+  body = secondBody;
+  const ignoredOnly = await fetchary.fetch(source.id);
+  assert.equal(ignoredOnly.rawChanged, true);
+  assert.equal(ignoredOnly.contentChanged, false);
+  assert.equal(ignoredOnly.changed, false);
+  assert.equal(ignoredOnly.version, 2);
+  assert.notEqual(ignoredOnly.hash, first.hash);
+  assert.equal((await fetchary.history(source.id)).length, 2);
+  assert.deepEqual(fs.readFileSync((await fetchary.version(source.id, 2)).file), secondBody);
+  assert.deepEqual(events, { change: 1, version: 2 });
+
+  const textDiff = await fetchary.diff(source.id, { from: 1, to: 2 });
+  assert.equal(textDiff.changed, false);
+  assert.deepEqual(textDiff.diff, []);
+  const rawDiff = await fetchary.diff(source.id, { from: 1, to: 2, mode: 'raw' });
+  assert.equal(rawDiff.changed, true);
+  assert.equal(rawDiff.diff.some(part => part.value.includes('<relative-time>09:41</relative-time>')), true);
+  assert.equal(rawDiff.diff.some(part => part.value.includes('<relative-time>09:43</relative-time>')), true);
+
+  body = Buffer.from('<p>Goodbye</p><relative-time>09:45</relative-time><div class="timestamp"><span>later</span></div><div data-updated>third</div>\n');
+  const meaningful = await fetchary.fetch(source.id);
+  assert.equal(meaningful.rawChanged, true);
+  assert.equal(meaningful.contentChanged, true);
+  assert.equal(meaningful.changed, true);
+  const meaningfulDiff = await fetchary.diff(source.id, { from: 2, to: 3 });
+  assert.equal(meaningfulDiff.changed, true);
+  assert.deepEqual(meaningfulDiff.diff.map(part => part.value), ['Hello', 'Goodbye']);
+
+  const metadata = JSON.parse(fs.readFileSync(path.join(path.dirname((await fetchary.version(source.id, 3)).file), 'metadata.json')));
+  assert.equal(metadata.sha256, meaningful.hash);
+  assert.equal(metadata.comparisonSha256, meaningful.contentHash);
+  assert.deepEqual(metadata.comparison.ignoreSelectors, source.ignoreSelectors);
+});
+
+test('ignore selector validation, replacement, clearing, and persistence use the public API', async t => {
+  const dataDir = tempDir(t);
+  let fetchCalls = 0;
+  let body = '<p>Hello</p><relative-time>old</relative-time>';
+  let fetchary = await createFetchary({
+    dataDir,
+    fetch: async () => {
+      fetchCalls++;
+      return new Response(body);
+    },
+  });
+  t.after(async () => { await fetchary.close(); });
+
+  await assert.rejects(
+    () => fetchary.add('https://example.com/invalid', { ignoreSelectors: [':foo('] }),
+    error => error instanceof FetcharyValidationError && error.message === 'invalid ignore selector ":foo("',
+  );
+  await assert.rejects(
+    () => fetchary.add('https://example.com/empty', { ignoreSelectors: ['   '] }),
+    error => error instanceof FetcharyValidationError && error.message === 'invalid ignore selector "   "',
+  );
+  assert.equal(fetchCalls, 0, 'selectors are validated before fetching');
+
+  const source = await fetchary.add('https://example.com/selectors', { ignoreSelectors: ['.one', '.one', ' [data-value] '] });
+  assert.deepEqual(source.ignoreSelectors, ['.one', '[data-value]']);
+  const editedSelectors = [' relative-time ', '.timestamp', 'relative-time'];
+  const originalEditedSelectors = [...editedSelectors];
+  const replaced = await fetchary.edit(source.id, { ignoreSelectors: editedSelectors });
+  assert.deepEqual(editedSelectors, originalEditedSelectors, 'edit does not mutate the caller array');
+  assert.deepEqual(replaced.ignoreSelectors, ['relative-time', '.timestamp']);
+  await assert.rejects(
+    () => fetchary.edit(source.id, { ignoreSelectors: ['['] }),
+    error => error instanceof FetcharyValidationError && error.message === 'invalid ignore selector "["',
+  );
+  assert.deepEqual((await fetchary.get(source.id)).ignoreSelectors, ['relative-time', '.timestamp']);
+
+  body = '<p>Hello</p><relative-time>new</relative-time>';
+  const reclassified = await fetchary.fetch(source.id);
+  assert.equal(reclassified.rawChanged, true);
+  assert.equal(reclassified.contentChanged, false, 'the previous raw version is recomputed with the current selector configuration');
+
+  await fetchary.close();
+  fetchary = await createFetchary({ dataDir, fetch: async () => new Response('<p>Hello</p>') });
+  assert.deepEqual((await fetchary.get(source.id)).ignoreSelectors, ['relative-time', '.timestamp']);
+  assert.deepEqual((await fetchary.edit(source.id, { ignoreSelectors: [] })).ignoreSelectors, []);
+});
+
 test('source lifecycle, filtering, pagination, export, and removal use the public API', async t => {
   const dataDir = tempDir(t);
   const output = tempDir(t);
@@ -267,9 +365,14 @@ test('storage migrates required version metadata while keeping content type null
   legacy.close();
 
   const fetchary = await createFetchary({ dataDir, fetch: async () => new Response('test') });
+  assert.deepEqual((await fetchary.get(1)).ignoreSelectors, []);
   await fetchary.close();
 
   const migrated = new DatabaseSync(databasePath, { readOnly: true });
+  const urlColumns = new Map(migrated.prepare('PRAGMA table_info(urls)').all().map(column => [column.name, column]));
+  assert.equal(Number(urlColumns.get('ignore_selectors').notnull), 1);
+  assert.equal(urlColumns.get('ignore_selectors').dflt_value, "'[]'");
+  assert.equal(migrated.prepare('SELECT ignore_selectors FROM urls WHERE id = 1').get().ignore_selectors, '[]');
   const columns = new Map(migrated.prepare('PRAGMA table_info(versions)').all().map(column => [column.name, column]));
   assert.equal(Number(columns.get('status_code').notnull), 1);
   assert.equal(Number(columns.get('final_url').notnull), 1);

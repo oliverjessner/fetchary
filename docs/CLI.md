@@ -9,7 +9,7 @@ The core workflow is intentionally simple:
 1. Add a URL.
 2. Fetch the page.
 3. Store the raw HTML.
-4. Compare its raw SHA-256 and visible-text hash with the latest archived version.
+4. Remove configured ignored elements from a temporary DOM and compare its normalized visible text with the latest archived version.
 5. Archive changed response bytes and report visible content changes separately.
 
 fetchary is designed for research, journalism, investigations, documentation, and any workflow where it matters to know **what a web page looked like at a specific point in time**.
@@ -47,7 +47,7 @@ fetchary <command> [arguments] [options]
 Add a URL to fetchary.
 
 ```bash
-fetchary add <url> [--name <name>] [--tag <tag>] [--every <interval>]
+fetchary add <url> [--name <name>] [--tag <tag>] [--every <interval>] [--ignore-selector <css> ...]
 ```
 
 Example:
@@ -78,6 +78,19 @@ fetchary add https://example.com/news \
   --tag research
 ```
 
+Ignore one or more dynamic elements during comparison:
+
+```bash
+fetchary add https://github.com/owner/repo \
+  --ignore-selector "relative-time" \
+  --ignore-selector ".timestamp" \
+  --ignore-selector "[data-updated]"
+```
+
+`--ignore-selector` is repeatable. Selectors are trimmed, deduplicated, and
+validated immediately. A valid selector that currently matches no element is
+accepted.
+
 Example output:
 
 ```text
@@ -91,6 +104,8 @@ Example output:
 --name <name>       Human-readable name
 --tag <tag>         Assign a tag
 --every <interval>  Schedule recurring fetches, for example 15m, 2h, or 3d
+--ignore-selector <css>
+                    Ignore matching elements during comparison; repeatable
 ```
 
 Add a URL and schedule checks every 30 minutes:
@@ -225,6 +240,7 @@ Last checked:   2026-08-31 11:42
 Last changed:   2026-08-29 09:14
 Versions:       8
 Current hash:   89fa21...
+Ignore selectors: relative-time, .timestamp
 ```
 
 ---
@@ -254,7 +270,8 @@ VERSION   CHANGE    FETCHED               STATUS   SIZE
 
 The first archived response is marked `initial`. Later versions are classified
 as `content` when visible text changed or `raw only` when only the exact HTML
-bytes changed. In terminal output, HTTP status `200` is shown in green.
+bytes changed. Classification always uses the source's current ignore selectors,
+including for older versions. In terminal output, HTTP status `200` is shown in green.
 
 Machine-readable output:
 
@@ -303,7 +320,9 @@ fetchary diff 12 --html
 fetchary diff 12 --raw
 ```
 
-`--raw` compares the raw archived HTML.
+The default text diff removes elements matching the source's current ignore
+selectors before applying normal text extraction. `--raw` compares the exact
+archived HTML and never applies selectors.
 
 `--html` may generate or open a rendered HTML diff.
 
@@ -360,6 +379,27 @@ Change the monitored URL:
 ```bash
 fetchary edit 12 --url https://example.com/new-url
 ```
+
+Replace all ignore selectors:
+
+```bash
+fetchary edit 12 \
+  --ignore-selector "relative-time" \
+  --ignore-selector ".timestamp"
+```
+
+Clear all ignore selectors:
+
+```bash
+fetchary edit 12 --clear-ignore-selectors
+```
+
+Supplying `--ignore-selector` to `edit` replaces the complete list; it does not
+append to the stored list. It cannot be combined with
+`--clear-ignore-selectors`.
+
+Ignore selectors affect comparison only. Every changed HTTP response is still
+archived byte-for-byte and retains its raw SHA-256 evidence hash.
 
 ---
 

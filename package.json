@@ -5,8 +5,11 @@
     "keywords": [
         "archive",
         "change-detection",
+        "evidence",
         "monitoring",
-        "web"
+        "osint",
+        "web",
+        "web-archiving"
     ],
     "homepage": "https://github.com/oliverjessner/fetchary#readme",
     "bugs": {
@@ -48,5 +51,8 @@
         "publish": "node ./scripts/publish.js",
         "test": "node --test",
         "test:coverage": "node --test --experimental-test-coverage"
+    },
+    "dependencies": {
+        "linkedom": "^0.18.13"
     }
 }

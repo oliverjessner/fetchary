@@ -56,6 +56,13 @@ function migrateVersionsRequiredColumns(db) {
   });
 }
 
+function migrateUrlsIgnoreSelectors(db) {
+  const columns = new Set(db.prepare('PRAGMA table_info(urls)').all().map(column => column.name));
+  if (!columns.has('ignore_selectors')) {
+    db.exec("ALTER TABLE urls ADD COLUMN ignore_selectors TEXT NOT NULL DEFAULT '[]'");
+  }
+}
+
 function openDatabase(dataDir) {
   try {
     fs.mkdirSync(path.join(dataDir, 'pages'), { recursive: true });
@@ -76,6 +83,7 @@ function openDatabase(dataDir) {
         last_changed_at TEXT,
         current_hash TEXT,
         current_version_id INTEGER,
+        ignore_selectors TEXT NOT NULL DEFAULT '[]',
         removed_at TEXT
       );
 
@@ -91,6 +99,7 @@ function openDatabase(dataDir) {
         FOREIGN KEY (url_id) REFERENCES urls(id) ON DELETE CASCADE
       );
     `);
+    migrateUrlsIgnoreSelectors(db);
     migrateVersionsRequiredColumns(db);
     db.exec('CREATE INDEX IF NOT EXISTS versions_url_id_idx ON versions(url_id, version_number DESC)');
     return { db, databasePath };

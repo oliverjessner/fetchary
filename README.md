@@ -6,6 +6,8 @@ Fetchary monitors public web resources and preserves exactly what the server ret
 
 Every response body is stored byte-for-byte, hashed with SHA-256, and versioned only when its contents change. The result is a small, inspectable archive you can query, diff, export, and independently verify.
 
+Ignore dynamic DOM elements during comparison without altering the archived evidence.
+
 Fetchary works as both a command-line tool and a Node.js library. Both interfaces use the same core, SQLite database, archive, change detector, and scheduler.
 
 ```text
@@ -64,6 +66,10 @@ A new version is created only when the response body actually changes.
 
 Repeated identical responses update the source's last-check time without duplicating the archived content.
 
+Per-source CSS ignore selectors can remove timestamps, counters, and other noisy
+elements from a temporary comparison DOM. Raw response bytes, raw hashes,
+archives, and raw diffs are never filtered.
+
 ### Independently verifiable
 
 Exports include archived versions, metadata, and SHA-256 hashes.
@@ -111,6 +117,14 @@ Add a public web resource:
 fetchary add https://example.com/news \
   --name "Example News" \
   --tag research
+```
+
+Ignore dynamic elements when deciding whether visible content changed:
+
+```bash
+fetchary add https://github.com/owner/repo \
+  --ignore-selector "relative-time" \
+  --ignore-selector ".timestamp"
 ```
 
 Fetch it:
@@ -163,7 +177,7 @@ Only one Fetchary runner may manage a data directory at a time. Fetch failures a
 ## CLI
 
 ```text
-fetchary add <url> [--name <name>] [--tag <tag>] [--every <interval>]
+fetchary add <url> [--name <name>] [--tag <tag>] [--every <interval>] [--ignore-selector <css> ...]
 fetchary list [--tag <tag>] [--json]
 fetchary fetch [id...]
 fetchary status
@@ -171,7 +185,7 @@ fetchary show <id>
 fetchary history <id> [--json]
 fetchary diff <id> [from to] [--raw|--html]
 fetchary open <id> [version]
-fetchary edit <id> [--url <url>] [--name <name>] [--tag <tag>]
+fetchary edit <id> [--url <url>] [--name <name>] [--tag <tag>] [--ignore-selector <css> ... | --clear-ignore-selectors]
 fetchary enable <id>
 fetchary disable <id>
 fetchary remove <id> [--purge]
@@ -242,6 +256,7 @@ const source = await fetchary.add('https://example.com/news', {
     name: 'Example News',
     tag: 'research',
     every: '30m',
+    ignoreSelectors: ['relative-time', '.timestamp'],
 });
 
 const result = await fetchary.fetch(source.id);
@@ -433,6 +448,11 @@ The SHA-256 hash is calculated from the exact same `Buffer` written to `response
 
 If the hash has not changed, Fetchary updates the source's last-check time but does not create another version.
 
+When a raw response changes, Fetchary also builds a temporary DOM, removes all
+elements matching the source's `ignoreSelectors`, and runs its normal text
+normalization on the result. That comparison decides `contentChanged` and
+`changed`. The temporary DOM is discarded; it is never written to the archive.
+
 ## Evidence exports
 
 Fetchary can export a source into a self-contained directory:
@@ -484,7 +504,6 @@ It does not currently provide:
 - JavaScript rendering
 - screenshots
 - crawling
-- DOM-aware change detection
 - AI analysis
 - cloud accounts
 - notifications

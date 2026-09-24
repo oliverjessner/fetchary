@@ -5,7 +5,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const { spawn } = require('node:child_process');
 const pkg = require('../package.json');
-const { textHash } = require('../src/diff');
+const { comparisonHash } = require('../src/diff');
 const {
   createFetchary,
   FetcharyFetchError,
@@ -34,7 +34,7 @@ Commands:
   history <id>                List archived versions
   diff <id> [from] [to]       Compare archived versions
   open <id> [version]         Open a local archived version
-  edit <id>                   Edit URL, name, or tag
+  edit <id>                   Edit URL, name, tag, or ignore selectors
   enable <id>                 Enable a source
   disable <id>                Disable a source
   remove <id>                 Remove a source (use --purge for its archive)
@@ -53,12 +53,19 @@ Global options:
   --help                      Show help
   --example                   Show common examples
   --version                   Show version
+
+Comparison options for add and edit:
+  --ignore-selector <css>     Ignore matching elements (repeatable)
+  --clear-ignore-selectors    Remove all ignored selectors when editing
 `;
 
 const EXAMPLES = `Fetchary examples
 
 Add a page and check it every 15 minutes:
   fetchary add https://example.com/news --name "Example News" --tag news --every 15m
+
+Ignore a dynamic element during comparison:
+  fetchary add https://github.com/owner/repo --ignore-selector "relative-time"
 
 List sources and fetch one of them:
   fetchary list
@@ -78,14 +85,14 @@ Run scheduled checks:
 `;
 
 const COMMAND_GUIDANCE = Object.freeze({
-  add: { usage: 'fetchary add <url> [--name <name>] [--tag <tag>] [--every <interval>]', example: 'fetchary add https://example.com --name "Example"' },
+  add: { usage: 'fetchary add <url> [--name <name>] [--tag <tag>] [--every <interval>] [--ignore-selector <css> ...]', example: 'fetchary add https://github.com/owner/repo --ignore-selector "relative-time"' },
   list: { usage: 'fetchary list [--tag <tag>] [--json]', example: 'fetchary list --tag research' },
   status: { usage: 'fetchary status', example: 'fetchary status' },
   show: { usage: 'fetchary show <id>', example: 'fetchary show 1' },
   history: { usage: 'fetchary history <id>', example: 'fetchary history 1' },
   diff: { usage: 'fetchary diff <id> or fetchary diff <id> <version1> <version2>', example: 'fetchary diff 4 1 2' },
   open: { usage: 'fetchary open <id> [version]', example: 'fetchary open 1 2' },
-  edit: { usage: 'fetchary edit <id> [--url <url>] [--name <name>] [--tag <tag>]', example: 'fetchary edit 1 --name "Example News"' },
+  edit: { usage: 'fetchary edit <id> [--url <url>] [--name <name>] [--tag <tag>] [--ignore-selector <css> ... | --clear-ignore-selectors]', example: 'fetchary edit 1 --ignore-selector "relative-time"' },
   enable: { usage: 'fetchary enable <id>', example: 'fetchary enable 1' },
   disable: { usage: 'fetchary disable <id>', example: 'fetchary disable 1' },
   remove: { usage: 'fetchary remove <id> [--purge]', example: 'fetchary remove 1' },
@@ -97,7 +104,8 @@ const COMMAND_GUIDANCE = Object.freeze({
 });
 
 const VALUE_OPTIONS = new Set(['name', 'tag', 'url', 'output', 'data-dir', 'poll-interval', 'every']);
-const FLAG_OPTIONS = new Set(['json', 'quiet', 'verbose', 'no-color', 'help', 'example', 'version', 'purge', 'raw', 'html', 'now']);
+const REPEATABLE_VALUE_OPTIONS = new Set(['ignore-selector']);
+const FLAG_OPTIONS = new Set(['json', 'quiet', 'verbose', 'no-color', 'help', 'example', 'version', 'purge', 'raw', 'html', 'now', 'clear-ignore-selectors']);
 const ANSI = Object.freeze({
   red: '\x1b[31m',
   green: '\x1b[32m',
@@ -130,10 +138,14 @@ function parseArgs(argv) {
     if (FLAG_OPTIONS.has(name)) {
       if (equalAt !== -1) throw new CliUsageError(`--${name} does not accept a value`);
       options[name] = true;
-    } else if (VALUE_OPTIONS.has(name)) {
+    } else if (VALUE_OPTIONS.has(name) || REPEATABLE_VALUE_OPTIONS.has(name)) {
       const optionValue = equalAt === -1 ? argv[++index] : value.slice(equalAt + 1);
       if (optionValue == null || optionValue.startsWith('--')) throw new CliUsageError(`--${name} requires a value`);
-      options[name] = optionValue;
+      if (REPEATABLE_VALUE_OPTIONS.has(name)) {
+        (options[name] ||= []).push(optionValue);
+      } else {
+        options[name] = optionValue;
+      }
     } else {
       throw new CliUsageError(`unknown option --${name}`);
     }
@@ -182,10 +194,10 @@ function table(rows, columns) {
   return [render(columns.map(column => column.label)), ...rows.map(row => render(columns.map(column => column.value(row))))].join('\n');
 }
 
-async function classifyVersions(versions) {
+async function classifyVersions(versions, ignoreSelectors = []) {
   const hashes = new Map(await Promise.all(versions.map(async version => [
     version.id,
-    textHash(await fs.promises.readFile(version.file, 'utf8')),
+    comparisonHash(await fs.promises.readFile(version.file, 'utf8'), { ignoreSelectors }),
   ])));
   return versions.map(version => {
     if (version.id === 1) return { ...version, change: 'initial', rawChanged: false, contentChanged: null };
@@ -226,7 +238,13 @@ async function execute(fetchary, parsed, write, format = {}) {
   switch (command) {
     case 'add': {
       requireArgs(args, command, 1);
-      const source = await fetchary.add(args[0], { name: options.name, tag: options.tag, every: options.every });
+      if (options['clear-ignore-selectors']) throw usageError(command, '--clear-ignore-selectors can only be used with edit');
+      const source = await fetchary.add(args[0], {
+        name: options.name,
+        tag: options.tag,
+        every: options.every,
+        ...(options['ignore-selector'] ? { ignoreSelectors: options['ignore-selector'] } : {}),
+      });
       emitValue(source, `${color('✓ Added', 'green')} ${color(`#${source.id}`, 'blue')} ${color(source.url, 'cyan')}\n${color('✓ Saved', 'green')} version ${color(String(source.version), 'blue')}`);
       return 0;
     }
@@ -274,7 +292,7 @@ async function execute(fetchary, parsed, write, format = {}) {
     case 'show': {
       requireArgs(args, command, 1);
       const source = await fetchary.get(args[0]);
-      emitValue(source, `ID:             ${color(String(source.id), 'blue')}\nName:           ${source.name || '-'}\nTag:            ${color(source.tag || '-', 'blue')}\nURL:            ${color(source.url, 'cyan')}\nEnabled:        ${color(source.enabled ? 'yes' : 'no', source.enabled ? 'green' : 'yellow')}\nCreated:        ${color(localDate(source.createdAt), 'gray')}\nLast checked:   ${color(localDate(source.lastCheckedAt), 'gray')}\nLast changed:   ${color(localDate(source.lastChangedAt), 'gray')}\nVersions:       ${color(String(source.versions), 'blue')}\nCurrent hash:   ${color(source.currentHash || '-', 'gray')}`);
+      emitValue(source, `ID:               ${color(String(source.id), 'blue')}\nName:             ${source.name || '-'}\nTag:              ${color(source.tag || '-', 'blue')}\nURL:              ${color(source.url, 'cyan')}\nEnabled:          ${color(source.enabled ? 'yes' : 'no', source.enabled ? 'green' : 'yellow')}\nIgnore selectors: ${source.ignoreSelectors.length ? source.ignoreSelectors.join(', ') : '-'}\nCreated:          ${color(localDate(source.createdAt), 'gray')}\nLast checked:     ${color(localDate(source.lastCheckedAt), 'gray')}\nLast changed:     ${color(localDate(source.lastChangedAt), 'gray')}\nVersions:         ${color(String(source.versions), 'blue')}\nCurrent hash:     ${color(source.currentHash || '-', 'gray')}`);
       return 0;
     }
     case 'history': {
@@ -282,7 +300,8 @@ async function execute(fetchary, parsed, write, format = {}) {
         throw usageError(command);
       }
       const versions = await fetchary.history(args[0]);
-      const classified = await classifyVersions(versions);
+      const source = await fetchary.get(args[0], { includeRemoved: true });
+      const classified = await classifyVersions(versions, source.ignoreSelectors);
       emitValue(classified, classified.length ? table(classified, [
         { label: 'VERSION', value: row => row.id },
         { label: 'CHANGE', value: row => row.change },
@@ -321,8 +340,13 @@ async function execute(fetchary, parsed, write, format = {}) {
     }
     case 'edit': {
       requireArgs(args, command, 1);
+      if (options['ignore-selector'] && options['clear-ignore-selectors']) {
+        throw usageError(command, '--ignore-selector and --clear-ignore-selectors cannot be used together');
+      }
       const changes = {};
       for (const key of ['name', 'tag', 'url']) if (options[key] !== undefined) changes[key] = options[key];
+      if (options['ignore-selector']) changes.ignoreSelectors = options['ignore-selector'];
+      if (options['clear-ignore-selectors']) changes.ignoreSelectors = [];
       const source = await fetchary.edit(args[0], changes);
       emitValue(source, `${color('✓ Updated', 'green')} ${color(`#${source.id}`, 'blue')}`);
       return 0;

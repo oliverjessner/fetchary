@@ -1,6 +1,7 @@
 'use strict';
 
 const crypto = require('node:crypto');
+const { parseHTML } = require('linkedom');
 
 const NAMED_ENTITIES = Object.freeze({ amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' });
 
@@ -26,8 +27,32 @@ function htmlToText(html) {
     .trim());
 }
 
+function validateIgnoreSelector(selector) {
+  parseHTML('<html><body></body></html>').document.querySelectorAll(selector);
+}
+
+function comparisonHtml(html, options = {}) {
+  const ignoreSelectors = options.ignoreSelectors || [];
+  if (!ignoreSelectors.length) return String(html);
+  const { document } = parseHTML(String(html));
+  for (const selector of ignoreSelectors) {
+    for (const node of document.querySelectorAll(selector)) node.remove();
+  }
+  return document.toString();
+}
+
+function comparisonText(html, options = {}) {
+  const ignoreSelectors = options.ignoreSelectors || [];
+  if (!ignoreSelectors.length) return htmlToText(html);
+  return htmlToText(comparisonHtml(html, { ignoreSelectors }));
+}
+
+function comparisonHash(html, options = {}) {
+  return crypto.createHash('sha256').update(comparisonText(html, options)).digest('hex');
+}
+
 function textHash(html) {
-  return crypto.createHash('sha256').update(htmlToText(html)).digest('hex');
+  return comparisonHash(html);
 }
 
 function lines(value) {
@@ -82,4 +107,12 @@ function lineDiff(before, after) {
   return result;
 }
 
-module.exports = { htmlToText, textHash, lineDiff };
+module.exports = {
+  htmlToText,
+  textHash,
+  validateIgnoreSelector,
+  comparisonHtml,
+  comparisonText,
+  comparisonHash,
+  lineDiff,
+};
