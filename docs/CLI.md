@@ -32,6 +32,8 @@ Show help:
 fetchary --help
 ```
 
+Running `fetchary` without a command shows the same help.
+
 ## Usage
 
 ```bash
@@ -113,9 +115,9 @@ fetchary list
 Example output:
 
 ```text
-ID   NAME           URL                         VERSION   LAST CHECK   LAST CHANGE
-1    Example News   https://example.com/news    7         2 min ago    3 days ago
-2    Press          https://example.org/press   3         2 min ago    17 min ago
+ID   NAME           TAG        URL                         VERSION   LAST CHECK   LAST CHANGE
+1    Example News   research   https://example.com/news    7         2 min ago    3 days ago
+2    Press          -          https://example.org/press   3         2 min ago    17 min ago
 ```
 
 `VERSION` is the latest archived version for the source.

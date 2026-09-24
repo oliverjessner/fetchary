@@ -193,6 +193,7 @@ async function execute(fetchary, parsed, write, format = {}) {
       emitValue(sources, sources.length ? table(sources, [
         { label: 'ID', value: row => row.id },
         { label: 'NAME', value: row => row.name || '-' },
+        { label: 'TAG', value: row => row.tag || '-' },
         { label: 'URL', value: row => row.url },
         { label: 'VERSION', value: row => row.currentVersionId ?? '-' },
         { label: 'LAST CHECK', value: row => relativeTime(row.lastCheckedAt) },
@@ -383,6 +384,10 @@ async function main(argv = process.argv.slice(2), io = {}) {
   }
   if (parsed.options.example) {
     stdout.write(EXAMPLES);
+    return 0;
+  }
+  if (!parsed.command) {
+    stdout.write(HELP);
     return 0;
   }
 

@@ -38,8 +38,8 @@ test('CLI wraps add/list/fetch/show/history/diff and uses documented exit codes'
   assert.equal(listed.code, 0, listed.stderr);
   assert.equal(JSON.parse(listed.stdout)[0].name, 'Test page');
   const humanList = await runCli(['list', ...base]);
-  assert.match(humanList.stdout, /^ID\s+NAME\s+URL\s+VERSION\s+LAST CHECK\s+LAST CHANGE/m);
-  assert.match(humanList.stdout, /^1\s+Test page\s+https:\/\/example\.test\/page\s+1\s+/m);
+  assert.match(humanList.stdout, /^ID\s+NAME\s+TAG\s+URL\s+VERSION\s+LAST CHECK\s+LAST CHANGE/m);
+  assert.match(humanList.stdout, /^1\s+Test page\s+test\s+https:\/\/example\.test\/page\s+1\s+/m);
   const shown = await runCli(['show', '1', '--json', ...base]);
   assert.equal(JSON.parse(shown.stdout).tag, 'test');
   const edited = await runCli(['edit', '1', '--name', 'Edited page', '--json', ...base]);
@@ -118,6 +118,11 @@ test('CLI wraps add/list/fetch/show/history/diff and uses documented exit codes'
   assert.equal(help.stdout.split('\n')[0], `Fetchary 👁️ — ${pkg.version}`);
   assert.match(help.stdout, /Usage: fetchary/);
   assert.match(help.stdout, /--example\s+Show common examples/);
+
+  const defaultHelp = await runCli([]);
+  assert.equal(defaultHelp.code, 0);
+  assert.equal(defaultHelp.stdout, help.stdout);
+  assert.equal(defaultHelp.stderr, '');
 
   const examples = await runCli(['--example']);
   assert.equal(examples.code, 0);
