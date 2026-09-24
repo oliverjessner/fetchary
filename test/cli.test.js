@@ -131,3 +131,34 @@ test('CLI wraps add/list/fetch/show/history/diff and uses documented exit codes'
   assert.match(examples.stdout, /fetchary diff 1/);
   assert.match(examples.stdout, /fetchary run/);
 });
+
+test('invalid argument counts include command usage and an example', async t => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fetchary-cli-usage-'));
+  t.after(() => fs.rmSync(dataDir, { recursive: true, force: true }));
+  const cases = [
+    { args: ['add'], usage: 'fetchary add <url> [--name <name>] [--tag <tag>] [--every <interval>]', example: 'fetchary add https://example.com --name "Example"' },
+    { args: ['list', 'extra'], usage: 'fetchary list [--tag <tag>] [--json]', example: 'fetchary list --tag research' },
+    { args: ['status', 'extra'], usage: 'fetchary status', example: 'fetchary status' },
+    { args: ['show'], usage: 'fetchary show <id>', example: 'fetchary show 1' },
+    { args: ['history'], usage: 'fetchary history <id>', example: 'fetchary history 1' },
+    { args: ['diff'], usage: 'fetchary diff <id> or fetchary diff <id> <version1> <version2>', example: 'fetchary diff 4 1 2' },
+    { args: ['open'], usage: 'fetchary open <id> [version]', example: 'fetchary open 1 2' },
+    { args: ['edit'], usage: 'fetchary edit <id> [--url <url>] [--name <name>] [--tag <tag>]', example: 'fetchary edit 1 --name "Example News"' },
+    { args: ['enable'], usage: 'fetchary enable <id>', example: 'fetchary enable 1' },
+    { args: ['disable'], usage: 'fetchary disable <id>', example: 'fetchary disable 1' },
+    { args: ['remove'], usage: 'fetchary remove <id> [--purge]', example: 'fetchary remove 1' },
+    { args: ['export'], usage: 'fetchary export <id> [--output <directory>]', example: 'fetchary export 1 --output ./research' },
+    { args: ['schedule'], usage: 'fetchary schedule <id> <interval> [--now]', example: 'fetchary schedule 1 15m' },
+    { args: ['unschedule'], usage: 'fetchary unschedule <id>', example: 'fetchary unschedule 1' },
+    { args: ['schedules', 'extra'], usage: 'fetchary schedules [--json]', example: 'fetchary schedules' },
+    { args: ['run', 'extra'], usage: 'fetchary run [--poll-interval <milliseconds>]', example: 'fetchary run --poll-interval 2000' },
+  ];
+
+  for (const item of cases) {
+    const result = await runCli([...item.args, '--data-dir', dataDir]);
+    assert.equal(result.code, 2, item.args[0]);
+    assert.match(result.stderr, /^Error: invalid number of arguments\n/);
+    assert.equal(result.stderr.includes(`Usage:   ${item.usage}\n`), true, item.args[0]);
+    assert.equal(result.stderr.includes(`Example: ${item.example}\n`), true, item.args[0]);
+  }
+});

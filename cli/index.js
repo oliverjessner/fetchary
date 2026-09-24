@@ -75,6 +75,25 @@ Run scheduled checks:
   fetchary run
 `;
 
+const COMMAND_GUIDANCE = Object.freeze({
+  add: { usage: 'fetchary add <url> [--name <name>] [--tag <tag>] [--every <interval>]', example: 'fetchary add https://example.com --name "Example"' },
+  list: { usage: 'fetchary list [--tag <tag>] [--json]', example: 'fetchary list --tag research' },
+  status: { usage: 'fetchary status', example: 'fetchary status' },
+  show: { usage: 'fetchary show <id>', example: 'fetchary show 1' },
+  history: { usage: 'fetchary history <id>', example: 'fetchary history 1' },
+  diff: { usage: 'fetchary diff <id> or fetchary diff <id> <version1> <version2>', example: 'fetchary diff 4 1 2' },
+  open: { usage: 'fetchary open <id> [version]', example: 'fetchary open 1 2' },
+  edit: { usage: 'fetchary edit <id> [--url <url>] [--name <name>] [--tag <tag>]', example: 'fetchary edit 1 --name "Example News"' },
+  enable: { usage: 'fetchary enable <id>', example: 'fetchary enable 1' },
+  disable: { usage: 'fetchary disable <id>', example: 'fetchary disable 1' },
+  remove: { usage: 'fetchary remove <id> [--purge]', example: 'fetchary remove 1' },
+  export: { usage: 'fetchary export <id> [--output <directory>]', example: 'fetchary export 1 --output ./research' },
+  schedule: { usage: 'fetchary schedule <id> <interval> [--now]', example: 'fetchary schedule 1 15m' },
+  unschedule: { usage: 'fetchary unschedule <id>', example: 'fetchary unschedule 1' },
+  schedules: { usage: 'fetchary schedules [--json]', example: 'fetchary schedules' },
+  run: { usage: 'fetchary run [--poll-interval <milliseconds>]', example: 'fetchary run --poll-interval 2000' },
+});
+
 const VALUE_OPTIONS = new Set(['name', 'tag', 'url', 'output', 'data-dir', 'poll-interval', 'every']);
 const FLAG_OPTIONS = new Set(['json', 'quiet', 'verbose', 'no-color', 'help', 'example', 'version', 'purge', 'raw', 'html', 'now']);
 const ANSI = Object.freeze({
@@ -120,8 +139,12 @@ function parseArgs(argv) {
   return { command: positionals.shift(), args: positionals, options };
 }
 
-function requireArgs(args, minimum, maximum = minimum) {
-  if (args.length < minimum || args.length > maximum) throw new CliUsageError('invalid number of arguments');
+function usageError(command, message = 'invalid number of arguments') {
+  return new CliUsageError(message, COMMAND_GUIDANCE[command]);
+}
+
+function requireArgs(args, command, minimum, maximum = minimum) {
+  if (args.length < minimum || args.length > maximum) throw usageError(command);
 }
 
 function relativeTime(value) {
@@ -182,13 +205,13 @@ async function execute(fetchary, parsed, write, format = {}) {
 
   switch (command) {
     case 'add': {
-      requireArgs(args, 1);
+      requireArgs(args, command, 1);
       const source = await fetchary.add(args[0], { name: options.name, tag: options.tag, every: options.every });
       emitValue(source, `${color('✓ Added', 'green')} ${color(`#${source.id}`, 'blue')} ${color(source.url, 'cyan')}\n${color('✓ Saved', 'green')} version ${color(String(source.version), 'blue')}`);
       return 0;
     }
     case 'list': {
-      requireArgs(args, 0);
+      requireArgs(args, command, 0);
       const sources = await fetchary.list({ tag: options.tag });
       emitValue(sources, sources.length ? table(sources, [
         { label: 'ID', value: row => row.id },
@@ -219,23 +242,20 @@ async function execute(fetchary, parsed, write, format = {}) {
       return changed ? 10 : 0;
     }
     case 'status': {
-      requireArgs(args, 0);
+      requireArgs(args, command, 0);
       const status = await fetchary.status();
       emitValue(status, `Fetchary 👁️\n\nSources:        ${color(String(status.sources), 'blue')}\nVersions:       ${color(String(status.versions), 'blue')}\nChanged today:  ${color(String(status.changedToday), status.changedToday ? 'yellow' : 'gray')}\nLast fetch:     ${color(relativeTime(status.lastFetch), 'gray')}\nDatabase:       ${color(status.database, 'cyan')}`);
       return 0;
     }
     case 'show': {
-      requireArgs(args, 1);
+      requireArgs(args, command, 1);
       const source = await fetchary.get(args[0]);
       emitValue(source, `ID:             ${color(String(source.id), 'blue')}\nName:           ${source.name || '-'}\nTag:            ${color(source.tag || '-', 'blue')}\nURL:            ${color(source.url, 'cyan')}\nEnabled:        ${color(source.enabled ? 'yes' : 'no', source.enabled ? 'green' : 'yellow')}\nCreated:        ${color(localDate(source.createdAt), 'gray')}\nLast checked:   ${color(localDate(source.lastCheckedAt), 'gray')}\nLast changed:   ${color(localDate(source.lastChangedAt), 'gray')}\nVersions:       ${color(String(source.versions), 'blue')}\nCurrent hash:   ${color(source.currentHash || '-', 'gray')}`);
       return 0;
     }
     case 'history': {
       if (args.length !== 1) {
-        throw new CliUsageError('invalid number of arguments', {
-          usage: 'fetchary history <id>',
-          example: 'fetchary history 1',
-        });
+        throw usageError(command);
       }
       const versions = await fetchary.history(args[0]);
       emitValue(versions, versions.length ? table(versions, [
@@ -249,10 +269,7 @@ async function execute(fetchary, parsed, write, format = {}) {
     }
     case 'diff': {
       if (args.length !== 1 && args.length !== 3) {
-        throw new CliUsageError(args.length === 2 ? 'diff requires both from and to versions' : 'invalid number of arguments', {
-          usage: 'fetchary diff <id> or fetchary diff <id> <version1> <version2>',
-          example: 'fetchary diff 4 1 2',
-        });
+        throw usageError(command, args.length === 2 ? 'diff requires both from and to versions' : 'invalid number of arguments');
       }
       const result = await fetchary.diff(args[0], {
         ...(args.length === 3 ? { from: args[1], to: args[2] } : {}),
@@ -271,14 +288,14 @@ async function execute(fetchary, parsed, write, format = {}) {
       return 0;
     }
     case 'open': {
-      requireArgs(args, 1, 2);
+      requireArgs(args, command, 1, 2);
       const archived = await fetchary.version(args[0], args[1]);
       await openFile(archived.file);
       emitValue(archived, `${color('✓ Opened', 'green')} ${color(archived.file, 'cyan')}`);
       return 0;
     }
     case 'edit': {
-      requireArgs(args, 1);
+      requireArgs(args, command, 1);
       const changes = {};
       for (const key of ['name', 'tag', 'url']) if (options[key] !== undefined) changes[key] = options[key];
       const source = await fetchary.edit(args[0], changes);
@@ -287,14 +304,14 @@ async function execute(fetchary, parsed, write, format = {}) {
     }
     case 'enable':
     case 'disable': {
-      requireArgs(args, 1);
+      requireArgs(args, command, 1);
       const source = await fetchary[command](args[0]);
       const stateColor = command === 'enable' ? 'green' : 'yellow';
       emitValue(source, `${color(`✓ ${command === 'enable' ? 'Enabled' : 'Disabled'}`, stateColor)} ${color(`#${source.id}`, 'blue')}`);
       return 0;
     }
     case 'remove': {
-      requireArgs(args, 1);
+      requireArgs(args, command, 1);
       const versions = (await fetchary.history(args[0])).length;
       const sourceId = Number(args[0]);
       await fetchary.remove(sourceId, { purge: options.purge });
@@ -305,26 +322,26 @@ async function execute(fetchary, parsed, write, format = {}) {
       return 0;
     }
     case 'export': {
-      requireArgs(args, 1);
+      requireArgs(args, command, 1);
       const result = await fetchary.export(args[0], { output: options.output });
       emitValue(result, `${color('✓ Exported', 'green')} ${color(String(result.versions), 'blue')} version${result.versions === 1 ? '' : 's'} to ${color(result.directory, 'cyan')}`);
       return 0;
     }
     case 'schedule': {
-      requireArgs(args, 2);
+      requireArgs(args, command, 2);
       const schedule = await fetchary.schedule(args[0], args[1], { now: options.now });
       emitValue(schedule, `${color('✓ Scheduled', 'green')} ${color(`#${schedule.sourceId}`, 'blue')} every ${color(schedule.every, 'blue')}\n  Next run: ${color(localDate(schedule.nextRunAt), 'cyan')}`);
       return 0;
     }
     case 'unschedule': {
-      requireArgs(args, 1);
+      requireArgs(args, command, 1);
       await fetchary.unschedule(args[0]);
       const result = { sourceId: Number(args[0]), enabled: false };
       emitValue(result, `${color('✓ Unscheduled', 'yellow')} ${color(`#${args[0]}`, 'blue')}`);
       return 0;
     }
     case 'schedules': {
-      requireArgs(args, 0);
+      requireArgs(args, command, 0);
       const schedules = await fetchary.schedules();
       emitValue(schedules, schedules.length ? table(schedules, [
         { label: 'ID', value: row => row.sourceId },
@@ -335,7 +352,7 @@ async function execute(fetchary, parsed, write, format = {}) {
       return 0;
     }
     case 'run': {
-      requireArgs(args, 0);
+      requireArgs(args, command, 0);
       const pollInterval = options['poll-interval'] == null ? undefined : Number(options['poll-interval']);
       const runner = await fetchary.run({ pollInterval });
       emit(`${color('Fetchary scheduler running.', 'green')} ${color('Press Ctrl+C to stop.', 'gray')}\n`);
