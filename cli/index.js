@@ -13,7 +13,7 @@ const {
 
 class CliUsageError extends Error {}
 
-const HELP = `Fetchary 👁️ — Watch changes. Keep the proof.
+const HELP = `Fetchary 👁️ — ${pkg.version}
 
 Usage: fetchary <command> [arguments] [options]
 

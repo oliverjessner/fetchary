@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+const pkg = require('../package.json');
 const { main } = require('../cli/index');
 
 async function runCli(args, options = {}) {
@@ -98,5 +99,6 @@ test('CLI wraps add/list/fetch/show/history/diff and uses documented exit codes'
   assert.equal((await runCli(['show', '1', ...base])).code, 1);
   const help = await runCli(['--help']);
   assert.equal(help.code, 0);
+  assert.equal(help.stdout.split('\n')[0], `Fetchary 👁️ — ${pkg.version}`);
   assert.match(help.stdout, /Usage: fetchary/);
 });
