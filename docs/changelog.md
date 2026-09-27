@@ -1,3 +1,7 @@
+# 0.3.1
+
+- two flags --element-raw and --element-content for dif
+
 # 0.3.0
 
 - per-source CSS ignore selectors for comparison and text diffs
