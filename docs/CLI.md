@@ -136,6 +136,8 @@ ID   NAME           TAG        URL                         VERSION   LAST CHECK 
 ```
 
 `VERSION` is the latest archived version for the source.
+In supported interactive terminals, URLs are clickable. Redirected output,
+`--json`, and `--no-color` do not contain hyperlink control sequences.
 
 Filter by tag:
 
@@ -208,10 +210,15 @@ fetchary 👁️
 
 Sources:        27
 Versions:       143
+Fetch storage:  18.4 MB
 Changed today:  4
 Last fetch:     8 min ago
 Database:       ~/.fetchary/fetchary.sqlite
 ```
+
+`Fetch storage` is the total byte size of all archived response bodies,
+including archives retained for removed sources. With `--json`, the exact value
+is returned as `fetchBytes`.
 
 ---
 
@@ -222,6 +229,8 @@ Show detailed information about a monitored URL.
 ```bash
 fetchary show <id>
 ```
+
+In supported interactive terminals, the displayed URL is clickable.
 
 Example:
 
@@ -344,7 +353,7 @@ Open an archived HTML version in the default browser.
 Open the latest version:
 
 ```bash
-fetchary open <id>
+fetchary open <id> [--html]
 ```
 
 Example:
@@ -356,10 +365,12 @@ fetchary open 12
 Open a specific version:
 
 ```bash
-fetchary open 12 4
+fetchary open 12 4 --html
 ```
 
-fetchary opens the local archived HTML file and does not request the live website again.
+`--html` explicitly selects the archived HTML file. Fetchary opens the local
+`response.html` in the default application and does not request the live website
+again. The option may be omitted for backward compatibility.
 
 ---
 

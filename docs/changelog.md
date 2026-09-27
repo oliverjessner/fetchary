@@ -1,6 +1,9 @@
-# 0.3.1
+# 0.4.0
 
 - two flags --element-raw and --element-content for dif
+- status now shows the amount of storage fetchary takes
+- clickable links in list und show
+- open --html opens html
 
 # 0.3.0
 

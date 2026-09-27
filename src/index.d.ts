@@ -107,7 +107,7 @@ export declare class Fetchary extends EventEmitter {
   schedules(): Promise<Schedule[]>;
   run(options?: { pollInterval?: number }): Promise<FetcharyRunner>;
   export(id: number, options?: { output?: string }): Promise<{ sourceId: number; directory: string; versions: number }>;
-  status(): Promise<{ sources: number; versions: number; changedToday: number; lastFetch: string | null; database: string }>;
+  status(): Promise<{ sources: number; versions: number; fetchBytes: number; changedToday: number; lastFetch: string | null; database: string }>;
   close(): Promise<void>;
 }
 

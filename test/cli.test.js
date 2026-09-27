@@ -13,6 +13,8 @@ async function runCli(args, options = {}) {
   let stderr = '';
   const code = await main(args, {
     color: options.color,
+    hyperlinks: options.hyperlinks,
+    openFile: options.openFile,
     stdout: { isTTY: options.isTTY, write: chunk => { stdout += chunk; } },
     stderr: { write: chunk => { stderr += chunk; } },
   });
@@ -40,8 +42,22 @@ test('CLI wraps add/list/fetch/show/history/diff and uses documented exit codes'
   const humanList = await runCli(['list', ...base]);
   assert.match(humanList.stdout, /^ID\s+NAME\s+TAG\s+URL\s+VERSION\s+LAST CHECK\s+LAST CHANGE/m);
   assert.match(humanList.stdout, /^1\s+Test page\s+test\s+https:\/\/example\.test\/page\s+1\s+/m);
+  const linkedList = await runCli(['list', ...base], { hyperlinks: true, isTTY: true });
+  assert.match(linkedList.stdout, /\x1b\]8;;https:\/\/example\.test\/page\x1b\\https:\/\/example\.test\/page\x1b\]8;;\x1b\\/);
+  assert.match(linkedList.stdout, /^1\s+Test page\s+test\s+\x1b\]8;;/m);
+  const plainList = await runCli(['list', '--no-color', ...base], { hyperlinks: true, isTTY: true });
+  assert.equal(plainList.stdout.includes('\x1b'), false);
   const shown = await runCli(['show', '1', '--json', ...base]);
   assert.equal(JSON.parse(shown.stdout).tag, 'test');
+  const linkedShow = await runCli(['show', '1', ...base], { color: false, hyperlinks: true, isTTY: true });
+  assert.match(linkedShow.stdout, /^URL:\s+\x1b\]8;;https:\/\/example\.test\/page\x1b\\https:\/\/example\.test\/page\x1b\]8;;\x1b\\$/m);
+  const plainShow = await runCli(['show', '1', '--no-color', ...base], { hyperlinks: true, isTTY: true });
+  assert.equal(plainShow.stdout.includes('\x1b'), false);
+  let openedFile;
+  const opened = await runCli(['open', '1', '1', '--html', ...base], { openFile: async file => { openedFile = file; } });
+  assert.equal(opened.code, 0, opened.stderr);
+  assert.equal(openedFile, path.join(dataDir, 'pages', '1', '1', 'response.html'));
+  assert.match(opened.stdout, /response\.html/);
   const edited = await runCli(['edit', '1', '--name', 'Edited page', '--json', ...base]);
   assert.equal(JSON.parse(edited.stdout).name, 'Edited page');
 
@@ -108,7 +124,11 @@ test('CLI wraps add/list/fetch/show/history/diff and uses documented exit codes'
   assert.equal(unscheduled.code, 0);
   assert.match(unscheduled.stdout, /\x1b\[33m✓ Unscheduled\x1b\[0m/);
   assert.deepEqual(JSON.parse((await runCli(['schedules', '--json', ...base])).stdout), []);
-  assert.equal(JSON.parse((await runCli(['status', '--json', ...base])).stdout).versions, 2);
+  const jsonStatus = JSON.parse((await runCli(['status', '--json', ...base])).stdout);
+  assert.equal(jsonStatus.versions, 2);
+  assert.equal(jsonStatus.fetchBytes, 31);
+  const humanStatus = await runCli(['status', ...base]);
+  assert.match(humanStatus.stdout, /^Fetch storage:\s+31 B$/m);
   const exported = await runCli(['export', '1', '--output', dataDir, '--json', ...base]);
   assert.equal(JSON.parse(exported.stdout).versions, 2);
 
@@ -121,7 +141,9 @@ test('CLI wraps add/list/fetch/show/history/diff and uses documented exit codes'
   assert.equal(invalid.code, 2);
   assert.equal((await runCli(['remove', '1', ...base])).code, 0);
   assert.equal(JSON.parse((await runCli(['history', '1', '--json', ...base])).stdout).length, 2);
+  assert.equal(JSON.parse((await runCli(['status', '--json', ...base])).stdout).fetchBytes, 31);
   assert.equal((await runCli(['remove', '1', '--purge', ...base])).code, 0);
+  assert.equal(JSON.parse((await runCli(['status', '--json', ...base])).stdout).fetchBytes, 0);
   assert.equal((await runCli(['show', '1', ...base])).code, 1);
   const help = await runCli(['--help']);
   assert.equal(help.code, 0);
@@ -152,7 +174,7 @@ test('invalid argument counts include command usage and an example', async t => 
     { args: ['show'], usage: 'fetchary show <id>', example: 'fetchary show 1' },
     { args: ['history'], usage: 'fetchary history <id>', example: 'fetchary history 1' },
     { args: ['diff'], usage: 'fetchary diff <id> or fetchary diff <id> <version1> <version2>', example: 'fetchary diff 4 1 2' },
-    { args: ['open'], usage: 'fetchary open <id> [version]', example: 'fetchary open 1 2' },
+    { args: ['open'], usage: 'fetchary open <id> [version] [--html]', example: 'fetchary open 1 2 --html' },
     { args: ['edit'], usage: 'fetchary edit <id> [--url <url>] [--name <name>] [--tag <tag>] [--ignore-selector <css> ... | --clear-ignore-selectors]', example: 'fetchary edit 1 --ignore-selector "relative-time"' },
     { args: ['enable'], usage: 'fetchary enable <id>', example: 'fetchary enable 1' },
     { args: ['disable'], usage: 'fetchary disable <id>', example: 'fetchary disable 1' },

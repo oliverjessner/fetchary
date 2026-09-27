@@ -672,12 +672,14 @@ class Fetchary extends EventEmitter {
       SELECT
         (SELECT COUNT(*) FROM urls WHERE removed_at IS NULL) AS sources,
         (SELECT COUNT(*) FROM versions v JOIN urls u ON u.id = v.url_id WHERE u.removed_at IS NULL) AS versions,
+        (SELECT COALESCE(SUM(content_length), 0) FROM versions) AS fetch_bytes,
         (SELECT COUNT(*) FROM urls WHERE removed_at IS NULL AND last_changed_at >= ?) AS changed_today,
         (SELECT MAX(last_checked_at) FROM urls WHERE removed_at IS NULL) AS last_fetch
     `).get(new Date().toISOString().slice(0, 10));
     return {
       sources: Number(row.sources),
       versions: Number(row.versions),
+      fetchBytes: Number(row.fetch_bytes),
       changedToday: Number(row.changed_today),
       lastFetch: row.last_fetch,
       database: this.databasePath,

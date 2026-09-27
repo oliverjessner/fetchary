@@ -33,7 +33,7 @@ Commands:
   show <id>                   Show source details
   history <id>                List archived versions
   diff <id> [from] [to]       Compare archived versions
-  open <id> [version]         Open a local archived version
+  open <id> [version]         Open a local archived HTML file
   edit <id>                   Edit URL, name, tag, or ignore selectors
   enable <id>                 Enable a source
   disable <id>                Disable a source
@@ -58,11 +58,11 @@ Comparison options for add and edit:
   --ignore-selector <css>     Ignore matching elements (repeatable)
   --clear-ignore-selectors    Remove all ignored selectors when editing
 
-Diff options:
+Diff and open options:
   --element-content           Show content changes with their HTML elements
   --element-raw               Show raw changes grouped by HTML element
   --raw                       Compare exact archived HTML
-  --html                      Render the diff as HTML
+  --html                      Render a diff or open an archived HTML file
 `;
 
 const EXAMPLES = `Fetchary examples
@@ -97,7 +97,7 @@ const COMMAND_GUIDANCE = Object.freeze({
   show: { usage: 'fetchary show <id>', example: 'fetchary show 1' },
   history: { usage: 'fetchary history <id>', example: 'fetchary history 1' },
   diff: { usage: 'fetchary diff <id> or fetchary diff <id> <version1> <version2>', example: 'fetchary diff 4 1 2' },
-  open: { usage: 'fetchary open <id> [version]', example: 'fetchary open 1 2' },
+  open: { usage: 'fetchary open <id> [version] [--html]', example: 'fetchary open 1 2 --html' },
   edit: { usage: 'fetchary edit <id> [--url <url>] [--name <name>] [--tag <tag>] [--ignore-selector <css> ... | --clear-ignore-selectors]', example: 'fetchary edit 1 --ignore-selector "relative-time"' },
   enable: { usage: 'fetchary enable <id>', example: 'fetchary enable 1' },
   disable: { usage: 'fetchary disable <id>', example: 'fetchary disable 1' },
@@ -124,6 +124,17 @@ const ANSI = Object.freeze({
 
 function colorize(value, color, enabled) {
   return enabled ? `${ANSI[color]}${value}${ANSI.reset}` : value;
+}
+
+function terminalLink(value, url, enabled) {
+  return enabled ? `\x1b]8;;${url}\x1b\\${value}\x1b]8;;\x1b\\` : value;
+}
+
+function visibleLength(value) {
+  return String(value)
+    .replace(/\x1b\]8;;[^\x1b]*\x1b\\/g, '')
+    .replace(/\x1b\[[0-9;]*m/g, '')
+    .length;
 }
 
 function parseArgs(argv) {
@@ -191,7 +202,6 @@ function size(value) {
 
 function table(rows, columns) {
   if (!rows.length) return '';
-  const visibleLength = value => String(value).replace(/\x1b\[[0-9;]*m/g, '').length;
   const widths = columns.map(column => Math.max(column.label.length, ...rows.map(row => visibleLength(column.value(row)))));
   const render = (values) => values.map((value, index) => {
     const rendered = String(value);
@@ -238,6 +248,8 @@ async function openFile(file) {
 async function execute(fetchary, parsed, write, format = {}) {
   const { command, args, options } = parsed;
   const color = (value, name) => colorize(value, name, format.color);
+  const link = (value, url = value) => terminalLink(value, url, format.hyperlinks);
+  const open = format.openFile || openFile;
   const emit = value => { if (!options.quiet) write(value); };
   const emitValue = (value, human) => emit(options.json ? `${JSON.stringify(value, null, 2)}\n` : `${human}\n`);
 
@@ -261,7 +273,7 @@ async function execute(fetchary, parsed, write, format = {}) {
         { label: 'ID', value: row => row.id },
         { label: 'NAME', value: row => row.name || '-' },
         { label: 'TAG', value: row => row.tag || '-' },
-        { label: 'URL', value: row => row.url },
+        { label: 'URL', value: row => link(row.url) },
         { label: 'VERSION', value: row => row.currentVersionId ?? '-' },
         { label: 'LAST CHECK', value: row => relativeTime(row.lastCheckedAt) },
         { label: 'LAST CHANGE', value: row => relativeTime(row.lastChangedAt) },
@@ -292,13 +304,13 @@ async function execute(fetchary, parsed, write, format = {}) {
     case 'status': {
       requireArgs(args, command, 0);
       const status = await fetchary.status();
-      emitValue(status, `Fetchary 👁️\n\nSources:        ${color(String(status.sources), 'blue')}\nVersions:       ${color(String(status.versions), 'blue')}\nChanged today:  ${color(String(status.changedToday), status.changedToday ? 'yellow' : 'gray')}\nLast fetch:     ${color(relativeTime(status.lastFetch), 'gray')}\nDatabase:       ${color(status.database, 'cyan')}`);
+      emitValue(status, `Fetchary 👁️\n\nSources:        ${color(String(status.sources), 'blue')}\nVersions:       ${color(String(status.versions), 'blue')}\nFetch storage:  ${color(size(status.fetchBytes), 'blue')}\nChanged today:  ${color(String(status.changedToday), status.changedToday ? 'yellow' : 'gray')}\nLast fetch:     ${color(relativeTime(status.lastFetch), 'gray')}\nDatabase:       ${color(status.database, 'cyan')}`);
       return 0;
     }
     case 'show': {
       requireArgs(args, command, 1);
       const source = await fetchary.get(args[0]);
-      emitValue(source, `ID:               ${color(String(source.id), 'blue')}\nName:             ${source.name || '-'}\nTag:              ${color(source.tag || '-', 'blue')}\nURL:              ${color(source.url, 'cyan')}\nEnabled:          ${color(source.enabled ? 'yes' : 'no', source.enabled ? 'green' : 'yellow')}\nIgnore selectors: ${source.ignoreSelectors.length ? source.ignoreSelectors.join(', ') : '-'}\nCreated:          ${color(localDate(source.createdAt), 'gray')}\nLast checked:     ${color(localDate(source.lastCheckedAt), 'gray')}\nLast changed:     ${color(localDate(source.lastChangedAt), 'gray')}\nVersions:         ${color(String(source.versions), 'blue')}\nCurrent hash:     ${color(source.currentHash || '-', 'gray')}`);
+      emitValue(source, `ID:               ${color(String(source.id), 'blue')}\nName:             ${source.name || '-'}\nTag:              ${color(source.tag || '-', 'blue')}\nURL:              ${link(color(source.url, 'cyan'), source.url)}\nEnabled:          ${color(source.enabled ? 'yes' : 'no', source.enabled ? 'green' : 'yellow')}\nIgnore selectors: ${source.ignoreSelectors.length ? source.ignoreSelectors.join(', ') : '-'}\nCreated:          ${color(localDate(source.createdAt), 'gray')}\nLast checked:     ${color(localDate(source.lastCheckedAt), 'gray')}\nLast changed:     ${color(localDate(source.lastChangedAt), 'gray')}\nVersions:         ${color(String(source.versions), 'blue')}\nCurrent hash:     ${color(source.currentHash || '-', 'gray')}`);
       return 0;
     }
     case 'history': {
@@ -342,7 +354,7 @@ async function execute(fetchary, parsed, write, format = {}) {
     case 'open': {
       requireArgs(args, command, 1, 2);
       const archived = await fetchary.version(args[0], args[1]);
-      await openFile(archived.file);
+      await open(archived.file);
       emitValue(archived, `${color('✓ Opened', 'green')} ${color(archived.file, 'cyan')}`);
       return 0;
     }
@@ -439,6 +451,9 @@ async function main(argv = process.argv.slice(2), io = {}) {
   const stderrColorSupport = io.color ?? Boolean(stderr.isTTY
     && !Object.hasOwn(process.env, 'NO_COLOR')
     && process.env.TERM !== 'dumb');
+  const stdoutHyperlinkSupport = io.hyperlinks ?? Boolean(stdout.isTTY
+    && !Object.hasOwn(process.env, 'NO_COLOR')
+    && process.env.TERM !== 'dumb');
   let color = Boolean(stdoutColorSupport && !argv.includes('--no-color'));
   let errorColor = Boolean(stderrColorSupport && !argv.includes('--no-color'));
   let parsed;
@@ -469,7 +484,8 @@ async function main(argv = process.argv.slice(2), io = {}) {
   try {
     fetchary = await createFetchary({ dataDir: parsed.options['data-dir'] || process.env.FETCHARY_DATA_DIR });
     if (parsed.options.verbose && !parsed.options.quiet) stderr.write(`${colorize('Using', 'gray', errorColor)} ${colorize(fetchary.dataDir, 'cyan', errorColor)}\n`);
-    return await execute(fetchary, parsed, value => stdout.write(value), { color });
+    const hyperlinks = Boolean(stdoutHyperlinkSupport && !parsed.options['no-color']);
+    return await execute(fetchary, parsed, value => stdout.write(value), { color, hyperlinks, openFile: io.openFile });
   } catch (error) {
     const json = parsed.options.json;
     const payload = { error: error.name, message: error.message };
