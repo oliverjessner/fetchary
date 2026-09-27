@@ -60,6 +60,7 @@ async function main() {
     }
 
     if (!options.skipBrew) {
+      await waitForPublishedTarball(packageJson.version, sha256);
       await fsp.mkdir(path.dirname(formulaPath), { recursive: true });
       await fsp.writeFile(formulaPath, formula);
       process.stdout.write(`\nWrote ${formulaPath}\n`);
@@ -182,6 +183,34 @@ async function sha256File(filePath) {
   const stream = fs.createReadStream(filePath);
   for await (const chunk of stream) hash.update(chunk);
   return hash.digest('hex');
+}
+
+async function waitForPublishedTarball(version, expectedSha256, options = {}) {
+  const attempts = options.attempts ?? 30;
+  const delayMs = options.delayMs ?? 2_000;
+  const url = `https://registry.npmjs.org/fetchary/-/fetchary-${version}.tgz`;
+
+  process.stdout.write(`\n==> Wait for npm tarball\n${url}\n`);
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      const response = await fetch(url, { cache: 'no-store' });
+      if (response.ok) {
+        const contents = Buffer.from(await response.arrayBuffer());
+        const actualSha256 = crypto.createHash('sha256').update(contents).digest('hex');
+        if (actualSha256 !== expectedSha256) {
+          throw new Error(`tarball SHA256 is ${actualSha256}, expected ${expectedSha256}`);
+        }
+        process.stdout.write(`npm tarball is available (attempt ${attempt}).\n`);
+        return;
+      }
+      process.stdout.write(`Attempt ${attempt}/${attempts}: HTTP ${response.status}; retrying.\n`);
+    } catch (error) {
+      process.stdout.write(`Attempt ${attempt}/${attempts}: ${error.message}; retrying.\n`);
+    }
+    if (attempt < attempts) await new Promise(resolve => setTimeout(resolve, delayMs));
+  }
+
+  throw new Error(`npm tarball did not become available with the expected SHA256 after ${attempts} attempts.`);
 }
 
 function renderFormula(version, sha256) {
