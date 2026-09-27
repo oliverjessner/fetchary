@@ -151,6 +151,24 @@ Export the evidence:
 fetchary export 1 --output ./research
 ```
 
+## CLI preview
+
+### Show source details
+
+![fetchary show command displaying source details and configured ignore selectors](assets/images/show.webp)
+
+### Fetch monitored sources
+
+![fetchary fetch command distinguishing content changes, raw-only changes, and unchanged sources](assets/images/fetch.webp)
+
+### Inspect version history
+
+![fetchary history command displaying initial, content, and raw-only versions](assets/images/history.webp)
+
+### Compare and list versions
+
+![fetchary diff and list commands displaying a text diff and monitored sources](assets/images/diff.webp)
+
 ## Monitoring
 
 Sources can be checked manually or on a persistent schedule.
