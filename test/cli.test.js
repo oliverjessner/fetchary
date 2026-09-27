@@ -15,6 +15,7 @@ async function runCli(args, options = {}) {
     color: options.color,
     hyperlinks: options.hyperlinks,
     openFile: options.openFile,
+    openEditor: options.openEditor,
     stdout: { isTTY: options.isTTY, write: chunk => { stdout += chunk; } },
     stderr: { write: chunk => { stderr += chunk; } },
   });
@@ -54,8 +55,13 @@ test('CLI wraps add/list/fetch/show/history/diff and uses documented exit codes'
   const plainShow = await runCli(['show', '1', '--no-color', ...base], { hyperlinks: true, isTTY: true });
   assert.equal(plainShow.stdout.includes('\x1b'), false);
   let openedFile;
-  const opened = await runCli(['open', '1', '1', '--html', ...base], { openFile: async file => { openedFile = file; } });
+  let openedInEditor = false;
+  const opened = await runCli(['open', '1', '1', '--html', ...base], {
+    openFile: async () => { throw new Error('default opener should not be used with --html'); },
+    openEditor: async file => { openedFile = file; openedInEditor = true; },
+  });
   assert.equal(opened.code, 0, opened.stderr);
+  assert.equal(openedInEditor, true);
   assert.equal(openedFile, path.join(dataDir, 'pages', '1', '1', 'response.html'));
   assert.match(opened.stdout, /response\.html/);
   const edited = await runCli(['edit', '1', '--name', 'Edited page', '--json', ...base]);

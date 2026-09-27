@@ -368,9 +368,10 @@ Open a specific version:
 fetchary open 12 4 --html
 ```
 
-`--html` explicitly selects the archived HTML file. Fetchary opens the local
-`response.html` in the default application and does not request the live website
-again. The option may be omitted for backward compatibility.
+Without `--html`, fetchary opens the archived page in the system's default
+application. With `--html`, it opens the local `response.html` in the standard
+editor. Fetchary uses `$VISUAL`, then `$EDITOR`, followed by the platform editor
+fallback. Neither variant requests the live website again.
 
 ---
 

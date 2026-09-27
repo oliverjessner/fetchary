@@ -62,7 +62,7 @@ Diff and open options:
   --element-content           Show content changes with their HTML elements
   --element-raw               Show raw changes grouped by HTML element
   --raw                       Compare exact archived HTML
-  --html                      Render a diff or open an archived HTML file
+  --html                      Render a diff or open archived HTML in an editor
 `;
 
 const EXAMPLES = `Fetchary examples
@@ -245,11 +245,44 @@ async function openFile(file) {
   });
 }
 
+function editorCommand(value) {
+  return value.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g)?.map(part => {
+    const quoted = (part.startsWith('"') && part.endsWith('"')) || (part.startsWith("'") && part.endsWith("'"));
+    return quoted ? part.slice(1, -1) : part;
+  }) || [];
+}
+
+async function openEditor(file) {
+  const configured = process.env.VISUAL || process.env.EDITOR;
+  if (configured) {
+    const [command, ...editorArgs] = editorCommand(configured);
+    if (!command) throw new Error('VISUAL or EDITOR does not contain an editor command');
+    await new Promise((resolve, reject) => {
+      const child = spawn(command, [...editorArgs, file], { stdio: 'inherit' });
+      child.once('error', reject);
+      child.once('exit', code => code === 0 ? resolve() : reject(new Error(`editor exited with code ${code}`)));
+    });
+    return;
+  }
+
+  const command = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'notepad.exe' : 'sensible-editor';
+  const args = process.platform === 'darwin' ? ['-t', file] : [file];
+  await new Promise((resolve, reject) => {
+    const child = spawn(command, args, { detached: true, stdio: 'ignore' });
+    child.once('error', reject);
+    child.once('spawn', () => {
+      child.unref();
+      resolve();
+    });
+  });
+}
+
 async function execute(fetchary, parsed, write, format = {}) {
   const { command, args, options } = parsed;
   const color = (value, name) => colorize(value, name, format.color);
   const link = (value, url = value) => terminalLink(value, url, format.hyperlinks);
   const open = format.openFile || openFile;
+  const edit = format.openEditor || openEditor;
   const emit = value => { if (!options.quiet) write(value); };
   const emitValue = (value, human) => emit(options.json ? `${JSON.stringify(value, null, 2)}\n` : `${human}\n`);
 
@@ -354,7 +387,7 @@ async function execute(fetchary, parsed, write, format = {}) {
     case 'open': {
       requireArgs(args, command, 1, 2);
       const archived = await fetchary.version(args[0], args[1]);
-      await open(archived.file);
+      await (options.html ? edit(archived.file) : open(archived.file));
       emitValue(archived, `${color('✓ Opened', 'green')} ${color(archived.file, 'cyan')}`);
       return 0;
     }
@@ -485,7 +518,12 @@ async function main(argv = process.argv.slice(2), io = {}) {
     fetchary = await createFetchary({ dataDir: parsed.options['data-dir'] || process.env.FETCHARY_DATA_DIR });
     if (parsed.options.verbose && !parsed.options.quiet) stderr.write(`${colorize('Using', 'gray', errorColor)} ${colorize(fetchary.dataDir, 'cyan', errorColor)}\n`);
     const hyperlinks = Boolean(stdoutHyperlinkSupport && !parsed.options['no-color']);
-    return await execute(fetchary, parsed, value => stdout.write(value), { color, hyperlinks, openFile: io.openFile });
+    return await execute(fetchary, parsed, value => stdout.write(value), {
+      color,
+      hyperlinks,
+      openFile: io.openFile,
+      openEditor: io.openEditor,
+    });
   } catch (error) {
     const json = parsed.options.json;
     const payload = { error: error.name, message: error.message };
