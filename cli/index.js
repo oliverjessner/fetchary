@@ -57,6 +57,12 @@ Global options:
 Comparison options for add and edit:
   --ignore-selector <css>     Ignore matching elements (repeatable)
   --clear-ignore-selectors    Remove all ignored selectors when editing
+
+Diff options:
+  --element-content           Show content changes with their HTML elements
+  --element-raw               Show raw changes grouped by HTML element
+  --raw                       Compare exact archived HTML
+  --html                      Render the diff as HTML
 `;
 
 const EXAMPLES = `Fetchary examples
@@ -105,7 +111,7 @@ const COMMAND_GUIDANCE = Object.freeze({
 
 const VALUE_OPTIONS = new Set(['name', 'tag', 'url', 'output', 'data-dir', 'poll-interval', 'every']);
 const REPEATABLE_VALUE_OPTIONS = new Set(['ignore-selector']);
-const FLAG_OPTIONS = new Set(['json', 'quiet', 'verbose', 'no-color', 'help', 'example', 'version', 'purge', 'raw', 'html', 'now', 'clear-ignore-selectors']);
+const FLAG_OPTIONS = new Set(['json', 'quiet', 'verbose', 'no-color', 'help', 'example', 'version', 'purge', 'raw', 'element-content', 'element-raw', 'html', 'now', 'clear-ignore-selectors']);
 const ANSI = Object.freeze({
   red: '\x1b[31m',
   green: '\x1b[32m',
@@ -315,9 +321,11 @@ async function execute(fetchary, parsed, write, format = {}) {
       if (args.length !== 1 && args.length !== 3) {
         throw usageError(command, args.length === 2 ? 'diff requires both from and to versions' : 'invalid number of arguments');
       }
+      const diffModes = ['raw', 'element-content', 'element-raw'].filter(option => options[option]);
+      if (diffModes.length > 1) throw usageError(command, `--${diffModes.join(' and --')} cannot be used together`);
       const result = await fetchary.diff(args[0], {
         ...(args.length === 3 ? { from: args[1], to: args[2] } : {}),
-        mode: options.raw ? 'raw' : 'text',
+        mode: options.raw ? 'raw' : options['element-content'] ? 'element-content' : options['element-raw'] ? 'element-raw' : 'text',
       });
       if (options.html && !options.json) {
         const lines = result.diff.map(part => `<div class="${part.type}">${part.type === 'added' ? '+' : '-'} ${htmlEscape(part.value)}</div>`).join('\n');

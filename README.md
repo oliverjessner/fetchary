@@ -143,6 +143,8 @@ Compare two versions:
 
 ```bash
 fetchary diff 1
+fetchary diff 1 --element-content
+fetchary diff 1 --element-raw
 ```
 
 Export the evidence:
@@ -201,7 +203,7 @@ fetchary fetch [id...]
 fetchary status
 fetchary show <id>
 fetchary history <id> [--json]
-fetchary diff <id> [from to] [--raw|--html]
+fetchary diff <id> [from to] [--element-content|--element-raw|--raw] [--html]
 fetchary open <id> [version]
 fetchary edit <id> [--url <url>] [--name <name>] [--tag <tag>] [--ignore-selector <css> ... | --clear-ignore-selectors]
 fetchary enable <id>
@@ -377,6 +379,14 @@ Read and compare archived versions without contacting the live website:
 const html = await fetchary.read(12, 4);
 
 const latestTextDiff = await fetchary.diff(12);
+
+const latestElementContentDiff = await fetchary.diff(12, {
+    mode: 'element-content',
+});
+
+const latestElementRawDiff = await fetchary.diff(12, {
+    mode: 'element-raw',
+});
 
 const rawDiff = await fetchary.diff(12, {
     from: 3,

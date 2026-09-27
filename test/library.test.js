@@ -82,6 +82,10 @@ test('archives exact response bytes and distinguishes raw from visible content c
   assert.equal(diff.to, 2);
   assert.equal(diff.changed, true);
   assert.deepEqual(diff.diff.map(item => item.type), ['removed', 'added']);
+  const elementContentDiff = await fetchary.diff(source.id, { mode: 'element-content' });
+  assert.deepEqual(elementContentDiff.diff.map(item => item.value), ['<h1>ä</h1>', '<h1>changed</h1>']);
+  const elementRawDiff = await fetchary.diff(source.id, { mode: 'element-raw' });
+  assert.deepEqual(elementRawDiff.diff.map(item => item.value), ['<h1>ä</h1>', '<h1>changed</h1>']);
   const lastContentChange = (await fetchary.get(source.id)).lastChangedAt;
 
   body = Buffer.from('<h1>changed</h1><script nonce="dynamic">ignored</script>\n');

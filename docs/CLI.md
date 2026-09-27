@@ -317,12 +317,17 @@ Optional output modes:
 
 ```bash
 fetchary diff 12 --html
+fetchary diff 12 --element-content
+fetchary diff 12 --element-raw
 fetchary diff 12 --raw
 ```
 
 The default text diff removes elements matching the source's current ignore
-selectors before applying normal text extraction. `--raw` compares the exact
-archived HTML and never applies selectors.
+selectors before applying normal text extraction. `--element-content` shows
+each changed text fragment together with its nearest useful HTML element and
+also applies ignore selectors. `--element-raw` groups raw changes by HTML
+element, includes tag and attribute changes, and does not apply ignore
+selectors. `--raw` compares the exact archived HTML and never applies selectors.
 
 `--html` may generate or open a rendered HTML diff.
 

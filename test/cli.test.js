@@ -78,6 +78,16 @@ test('CLI wraps add/list/fetch/show/history/diff and uses documented exit codes'
   assert.match(coloredDiff.stdout, /\x1b\[34m\+ second\x1b\[0m/);
   const plainDiff = await runCli(['diff', '1', '--no-color', ...base], { color: true, isTTY: true });
   assert.equal(plainDiff.stdout, '- first\n+ second\n');
+  const elementContentDiff = await runCli(['diff', '1', '--element-content', ...base]);
+  assert.equal(elementContentDiff.stdout, '- <h1>first</h1>\n+ <h1>second</h1>\n');
+  assert.equal(JSON.parse((await runCli(['diff', '1', '--element-content', '--json', ...base])).stdout).mode, 'element-content');
+  const elementRawDiff = await runCli(['diff', '1', '--element-raw', ...base]);
+  assert.equal(elementRawDiff.stdout, '- <h1>first</h1>\n+ <h1>second</h1>\n');
+  assert.equal(JSON.parse((await runCli(['diff', '1', '--element-raw', '--json', ...base])).stdout).mode, 'element-raw');
+
+  const conflictingDiff = await runCli(['diff', '1', '--element-content', '--element-raw', ...base]);
+  assert.equal(conflictingDiff.code, 2);
+  assert.match(conflictingDiff.stderr, /--element-content and --element-raw cannot be used together/);
 
   const disabled = await runCli(['disable', '1', '--json', ...base]);
   assert.equal(JSON.parse(disabled.stdout).enabled, false);
@@ -224,6 +234,10 @@ test('CLI configures repeatable ignore selectors and applies current rules every
   const history = await runCli(['history', '1', '--json', ...base]);
   assert.equal(JSON.parse(history.stdout)[0].change, 'raw only');
   assert.equal((await runCli(['diff', '1', ...base])).stdout, 'No differences.\n');
+  assert.equal((await runCli(['diff', '1', '--element-content', ...base])).stdout, 'No differences.\n');
+  const rawElementDiff = await runCli(['diff', '1', '--element-raw', ...base]);
+  assert.match(rawElementDiff.stdout, /<relative-time>09:41<\/relative-time>/);
+  assert.match(rawElementDiff.stdout, /<relative-time>09:43<\/relative-time>/);
   const rawDiff = await runCli(['diff', '1', '--raw', ...base]);
   assert.match(rawDiff.stdout, /09:41/);
   assert.match(rawDiff.stdout, /09:43/);

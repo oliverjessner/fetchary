@@ -7,7 +7,7 @@ const path = require('node:path');
 const { EventEmitter } = require('node:events');
 const { openDatabase, transaction } = require('./storage/database');
 const { parseInterval } = require('./intervals');
-const { comparisonText, comparisonHash, validateIgnoreSelector, lineDiff } = require('./diff');
+const { comparisonText, comparisonHash, validateIgnoreSelector, lineDiff, elementDiff } = require('./diff');
 const { acquireLock, releaseLock } = require('./scheduler');
 const {
   FetcharyError,
@@ -456,7 +456,9 @@ class Fetchary extends EventEmitter {
     const id = validateId(sourceId);
     const source = this._requireSource(id, true);
     const mode = options.mode ?? 'text';
-    if (!['text', 'raw'].includes(mode)) throw new FetcharyValidationError('diff mode must be "text" or "raw"');
+    if (!['text', 'element-content', 'element-raw', 'raw'].includes(mode)) {
+      throw new FetcharyValidationError('diff mode must be "text", "element-content", "element-raw", or "raw"');
+    }
     let from = options.from;
     let to = options.to;
     if (from == null || to == null) {
@@ -466,9 +468,16 @@ class Fetchary extends EventEmitter {
       from ??= latest[1].id;
     }
     const [beforeHtml, afterHtml] = await Promise.all([this.read(id, from), this.read(id, to)]);
-    const before = mode === 'raw' ? beforeHtml : comparisonText(beforeHtml, { ignoreSelectors: source.ignoreSelectors });
-    const after = mode === 'raw' ? afterHtml : comparisonText(afterHtml, { ignoreSelectors: source.ignoreSelectors });
-    const changes = lineDiff(before, after);
+    let changes;
+    if (mode === 'element-content') {
+      changes = elementDiff(beforeHtml, afterHtml, { mode: 'content', ignoreSelectors: source.ignoreSelectors });
+    } else if (mode === 'element-raw') {
+      changes = elementDiff(beforeHtml, afterHtml, { mode: 'raw' });
+    } else {
+      const before = mode === 'raw' ? beforeHtml : comparisonText(beforeHtml, { ignoreSelectors: source.ignoreSelectors });
+      const after = mode === 'raw' ? afterHtml : comparisonText(afterHtml, { ignoreSelectors: source.ignoreSelectors });
+      changes = lineDiff(before, after);
+    }
     return { sourceId: id, from: Number(from), to: Number(to), mode, changed: changes.length > 0, diff: changes };
   }
 

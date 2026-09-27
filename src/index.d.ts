@@ -78,7 +78,7 @@ export type DiffResult = {
   sourceId: number;
   from: number;
   to: number;
-  mode: 'text' | 'raw';
+  mode: 'text' | 'element-content' | 'element-raw' | 'raw';
   changed: boolean;
   diff: Array<{ type: 'added' | 'removed'; value: string }>;
 };
@@ -97,7 +97,7 @@ export declare class Fetchary extends EventEmitter {
   history(id: number, options?: { limit?: number; offset?: number }): Promise<Version[]>;
   version(sourceId: number, versionId?: number): Promise<Version>;
   read(sourceId: number, versionId?: number): Promise<string>;
-  diff(sourceId: number, options?: { from?: number; to?: number; mode?: 'text' | 'raw' }): Promise<DiffResult>;
+  diff(sourceId: number, options?: { from?: number; to?: number; mode?: 'text' | 'element-content' | 'element-raw' | 'raw' }): Promise<DiffResult>;
   edit(id: number, changes: { url?: string; name?: string | null; tag?: string | null; ignoreSelectors?: string[] }): Promise<Source>;
   enable(id: number): Promise<Source>;
   disable(id: number): Promise<Source>;

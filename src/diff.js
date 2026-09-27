@@ -47,6 +47,54 @@ function comparisonText(html, options = {}) {
   return htmlToText(comparisonHtml(html, { ignoreSelectors }));
 }
 
+function comparisonElementRecords(html, options = {}) {
+  const mode = options.mode ?? 'content';
+  const { document } = parseHTML(String(html));
+  if (mode === 'content') {
+    for (const selector of options.ignoreSelectors || []) {
+      for (const node of document.querySelectorAll(selector)) node.remove();
+    }
+  }
+
+  const elements = [];
+  const collect = element => {
+    if (mode === 'content' && ['SCRIPT', 'STYLE'].includes(element.tagName)) return;
+    const hasDirectText = [...element.childNodes].some(node => node.nodeType === 3 && /\S/.test(node.textContent));
+    const value = element.outerHTML.replace(/\r\n?/g, '\n').replace(/\s*\n\s*/g, ' ');
+
+    if (mode === 'raw') {
+      if (element.children.length && !hasDirectText) {
+        const openingTag = value.match(/^<[^>]+>/)?.[0] || `<${element.localName}>`;
+        elements.push({ key: `${openingTag}</${element.localName}>`, value });
+        for (const child of element.children) collect(child);
+      } else {
+        elements.push({ key: value, value });
+      }
+      return;
+    }
+
+    const start = elements.length;
+    if (!hasDirectText) {
+      for (const child of element.children) collect(child);
+    }
+    if (hasDirectText || (elements.length === start && comparisonText(element.outerHTML))) {
+      elements.push({ key: comparisonText(element.outerHTML), value });
+    }
+  };
+
+  const roots = document.documentElement?.tagName === 'HTML' ? document.body.children : document.children;
+  for (const element of roots) {
+    if (element.tagName === 'HTML') {
+      for (const child of element.querySelectorAll('body > *')) collect(child);
+    } else {
+      collect(element);
+    }
+  }
+  if (elements.length) return elements;
+  const value = mode === 'raw' ? String(html) : comparisonText(document.toString());
+  return value ? [{ key: value, value }] : [];
+}
+
 function comparisonHash(html, options = {}) {
   return crypto.createHash('sha256').update(comparisonText(html, options)).digest('hex');
 }
@@ -60,17 +108,17 @@ function lines(value) {
   return String(value).replace(/\r\n?/g, '\n').split('\n');
 }
 
-// Line-based LCS. For exceptionally large inputs a prefix/suffix fallback keeps
+// LCS diff. For exceptionally large inputs a prefix/suffix fallback keeps
 // memory bounded while preserving a useful, deterministic result.
-function lineDiff(before, after) {
-  const left = lines(before);
-  const right = lines(after);
+function sequenceDiff(left, right, key = value => value) {
+  const leftKeys = left.map(key);
+  const rightKeys = right.map(key);
   if (left.length * right.length > 4_000_000) {
     let start = 0;
-    while (start < left.length && start < right.length && left[start] === right[start]) start++;
+    while (start < left.length && start < right.length && leftKeys[start] === rightKeys[start]) start++;
     let leftEnd = left.length - 1;
     let rightEnd = right.length - 1;
-    while (leftEnd >= start && rightEnd >= start && left[leftEnd] === right[rightEnd]) {
+    while (leftEnd >= start && rightEnd >= start && leftKeys[leftEnd] === rightKeys[rightEnd]) {
       leftEnd--;
       rightEnd--;
     }
@@ -85,7 +133,7 @@ function lineDiff(before, after) {
   for (let i = left.length - 1; i >= 0; i--) {
     for (let j = right.length - 1; j >= 0; j--) {
       const offset = i * width + j;
-      table[offset] = left[i] === right[j]
+      table[offset] = leftKeys[i] === rightKeys[j]
         ? table[(i + 1) * width + j + 1] + 1
         : Math.max(table[(i + 1) * width + j], table[offset + 1]);
     }
@@ -95,7 +143,7 @@ function lineDiff(before, after) {
   let i = 0;
   let j = 0;
   while (i < left.length || j < right.length) {
-    if (i < left.length && j < right.length && left[i] === right[j]) {
+    if (i < left.length && j < right.length && leftKeys[i] === rightKeys[j]) {
       i++;
       j++;
     } else if (j >= right.length || (i < left.length && table[(i + 1) * width + j] >= table[i * width + j + 1])) {
@@ -107,6 +155,17 @@ function lineDiff(before, after) {
   return result;
 }
 
+function lineDiff(before, after) {
+  return sequenceDiff(lines(before), lines(after));
+}
+
+function elementDiff(before, after, options = {}) {
+  const left = comparisonElementRecords(before, options);
+  const right = comparisonElementRecords(after, options);
+  return sequenceDiff(left, right, element => element.key)
+    .map(part => ({ type: part.type, value: part.value.value }));
+}
+
 module.exports = {
   htmlToText,
   textHash,
@@ -115,4 +174,5 @@ module.exports = {
   comparisonText,
   comparisonHash,
   lineDiff,
+  elementDiff,
 };
