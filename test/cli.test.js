@@ -64,6 +64,13 @@ test('CLI wraps add/list/fetch/show/history/diff and uses documented exit codes'
   assert.equal(openedInEditor, true);
   assert.equal(openedFile, path.join(dataDir, 'pages', '1', '1', 'response.html'));
   assert.match(opened.stdout, /response\.html/);
+  let openedInBrowser;
+  const openedNormally = await runCli(['open', '1', '1', ...base], {
+    openFile: async file => { openedInBrowser = file; },
+    openEditor: async () => { throw new Error('editor should only be used with --html'); },
+  });
+  assert.equal(openedNormally.code, 0, openedNormally.stderr);
+  assert.equal(openedInBrowser, path.join(dataDir, 'pages', '1', '1', 'response.html'));
   const edited = await runCli(['edit', '1', '--name', 'Edited page', '--json', ...base]);
   assert.equal(JSON.parse(edited.stdout).name, 'Edited page');
 

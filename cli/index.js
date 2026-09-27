@@ -3,6 +3,7 @@
 
 const path = require('node:path');
 const fs = require('node:fs');
+const os = require('node:os');
 const { spawn } = require('node:child_process');
 const pkg = require('../package.json');
 const { comparisonHash } = require('../src/diff');
@@ -232,9 +233,7 @@ function htmlEscape(value) {
   return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
 }
 
-async function openFile(file) {
-  const command = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'cmd' : 'xdg-open';
-  const args = process.platform === 'win32' ? ['/c', 'start', '', file] : [file];
+async function launchDetached(command, args) {
   await new Promise((resolve, reject) => {
     const child = spawn(command, args, { detached: true, stdio: 'ignore' });
     child.once('error', reject);
@@ -245,11 +244,70 @@ async function openFile(file) {
   });
 }
 
+async function runCommand(command, args, stdio = 'ignore') {
+  await new Promise((resolve, reject) => {
+    const child = spawn(command, args, { stdio });
+    child.once('error', reject);
+    child.once('exit', code => code === 0 ? resolve() : reject(new Error(`${command} exited with code ${code}`)));
+  });
+}
+
+async function commandOutput(command, args) {
+  return await new Promise((resolve, reject) => {
+    const child = spawn(command, args, { stdio: ['ignore', 'pipe', 'ignore'] });
+    let output = '';
+    child.stdout.setEncoding('utf8');
+    child.stdout.on('data', chunk => { output += chunk; });
+    child.once('error', reject);
+    child.once('exit', code => code === 0 ? resolve(output) : reject(new Error(`${command} exited with code ${code}`)));
+  });
+}
+
+async function macLaunchHandlers() {
+  const plist = path.join(os.homedir(), 'Library', 'Preferences', 'com.apple.LaunchServices', 'com.apple.launchservices.secure.plist');
+  const value = JSON.parse(await commandOutput('plutil', ['-convert', 'json', '-o', '-', plist]));
+  return value.LSHandlers || [];
+}
+
+function macHandler(handlers, { contentType, scheme }) {
+  const entry = handlers.find(handler => (contentType && handler.LSHandlerContentType === contentType)
+    || (scheme && handler.LSHandlerURLScheme === scheme));
+  return entry?.LSHandlerRoleAll;
+}
+
+async function openFile(file) {
+  if (process.platform === 'darwin') {
+    let browser = 'com.apple.Safari';
+    try {
+      const handlers = await macLaunchHandlers();
+      browser = macHandler(handlers, { contentType: 'com.apple.default-app.web-browser' })
+        || macHandler(handlers, { scheme: 'https' })
+        || browser;
+    } catch {}
+    await launchDetached('open', ['-b', browser, file]);
+    return;
+  }
+  const command = process.platform === 'win32' ? 'cmd' : 'xdg-open';
+  const args = process.platform === 'win32' ? ['/c', 'start', '', file] : [file];
+  await launchDetached(command, args);
+}
+
 function editorCommand(value) {
   return value.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g)?.map(part => {
     const quoted = (part.startsWith('"') && part.endsWith('"')) || (part.startsWith("'") && part.endsWith("'"));
     return quoted ? part.slice(1, -1) : part;
   }) || [];
+}
+
+async function openInVSCode(file) {
+  const candidates = [
+    '/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code',
+    path.join(os.homedir(), 'Applications', 'Visual Studio Code.app', 'Contents', 'Resources', 'app', 'bin', 'code'),
+  ];
+  const command = candidates.find(candidate => fs.existsSync(candidate));
+  if (!command) return false;
+  await runCommand(command, ['--reuse-window', file]);
+  return true;
 }
 
 async function openEditor(file) {
@@ -265,16 +323,25 @@ async function openEditor(file) {
     return;
   }
 
-  const command = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'notepad.exe' : 'sensible-editor';
-  const args = process.platform === 'darwin' ? ['-t', file] : [file];
-  await new Promise((resolve, reject) => {
-    const child = spawn(command, args, { detached: true, stdio: 'ignore' });
-    child.once('error', reject);
-    child.once('spawn', () => {
-      child.unref();
-      resolve();
-    });
-  });
+  if (process.platform === 'darwin') {
+    try {
+      const handlers = await macLaunchHandlers();
+      const browser = macHandler(handlers, { contentType: 'com.apple.default-app.web-browser' })
+        || macHandler(handlers, { scheme: 'https' });
+      const editor = macHandler(handlers, { contentType: 'public.html' });
+      if (editor && editor !== browser) {
+        if (editor.toLowerCase() === 'com.microsoft.vscode' && await openInVSCode(file)) return;
+        await launchDetached('open', ['-b', editor, file]);
+        return;
+      }
+    } catch {}
+    if (await openInVSCode(file)) return;
+    await launchDetached('open', ['-a', 'TextEdit', file]);
+    return;
+  }
+
+  const command = process.platform === 'win32' ? 'notepad.exe' : 'sensible-editor';
+  await launchDetached(command, [file]);
 }
 
 async function execute(fetchary, parsed, write, format = {}) {

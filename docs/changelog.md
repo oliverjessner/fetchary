@@ -10,7 +10,7 @@
 - per-source CSS ignore selectors for comparison and text diffs
 - repeatable `--ignore-selector` support for `add` and `edit`
 - `--clear-ignore-selectors` support for `edit`
-- exact raw archives, evidence hashes, and raw diffs remain unfiltered
+- exact raw archives, evidence hashegs, and raw diffs remain unfiltered
 - flag --example for examples
 - fetchary list shows VERSION
 - fetchary history shows STATUS
