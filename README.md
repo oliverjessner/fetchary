@@ -1,5 +1,9 @@
 # Fetchary
 
+<p align="center">
+  <img src="assets/images/logo/logo_raw_trans_250.webp" alt="Fetchary logo" width="250">
+</p>
+
 > **A local-first evidence layer for the public web.**
 
 Fetchary monitors public web resources and preserves exactly what the server returned.
