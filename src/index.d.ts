@@ -15,6 +15,8 @@ export type FetcharyOptions = {
   hooks?: FetcharyHooks;
 };
 
+export type CaptureMode = 'browser' | 'http';
+
 export type Schedule = {
   sourceId: number;
   enabled: boolean;
@@ -34,8 +36,13 @@ export type Source = {
   lastCheckedAt: string | null;
   lastChangedAt: string | null;
   currentHash: string | null;
+  currentRawHash: string | null;
+  currentRenderedHash: string | null;
+  currentComparisonHash: string | null;
   currentVersionId: number | null;
   ignoreSelectors: string[];
+  captureMode: CaptureMode;
+  waitAfterLoadMs: number;
   versions: number;
   schedule: Omit<Schedule, 'sourceId'> | null;
 };
@@ -50,9 +57,18 @@ export type Version = {
   contentType: string | null;
   contentLength: number;
   hash: string;
+  rawHash: string;
+  renderedHash: string | null;
+  comparisonHash: string | null;
   etag: string | null;
   lastModified: string | null;
   file: string;
+  rawFile: string;
+  renderedFile: string | null;
+  renderedLength: number | null;
+  captureMode: CaptureMode;
+  renderedCapturedAt: string | null;
+  browserFinalUrl: string | null;
 };
 
 export type FetchResult = {
@@ -63,15 +79,24 @@ export type FetchResult = {
   changed: boolean;
   /** Whether the exact response bytes changed and a new version was archived. */
   rawChanged: boolean;
+  /** Whether the exact rendered browser DOM changed. */
+  renderedChanged: boolean;
   /** Whether the visible text content changed. */
   contentChanged: boolean;
   previousHash?: string;
   hash: string;
+  rawHash: string;
+  renderedHash: string | null;
   contentHash: string;
+  comparisonHash: string;
+  captureMode: CaptureMode;
   version: number;
   fetchedAt: string;
   status: number;
   contentLength: number;
+  renderedLength: number | null;
+  finalUrl: string;
+  browserFinalUrl: string | null;
 };
 
 export type DiffResult = {
@@ -88,7 +113,7 @@ export type FetcharyRunner = { stop(): Promise<void> };
 export declare class Fetchary extends EventEmitter {
   readonly dataDir: string;
   readonly databasePath: string;
-  add(url: string, options?: { name?: string; tag?: string; every?: string; ignoreSelectors?: string[] }): Promise<Source & { version: number; changed: boolean; rawChanged: boolean; contentChanged: boolean }>;
+  add(url: string, options?: { name?: string; tag?: string; every?: string; ignoreSelectors?: string[]; mode?: CaptureMode; captureMode?: CaptureMode; waitAfterLoad?: string | number; waitAfterLoadMs?: string | number }): Promise<Source & { version: number; changed: boolean; rawChanged: boolean; renderedChanged: boolean; contentChanged: boolean }>;
   list(options?: { tag?: string }): Promise<Source[]>;
   get(id: number): Promise<Source>;
   fetch(): Promise<FetchResult[]>;
@@ -97,8 +122,9 @@ export declare class Fetchary extends EventEmitter {
   history(id: number, options?: { limit?: number; offset?: number }): Promise<Version[]>;
   version(sourceId: number, versionId?: number): Promise<Version>;
   read(sourceId: number, versionId?: number): Promise<string>;
+  readRendered(sourceId: number, versionId?: number): Promise<string>;
   diff(sourceId: number, options?: { from?: number; to?: number; mode?: 'text' | 'element-content' | 'element-raw' | 'raw' }): Promise<DiffResult>;
-  edit(id: number, changes: { url?: string; name?: string | null; tag?: string | null; ignoreSelectors?: string[] }): Promise<Source>;
+  edit(id: number, changes: { url?: string; name?: string | null; tag?: string | null; ignoreSelectors?: string[]; mode?: CaptureMode; captureMode?: CaptureMode; waitAfterLoad?: string | number; waitAfterLoadMs?: string | number }): Promise<Source>;
   enable(id: number): Promise<Source>;
   disable(id: number): Promise<Source>;
   remove(id: number, options?: { purge?: boolean }): Promise<void>;
@@ -116,6 +142,7 @@ export declare function parseInterval(every: string): { every: string; intervalS
 
 export declare class FetcharyError extends Error {}
 export declare class FetcharyFetchError extends FetcharyError { sourceId?: number; url?: string; status?: number }
+export declare class FetcharyBrowserError extends FetcharyError { sourceId?: number; url?: string; phase?: 'launch' | 'navigation' | 'post-load-wait' | 'snapshot' }
 export declare class FetcharyNotFoundError extends FetcharyError { sourceId?: number; versionId?: number }
 export declare class FetcharyIntervalError extends FetcharyError { interval?: unknown }
 export declare class FetcharyStorageError extends FetcharyError {}

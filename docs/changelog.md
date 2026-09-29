@@ -1,3 +1,11 @@
+# Next
+
+- browser capture for HTML using Puppeteer and bundled Chrome for Testing
+- separate raw response, rendered DOM, and comparison hashes
+- per-source `browser`/`http` capture mode and configurable post-load wait
+- rendered-aware diffs, exports, metadata, scheduler runs, and public API
+- backwards-compatible SQLite and archive migration
+
 # 0.4.1
 
 - Improving schedule run std out

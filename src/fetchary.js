@@ -6,6 +6,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { EventEmitter } = require('node:events');
 const { openDatabase, transaction } = require('./storage/database');
+const { CaptureManager } = require('./capture');
 const { parseInterval } = require('./intervals');
 const { comparisonText, comparisonHash, validateIgnoreSelector, lineDiff, elementDiff } = require('./diff');
 const { acquireLock, releaseLock } = require('./scheduler');
@@ -20,9 +21,35 @@ const {
 
 const DEFAULT_TIMEOUT = 30_000;
 const DEFAULT_USER_AGENT = 'fetchary/0.1';
+const DEFAULT_CAPTURE_MODE = 'browser';
+const DEFAULT_WAIT_AFTER_LOAD_MS = 5_000;
 
 function isoNow() { return new Date().toISOString(); }
 function asBoolean(value) { return Boolean(Number(value)); }
+function sha256(value) { return crypto.createHash('sha256').update(value).digest('hex'); }
+
+function validateCaptureMode(value) {
+  const mode = value ?? DEFAULT_CAPTURE_MODE;
+  if (!['browser', 'http'].includes(mode)) {
+    throw new FetcharyValidationError('capture mode must be "browser" or "http"', { captureMode: value });
+  }
+  return mode;
+}
+
+function parseWaitAfterLoad(value) {
+  if (value == null) return DEFAULT_WAIT_AFTER_LOAD_MS;
+  if (typeof value === 'number') {
+    if (!Number.isSafeInteger(value) || value < 0) throw new FetcharyValidationError('wait after load must be a non-negative duration such as "500ms" or "5s"', { waitAfterLoad: value });
+    return value;
+  }
+  if (typeof value !== 'string') throw new FetcharyValidationError('wait after load must be a non-negative duration such as "500ms" or "5s"', { waitAfterLoad: value });
+  const match = value.trim().match(/^(\d+)(ms|s)$/);
+  if (!match) throw new FetcharyValidationError('wait after load must be a non-negative duration such as "500ms" or "5s"', { waitAfterLoad: value });
+  const amount = Number(match[1]);
+  const milliseconds = amount * (match[2] === 's' ? 1_000 : 1);
+  if (!Number.isSafeInteger(milliseconds)) throw new FetcharyValidationError('wait after load duration is too large', { waitAfterLoad: value });
+  return milliseconds;
+}
 
 function ignoreSelectorsFromRow(row) {
   if (row.ignore_selectors == null) return [];
@@ -47,8 +74,13 @@ function sourceFromRow(row) {
     lastCheckedAt: row.last_checked_at,
     lastChangedAt: row.last_changed_at,
     currentHash: row.current_hash,
+    currentRawHash: row.current_raw_hash ?? row.current_hash,
+    currentRenderedHash: row.current_rendered_hash,
+    currentComparisonHash: row.current_comparison_hash,
     currentVersionId: row.current_version_id == null ? null : Number(row.current_version_id),
     ignoreSelectors: ignoreSelectorsFromRow(row),
+    captureMode: row.capture_mode || DEFAULT_CAPTURE_MODE,
+    waitAfterLoadMs: row.wait_after_load_ms == null ? DEFAULT_WAIT_AFTER_LOAD_MS : Number(row.wait_after_load_ms),
     versions: Number(row.versions || 0),
   };
   if (row.schedule_enabled != null) {
@@ -77,9 +109,18 @@ function versionFromRow(row) {
     contentType: row.content_type,
     contentLength: Number(row.content_length),
     hash: row.hash,
+    rawHash: row.raw_hash || row.hash,
+    renderedHash: row.rendered_hash,
+    comparisonHash: row.comparison_hash,
     etag: row.etag,
     lastModified: row.last_modified,
     file: row.file,
+    rawFile: row.file,
+    renderedFile: row.rendered_file,
+    renderedLength: row.rendered_length == null ? null : Number(row.rendered_length),
+    captureMode: row.capture_mode || 'http',
+    renderedCapturedAt: row.rendered_captured_at,
+    browserFinalUrl: row.browser_final_url,
   };
 }
 
@@ -138,6 +179,12 @@ class Fetchary extends EventEmitter {
     this.closed = false;
     if (typeof this.httpFetch !== 'function') throw new FetcharyValidationError('a Fetch-compatible implementation is required');
     if (!Number.isFinite(this.timeout) || this.timeout <= 0) throw new FetcharyValidationError('timeout must be greater than zero');
+    this.capture = new CaptureManager({
+      fetch: this.httpFetch,
+      timeout: this.timeout,
+      userAgent: this.userAgent,
+      launchBrowser: options.launchBrowser,
+    });
     const storage = openDatabase(this.dataDir);
     this.db = storage.db;
     this.databasePath = storage.databasePath;
@@ -186,14 +233,21 @@ class Fetchary extends EventEmitter {
     this._assertOpen();
     const normalizedUrl = validateUrl(url);
     const ignoreSelectors = Object.hasOwn(options, 'ignoreSelectors') ? validateIgnoreSelectors(options.ignoreSelectors) : [];
+    const captureMode = validateCaptureMode(options.mode ?? options.captureMode);
+    const waitAfterLoadMs = parseWaitAfterLoad(options.waitAfterLoad ?? options.waitAfterLoadMs);
     if (options.every != null) parseInterval(options.every);
     const now = isoNow();
     let sourceId;
     try {
       const result = this.db.prepare(`
-        INSERT INTO urls (url, name, tag, enabled, created_at, ignore_selectors)
-        VALUES (?, ?, ?, 1, ?, ?)
-      `).run(normalizedUrl, options.name ?? null, options.tag ?? null, now, JSON.stringify(ignoreSelectors));
+        INSERT INTO urls (
+          url, name, tag, enabled, created_at, ignore_selectors,
+          capture_mode, wait_after_load_ms
+        ) VALUES (?, ?, ?, 1, ?, ?, ?, ?)
+      `).run(
+        normalizedUrl, options.name ?? null, options.tag ?? null, now,
+        JSON.stringify(ignoreSelectors), captureMode, waitAfterLoadMs,
+      );
       sourceId = Number(result.lastInsertRowid);
     } catch (cause) {
       if (String(cause.message).includes('UNIQUE')) {
@@ -216,6 +270,7 @@ class Fetchary extends EventEmitter {
       version: result.version,
       changed: result.changed,
       rawChanged: result.rawChanged,
+      renderedChanged: result.renderedChanged,
       contentChanged: result.contentChanged,
     };
   }
@@ -274,27 +329,11 @@ class Fetchary extends EventEmitter {
   async _performFetch(id) {
     const source = this._requireSource(id);
     await this._hook('beforeFetch', { sourceId: id, url: source.url });
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), this.timeout);
-    let response;
-    let body;
+    let captured;
     try {
-      response = await this.httpFetch(source.url, {
-        headers: { 'user-agent': this.userAgent },
-        redirect: 'follow',
-        signal: controller.signal,
-      });
-      if (!response || typeof response.arrayBuffer !== 'function') throw new TypeError('fetch returned an invalid response');
-      if (!response.ok) {
-        throw new FetcharyFetchError(`fetch failed with HTTP ${response.status}`, {
-          sourceId: id,
-          url: source.url,
-          status: response.status,
-        });
-      }
-      body = Buffer.from(await response.arrayBuffer());
+      captured = await this.capture.capture(source);
     } catch (cause) {
-      const error = cause instanceof FetcharyFetchError ? cause : new FetcharyFetchError(`fetch failed for ${source.url}`, {
+      const error = cause instanceof FetcharyError ? cause : new FetcharyFetchError(`fetch failed for ${source.url}`, {
         sourceId: id,
         url: source.url,
         cause,
@@ -304,77 +343,135 @@ class Fetchary extends EventEmitter {
       this._emitError(error);
       await this._hook('onError', event);
       throw error;
-    } finally {
-      clearTimeout(timeout);
     }
 
-    const fetchedAt = isoNow();
-    const hash = crypto.createHash('sha256').update(body).digest('hex');
-    const contentHash = comparisonHash(body.toString('utf8'), { ignoreSelectors: source.ignoreSelectors });
-    const status = Number(response.status);
-    const finalUrl = response.url || source.url;
-    const contentType = response.headers?.get?.('content-type') || null;
-    const etag = response.headers?.get?.('etag') || null;
-    const lastModified = response.headers?.get?.('last-modified') || null;
+    const fetchedAt = captured.rawCapturedAt;
+    const rawBody = captured.rawBody;
+    const renderedBody = captured.renderedHtml == null ? null : Buffer.from(captured.renderedHtml, 'utf8');
+    const rawHash = sha256(rawBody);
+    const renderedHash = renderedBody == null ? null : sha256(renderedBody);
+    const comparisonInput = renderedBody == null ? rawBody.toString('utf8') : captured.renderedHtml;
+    const comparisonSha256 = comparisonHash(comparisonInput, { ignoreSelectors: source.ignoreSelectors });
     let outcome;
     let createdVersionDir;
 
     try {
       outcome = transaction(this.db, () => {
-        const current = this.db.prepare('SELECT current_hash, current_version_id FROM urls WHERE id = ? AND removed_at IS NULL').get(id);
+        const current = this.db.prepare(`
+          SELECT current_hash, current_raw_hash, current_rendered_hash,
+                 current_comparison_hash, current_version_id
+          FROM urls WHERE id = ? AND removed_at IS NULL
+        `).get(id);
         if (!current) throw new FetcharyNotFoundError(`source ${id} does not exist`, { sourceId: id });
-        if (current.current_hash === hash) {
-          this.db.prepare('UPDATE urls SET last_checked_at = ? WHERE id = ?').run(fetchedAt, id);
-          return { rawChanged: false, contentChanged: false, version: Number(current.current_version_id) };
-        }
+        const previousRawHash = current.current_raw_hash ?? current.current_hash;
+        const rawChanged = previousRawHash !== rawHash;
+        const renderedChanged = renderedHash == null ? false : current.current_rendered_hash !== renderedHash;
+        const archiveNeeded = rawChanged || renderedChanged;
 
-        let previousContentHash = null;
-        if (current.current_version_id != null) {
-          const previous = this.db.prepare('SELECT file FROM versions WHERE url_id = ? AND version_number = ?').get(id, current.current_version_id);
-          if (previous) previousContentHash = comparisonHash(fs.readFileSync(previous.file, 'utf8'), { ignoreSelectors: source.ignoreSelectors });
+        let previousComparisonHash = current.current_comparison_hash;
+        if (previousComparisonHash == null && current.current_version_id != null) {
+          const previous = this.db.prepare(`
+            SELECT file, rendered_file FROM versions
+            WHERE url_id = ? AND version_number = ?
+          `).get(id, current.current_version_id);
+          if (previous) {
+            const comparisonFile = previous.rendered_file && fs.existsSync(previous.rendered_file)
+              ? previous.rendered_file
+              : previous.file;
+            previousComparisonHash = comparisonHash(fs.readFileSync(comparisonFile, 'utf8'), { ignoreSelectors: source.ignoreSelectors });
+          }
         }
-        const contentChanged = previousContentHash == null || previousContentHash !== contentHash;
+        const contentChanged = current.current_version_id == null || previousComparisonHash !== comparisonSha256;
+
+        if (!archiveNeeded) {
+          this.db.prepare(`
+            UPDATE urls SET
+              last_checked_at = ?, current_hash = ?, current_raw_hash = ?,
+              current_rendered_hash = ?, current_comparison_hash = ?
+            WHERE id = ?
+          `).run(fetchedAt, rawHash, rawHash, renderedHash, comparisonSha256, id);
+          return {
+            archived: false,
+            rawChanged,
+            renderedChanged,
+            contentChanged: false,
+            version: Number(current.current_version_id),
+          };
+        }
 
         const latest = this.db.prepare('SELECT COALESCE(MAX(version_number), 0) AS number FROM versions WHERE url_id = ?').get(id);
         const versionNumber = Number(latest.number) + 1;
         const versionDir = path.join(this.dataDir, 'pages', String(id), String(versionNumber));
         createdVersionDir = versionDir;
         const file = path.join(versionDir, 'response.html');
+        const renderedFile = renderedBody == null ? null : path.join(versionDir, 'rendered.html');
         fs.mkdirSync(versionDir, { recursive: true });
-        fs.writeFileSync(file, body);
+        fs.writeFileSync(file, rawBody);
+        if (renderedFile) fs.writeFileSync(renderedFile, renderedBody);
         const metadata = {
           url: source.url,
-          finalUrl,
+          finalUrl: captured.rawFinalUrl,
+          rawFinalUrl: captured.rawFinalUrl,
+          browserFinalUrl: captured.browserFinalUrl,
           fetchedAt,
-          status,
-          contentType,
-          contentLength: body.length,
-          sha256: hash,
-          textSha256: contentHash,
-          comparisonSha256: contentHash,
+          rawCapturedAt: captured.rawCapturedAt,
+          renderedCapturedAt: captured.renderedCapturedAt,
+          status: captured.status,
+          contentType: captured.contentType,
+          contentLength: rawBody.length,
+          capture: {
+            mode: captured.captureMode,
+            configuredMode: source.captureMode,
+            ...(captured.captureMode === 'browser' ? {
+              engine: 'chromium',
+              waitUntil: 'load',
+              waitAfterLoadMs: source.waitAfterLoadMs,
+            } : {}),
+          },
+          rawSha256: rawHash,
+          renderedSha256: renderedHash,
+          comparisonSha256,
+          sha256: rawHash,
+          textSha256: comparisonSha256,
           comparison: { ignoreSelectors: [...source.ignoreSelectors] },
-          etag,
-          lastModified,
+          etag: captured.etag,
+          lastModified: captured.lastModified,
         };
         fs.writeFileSync(path.join(versionDir, 'metadata.json'), `${JSON.stringify(metadata, null, 2)}\n`, 'utf8');
         this.db.prepare(`
           INSERT INTO versions (
             url_id, version_number, requested_url, fetched_at, status_code,
-            final_url, content_type, content_length, hash, file, etag, last_modified
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `).run(id, versionNumber, source.url, fetchedAt, status, finalUrl, contentType, body.length, hash, file, etag, lastModified);
+            final_url, content_type, content_length, hash, file, raw_hash,
+            rendered_hash, comparison_hash, rendered_file, rendered_length,
+            capture_mode, rendered_captured_at, browser_final_url, etag, last_modified
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          id, versionNumber, source.url, fetchedAt, captured.status,
+          captured.rawFinalUrl, captured.contentType, rawBody.length, rawHash, file, rawHash,
+          renderedHash, comparisonSha256, renderedFile, renderedBody?.length ?? null,
+          captured.captureMode, captured.renderedCapturedAt, captured.browserFinalUrl,
+          captured.etag, captured.lastModified,
+        );
         this.db.prepare(`
           UPDATE urls SET
             last_checked_at = ?,
             last_changed_at = CASE WHEN ? THEN ? ELSE last_changed_at END,
             current_hash = ?,
+            current_raw_hash = ?,
+            current_rendered_hash = ?,
+            current_comparison_hash = ?,
             current_version_id = ?
           WHERE id = ?
-        `).run(fetchedAt, contentChanged ? 1 : 0, fetchedAt, hash, versionNumber, id);
+        `).run(
+          fetchedAt, contentChanged ? 1 : 0, fetchedAt,
+          rawHash, rawHash, renderedHash, comparisonSha256, versionNumber, id,
+        );
         return {
-          rawChanged: true,
+          archived: true,
+          rawChanged,
+          renderedChanged,
           contentChanged,
-          previousHash: current.current_hash,
+          previousHash: previousRawHash,
           version: versionNumber,
           file,
         };
@@ -395,18 +492,26 @@ class Fetchary extends EventEmitter {
       id,
       sourceId: id,
       url: source.url,
+      captureMode: captured.captureMode,
       changed: outcome.contentChanged,
       rawChanged: outcome.rawChanged,
+      renderedChanged: outcome.renderedChanged,
       contentChanged: outcome.contentChanged,
       ...(outcome.rawChanged && outcome.previousHash ? { previousHash: outcome.previousHash } : {}),
-      hash,
-      contentHash,
+      hash: rawHash,
+      rawHash,
+      renderedHash,
+      contentHash: comparisonSha256,
+      comparisonHash: comparisonSha256,
       version: outcome.version,
       fetchedAt,
-      status,
-      contentLength: body.length,
+      status: captured.status,
+      contentLength: rawBody.length,
+      renderedLength: renderedBody?.length ?? null,
+      finalUrl: captured.rawFinalUrl,
+      browserFinalUrl: captured.browserFinalUrl,
     };
-    if (outcome.rawChanged) {
+    if (outcome.archived) {
       const archivedVersion = await this.version(id, outcome.version);
       this._emit('version', archivedVersion);
     }
@@ -451,6 +556,14 @@ class Fetchary extends EventEmitter {
     }
   }
 
+  async readRendered(sourceId, versionId) {
+    const archived = await this.version(sourceId, versionId);
+    const file = archived.renderedFile && fs.existsSync(archived.renderedFile) ? archived.renderedFile : archived.file;
+    try { return await fs.promises.readFile(file, 'utf8'); } catch (cause) {
+      throw new FetcharyStorageError(`could not read rendered version ${archived.id}`, { cause, sourceId: archived.sourceId, versionId: archived.id });
+    }
+  }
+
   async diff(sourceId, options = {}) {
     this._assertOpen();
     const id = validateId(sourceId);
@@ -467,7 +580,8 @@ class Fetchary extends EventEmitter {
       to ??= latest[0].id;
       from ??= latest[1].id;
     }
-    const [beforeHtml, afterHtml] = await Promise.all([this.read(id, from), this.read(id, to)]);
+    const reader = mode === 'raw' ? this.read.bind(this) : this.readRendered.bind(this);
+    const [beforeHtml, afterHtml] = await Promise.all([reader(id, from), reader(id, to)]);
     let changes;
     if (mode === 'element-content') {
       changes = elementDiff(beforeHtml, afterHtml, { mode: 'content', ignoreSelectors: source.ignoreSelectors });
@@ -484,9 +598,16 @@ class Fetchary extends EventEmitter {
   async edit(id, changes = {}) {
     this._assertOpen();
     const source = this._requireSource(id);
-    const allowed = ['url', 'name', 'tag', 'ignoreSelectors'];
-    const entries = Object.entries(changes).filter(([key]) => allowed.includes(key));
-    if (!entries.length) throw new FetcharyValidationError('provide at least one of url, name, tag, or ignoreSelectors');
+    const normalizedChanges = { ...changes };
+    if (Object.hasOwn(normalizedChanges, 'mode') && !Object.hasOwn(normalizedChanges, 'captureMode')) {
+      normalizedChanges.captureMode = normalizedChanges.mode;
+    }
+    if (Object.hasOwn(normalizedChanges, 'waitAfterLoad') && !Object.hasOwn(normalizedChanges, 'waitAfterLoadMs')) {
+      normalizedChanges.waitAfterLoadMs = normalizedChanges.waitAfterLoad;
+    }
+    const allowed = ['url', 'name', 'tag', 'ignoreSelectors', 'captureMode', 'waitAfterLoadMs'];
+    const entries = Object.entries(normalizedChanges).filter(([key]) => allowed.includes(key));
+    if (!entries.length) throw new FetcharyValidationError('provide at least one of url, name, tag, ignoreSelectors, captureMode, or waitAfterLoadMs');
     const assignments = [];
     const values = [];
     for (const [key, value] of entries) {
@@ -494,8 +615,14 @@ class Fetchary extends EventEmitter {
         assignments.push('url = ?');
         values.push(validateUrl(value));
       } else if (key === 'ignoreSelectors') {
-        assignments.push('ignore_selectors = ?');
+        assignments.push('ignore_selectors = ?', 'current_comparison_hash = NULL');
         values.push(JSON.stringify(validateIgnoreSelectors(value)));
+      } else if (key === 'captureMode') {
+        assignments.push('capture_mode = ?');
+        values.push(validateCaptureMode(value));
+      } else if (key === 'waitAfterLoadMs') {
+        assignments.push('wait_after_load_ms = ?');
+        values.push(parseWaitAfterLoad(value));
       } else {
         if (value != null && typeof value !== 'string') throw new FetcharyValidationError(`${key} must be a string or null`);
         assignments.push(`${key} = ?`);
@@ -654,12 +781,21 @@ class Fetchary extends EventEmitter {
     try {
       await fs.promises.mkdir(versionsDir, { recursive: true });
       const ordered = [...versions].sort((a, b) => a.id - b.id);
+      const hashLines = [];
       for (const archived of ordered) {
-        await fs.promises.copyFile(archived.file, path.join(versionsDir, `${String(archived.id).padStart(3, '0')}.html`));
+        const prefix = String(archived.id).padStart(3, '0');
+        const rawName = `${prefix}-response.html`;
+        await fs.promises.copyFile(archived.file, path.join(versionsDir, rawName));
+        hashLines.push(`${archived.rawHash}  versions/${rawName}`);
+        if (archived.renderedFile && fs.existsSync(archived.renderedFile)) {
+          const renderedName = `${prefix}-rendered.html`;
+          await fs.promises.copyFile(archived.renderedFile, path.join(versionsDir, renderedName));
+          hashLines.push(`${archived.renderedHash}  versions/${renderedName}`);
+        }
       }
       const metadata = { exportedAt: isoNow(), source, versions: ordered };
       await fs.promises.writeFile(path.join(directory, 'metadata.json'), `${JSON.stringify(metadata, null, 2)}\n`);
-      await fs.promises.writeFile(path.join(directory, 'hashes.txt'), ordered.map(item => `${item.hash}  versions/${String(item.id).padStart(3, '0')}.html`).join('\n') + (ordered.length ? '\n' : ''));
+      await fs.promises.writeFile(path.join(directory, 'hashes.txt'), hashLines.join('\n') + (hashLines.length ? '\n' : ''));
     } catch (cause) {
       throw new FetcharyStorageError(`could not export source ${source.id}`, { cause, sourceId: source.id });
     }
@@ -672,7 +808,7 @@ class Fetchary extends EventEmitter {
       SELECT
         (SELECT COUNT(*) FROM urls WHERE removed_at IS NULL) AS sources,
         (SELECT COUNT(*) FROM versions v JOIN urls u ON u.id = v.url_id WHERE u.removed_at IS NULL) AS versions,
-        (SELECT COALESCE(SUM(content_length), 0) FROM versions) AS fetch_bytes,
+        (SELECT COALESCE(SUM(content_length + COALESCE(rendered_length, 0)), 0) FROM versions) AS fetch_bytes,
         (SELECT COUNT(*) FROM urls WHERE removed_at IS NULL AND last_changed_at >= ?) AS changed_today,
         (SELECT MAX(last_checked_at) FROM urls WHERE removed_at IS NULL) AS last_fetch
     `).get(new Date().toISOString().slice(0, 10));
@@ -690,9 +826,10 @@ class Fetchary extends EventEmitter {
     if (this.closed) return;
     if (this.runner) await this.runner.stop();
     if (this.inFlight.size) await Promise.allSettled([...this.inFlight.values()]);
+    await this.capture.close();
     this.db.close();
     this.closed = true;
   }
 }
 
-module.exports = { Fetchary, validateId, validateUrl };
+module.exports = { Fetchary, validateId, validateUrl, validateCaptureMode, parseWaitAfterLoad };

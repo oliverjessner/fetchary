@@ -19,6 +19,14 @@ function versionsTableSql(name, ifNotExists = false) {
       content_length INTEGER NOT NULL,
       hash TEXT NOT NULL,
       file TEXT NOT NULL,
+      raw_hash TEXT,
+      rendered_hash TEXT,
+      comparison_hash TEXT,
+      rendered_file TEXT,
+      rendered_length INTEGER,
+      capture_mode TEXT NOT NULL DEFAULT 'http',
+      rendered_captured_at TEXT,
+      browser_final_url TEXT,
       etag TEXT,
       last_modified TEXT,
       UNIQUE (url_id, version_number),
@@ -63,6 +71,37 @@ function migrateUrlsIgnoreSelectors(db) {
   }
 }
 
+function migrateCaptureColumns(db) {
+  const urlColumns = new Set(db.prepare('PRAGMA table_info(urls)').all().map(column => column.name));
+  const urlAdditions = [
+    ['capture_mode', "TEXT NOT NULL DEFAULT 'browser'"],
+    ['wait_after_load_ms', 'INTEGER NOT NULL DEFAULT 5000'],
+    ['current_raw_hash', 'TEXT'],
+    ['current_rendered_hash', 'TEXT'],
+    ['current_comparison_hash', 'TEXT'],
+  ];
+  for (const [name, definition] of urlAdditions) {
+    if (!urlColumns.has(name)) db.exec(`ALTER TABLE urls ADD COLUMN ${name} ${definition}`);
+  }
+  db.exec('UPDATE urls SET current_raw_hash = current_hash WHERE current_raw_hash IS NULL AND current_hash IS NOT NULL');
+
+  const versionColumns = new Set(db.prepare('PRAGMA table_info(versions)').all().map(column => column.name));
+  const versionAdditions = [
+    ['raw_hash', 'TEXT'],
+    ['rendered_hash', 'TEXT'],
+    ['comparison_hash', 'TEXT'],
+    ['rendered_file', 'TEXT'],
+    ['rendered_length', 'INTEGER'],
+    ['capture_mode', "TEXT NOT NULL DEFAULT 'http'"],
+    ['rendered_captured_at', 'TEXT'],
+    ['browser_final_url', 'TEXT'],
+  ];
+  for (const [name, definition] of versionAdditions) {
+    if (!versionColumns.has(name)) db.exec(`ALTER TABLE versions ADD COLUMN ${name} ${definition}`);
+  }
+  db.exec('UPDATE versions SET raw_hash = hash WHERE raw_hash IS NULL');
+}
+
 function openDatabase(dataDir) {
   try {
     fs.mkdirSync(path.join(dataDir, 'pages'), { recursive: true });
@@ -84,6 +123,11 @@ function openDatabase(dataDir) {
         current_hash TEXT,
         current_version_id INTEGER,
         ignore_selectors TEXT NOT NULL DEFAULT '[]',
+        capture_mode TEXT NOT NULL DEFAULT 'browser',
+        wait_after_load_ms INTEGER NOT NULL DEFAULT 5000,
+        current_raw_hash TEXT,
+        current_rendered_hash TEXT,
+        current_comparison_hash TEXT,
         removed_at TEXT
       );
 
@@ -101,6 +145,7 @@ function openDatabase(dataDir) {
     `);
     migrateUrlsIgnoreSelectors(db);
     migrateVersionsRequiredColumns(db);
+    migrateCaptureColumns(db);
     db.exec('CREATE INDEX IF NOT EXISTS versions_url_id_idx ON versions(url_id, version_number DESC)');
     return { db, databasePath };
   } catch (cause) {

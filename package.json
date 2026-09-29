@@ -45,7 +45,7 @@
         "LICENSE"
     ],
     "engines": {
-        "node": ">=22.5"
+        "node": ">=26.0.0"
     },
     "scripts": {
         "publish": "node ./scripts/publish.js",
@@ -53,6 +53,10 @@
         "test:coverage": "node --test --experimental-test-coverage"
     },
     "dependencies": {
-        "linkedom": "^0.18.13"
+        "linkedom": "^0.18.13",
+        "puppeteer": "^25.12.0"
+    },
+    "allowScripts": {
+        "puppeteer@25.12.0": true
     }
 }

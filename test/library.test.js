@@ -46,7 +46,7 @@ test('archives exact response bytes and distinguishes raw from visible content c
   const events = { fetch: 0, change: 0, version: 0 };
   for (const name of Object.keys(events)) fetchary.on(name, () => events[name]++);
 
-  const source = await fetchary.add('https://example.com/page', { name: 'Page', tag: 'research' });
+  const source = await fetchary.add('https://example.com/page', { name: 'Page', tag: 'research', mode: 'http' });
   assert.equal(source.version, 1);
   assert.equal(source.changed, true);
   assert.equal(source.rawChanged, true);
@@ -110,7 +110,7 @@ test('ignore selectors filter comparisons without altering raw archived evidence
   const events = { change: 0, version: 0 };
   for (const name of Object.keys(events)) fetchary.on(name, () => events[name]++);
 
-  const source = await fetchary.add('https://example.com/dynamic', { ignoreSelectors: configuredSelectors });
+  const source = await fetchary.add('https://example.com/dynamic', { ignoreSelectors: configuredSelectors, mode: 'http' });
   assert.deepEqual(configuredSelectors, originalSelectors, 'caller array is not mutated');
   assert.deepEqual(source.ignoreSelectors, ['relative-time', '.timestamp', '[data-updated]', '.does-not-exist']);
   const first = await fetchary.version(source.id, 1);
@@ -211,8 +211,8 @@ test('source lifecycle, filtering, pagination, export, and removal use the publi
   });
   t.after(() => fetchary.close());
 
-  const one = await fetchary.add('https://example.com/one', { tag: 'a' });
-  const two = await fetchary.add('https://example.com/two', { tag: 'b' });
+  const one = await fetchary.add('https://example.com/one', { tag: 'a', mode: 'http' });
+  const two = await fetchary.add('https://example.com/two', { tag: 'b', mode: 'http' });
   assert.deepEqual((await fetchary.list({ tag: 'a' })).map(item => item.id), [one.id]);
   assert.equal((await fetchary.edit(one.id, { name: 'One', tag: null })).name, 'One');
   await assert.rejects(() => fetchary.edit(one.id, {}), FetcharyValidationError);
@@ -233,7 +233,7 @@ test('source lifecycle, filtering, pagination, export, and removal use the publi
   assert.equal(exported.versions, 1);
   assert.equal(fs.existsSync(path.join(exported.directory, 'metadata.json')), true);
   assert.equal(fs.existsSync(path.join(exported.directory, 'hashes.txt')), true);
-  assert.deepEqual(fs.readFileSync(path.join(exported.directory, 'versions', '001.html')), fs.readFileSync((await fetchary.version(one.id)).file));
+  assert.deepEqual(fs.readFileSync(path.join(exported.directory, 'versions', '001-response.html')), fs.readFileSync((await fetchary.version(one.id)).file));
 
   const archiveDir = path.join(dataDir, 'pages', String(one.id));
   await fetchary.remove(one.id);
@@ -280,6 +280,7 @@ test('package exposes its documented named API to ES modules', async () => {
     'Fetchary',
     'FetcharyError',
     'FetcharyFetchError',
+    'FetcharyBrowserError',
     'FetcharyNotFoundError',
     'FetcharyIntervalError',
     'FetcharyStorageError',
@@ -357,7 +358,8 @@ test('storage migrates required version metadata while keeping content type null
       UNIQUE (url_id, version_number),
       FOREIGN KEY (url_id) REFERENCES urls(id) ON DELETE CASCADE
     );
-    INSERT INTO urls (id, url, created_at) VALUES (1, 'https://example.com/', '2026-09-24T00:00:00.000Z');
+    INSERT INTO urls (id, url, created_at, current_hash, current_version_id)
+    VALUES (1, 'https://example.com/', '2026-09-24T00:00:00.000Z', 'hash', 1);
     INSERT INTO versions (
       id, url_id, version_number, requested_url, fetched_at, status_code,
       final_url, content_type, content_length, hash, file
@@ -377,12 +379,22 @@ test('storage migrates required version metadata while keeping content type null
   assert.equal(Number(urlColumns.get('ignore_selectors').notnull), 1);
   assert.equal(urlColumns.get('ignore_selectors').dflt_value, "'[]'");
   assert.equal(migrated.prepare('SELECT ignore_selectors FROM urls WHERE id = 1').get().ignore_selectors, '[]');
+  assert.equal(urlColumns.get('capture_mode').dflt_value, "'browser'");
+  assert.equal(urlColumns.get('wait_after_load_ms').dflt_value, '5000');
+  assert.equal(migrated.prepare('SELECT capture_mode FROM urls WHERE id = 1').get().capture_mode, 'browser');
+  assert.equal(migrated.prepare('SELECT current_raw_hash FROM urls WHERE id = 1').get().current_raw_hash, 'hash');
   const columns = new Map(migrated.prepare('PRAGMA table_info(versions)').all().map(column => [column.name, column]));
   assert.equal(Number(columns.get('status_code').notnull), 1);
   assert.equal(Number(columns.get('final_url').notnull), 1);
   assert.equal(Number(columns.get('content_length').notnull), 1);
   assert.equal(Number(columns.get('content_type').notnull), 0);
+  assert.equal(Number(columns.get('rendered_hash').notnull), 0);
+  assert.equal(columns.get('capture_mode').dflt_value, "'http'");
   assert.equal(migrated.prepare('SELECT COUNT(*) AS count FROM versions').get().count, 1);
   assert.equal(migrated.prepare('SELECT content_type FROM versions WHERE id = 1').get().content_type, null);
+  const migratedVersion = migrated.prepare('SELECT raw_hash, rendered_hash, capture_mode FROM versions WHERE id = 1').get();
+  assert.equal(migratedVersion.raw_hash, 'hash');
+  assert.equal(migratedVersion.rendered_hash, null);
+  assert.equal(migratedVersion.capture_mode, 'http');
   migrated.close();
 });

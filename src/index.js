@@ -13,6 +13,7 @@ exports.Fetchary = Fetchary;
 exports.parseInterval = parseInterval;
 exports.FetcharyError = errors.FetcharyError;
 exports.FetcharyFetchError = errors.FetcharyFetchError;
+exports.FetcharyBrowserError = errors.FetcharyBrowserError;
 exports.FetcharyNotFoundError = errors.FetcharyNotFoundError;
 exports.FetcharyIntervalError = errors.FetcharyIntervalError;
 exports.FetcharyStorageError = errors.FetcharyStorageError;

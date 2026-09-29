@@ -2,23 +2,28 @@
 
 > **fetchary 👁️ — Watch changes. Keep the proof.**
 
-fetchary is a small command-line tool for monitoring web pages, archiving raw HTML responses, and tracking changes over time.
+fetchary is a local command-line monitor that archives exact HTTP responses and, for HTML pages, the DOM rendered by bundled Chromium.
 
 The core workflow is intentionally simple:
 
 1. Add a URL.
 2. Fetch the page.
-3. Store the raw HTML.
-4. Remove configured ignored elements from a temporary DOM and compare its normalized visible text with the latest archived version.
-5. Archive changed response bytes and report visible content changes separately.
+3. Store the exact HTTP response bytes.
+4. In browser mode, wait for `load`, wait another five seconds by default, and store `page.content()` separately.
+5. Remove configured ignored elements from a temporary comparison DOM and report meaningful changes separately.
 
 fetchary is designed for research, journalism, investigations, documentation, and any workflow where it matters to know **what a web page looked like at a specific point in time**.
 
 ## Installation
 
+Node.js 26.0 or newer is required.
+
 ```bash
 npm install -g fetchary
 ```
+
+The package installs Puppeteer and its bundled Chrome for Testing. No separate
+browser installation or executable-path configuration is required.
 
 Check the installed version:
 
@@ -47,7 +52,7 @@ fetchary <command> [arguments] [options]
 Add a URL to fetchary.
 
 ```bash
-fetchary add <url> [--name <name>] [--tag <tag>] [--every <interval>] [--ignore-selector <css> ...]
+fetchary add <url> [--name <name>] [--tag <tag>] [--every <interval>] [--mode <browser|http>] [--wait-after-load <duration>] [--ignore-selector <css> ...]
 ```
 
 Example:
@@ -57,6 +62,8 @@ fetchary add https://example.com/news
 ```
 
 fetchary immediately performs the first fetch and stores the initial version.
+HTML sources use browser mode by default. Clearly non-HTML responses such as
+JSON, XML, images, or archives automatically use HTTP-only capture semantics.
 
 Optional metadata:
 
@@ -104,6 +111,9 @@ Example output:
 --name <name>       Human-readable name
 --tag <tag>         Assign a tag
 --every <interval>  Schedule recurring fetches, for example 15m, 2h, or 3d
+--mode <mode>       browser (default) or http
+--wait-after-load <duration>
+                    Browser post-load wait, for example 500ms, 5s, or 10s
 --ignore-selector <css>
                     Ignore matching elements during comparison; repeatable
 ```
@@ -151,6 +161,9 @@ Return machine-readable output:
 fetchary list --json
 ```
 
+JSON source objects include `captureMode`, `waitAfterLoadMs`, and the current
+raw, rendered, and comparison hashes.
+
 ---
 
 ### `fetchary fetch`
@@ -187,11 +200,11 @@ Fetching 3 sources...
 1 content changed, 1 raw only, 1 unchanged
 ```
 
-`content changed` means the visible text differs. `raw changed, content unchanged`
+`content changed` means the normalized comparison DOM differs. `raw changed, content unchanged`
 means that the exact HTML bytes changed—for example because of a rotating CSRF
 token or script nonce—while the text shown by the page stayed the same. Both are
-archived as exact versions. When the raw bytes are identical, fetchary updates
-only `last_checked_at`.
+archived as exact versions. A rendered DOM can also change while the raw
+application shell stays identical; that case creates a new version too.
 
 ---
 
@@ -216,7 +229,7 @@ Last fetch:     8 min ago
 Database:       ~/.fetchary/fetchary.sqlite
 ```
 
-`Fetch storage` is the total byte size of all archived response bodies,
+`Fetch storage` is the total byte size of all archived response bodies and rendered DOMs,
 including archives retained for removed sources. With `--json`, the exact value
 is returned as `fetchBytes`.
 
@@ -244,11 +257,15 @@ Output:
 ID:             12
 Name:           Example News
 URL:            https://example.com/news
+Capture mode:   browser
+Wait after load: 5s
 Created:        2026-08-30 14:22
 Last checked:   2026-08-31 11:42
 Last changed:   2026-08-29 09:14
 Versions:       8
-Current hash:   89fa21...
+Raw hash:       89fa21...
+Rendered hash:  71ab42...
+Comparison hash: 52b14c...
 Ignore selectors: relative-time, .timestamp
 ```
 
@@ -274,12 +291,14 @@ Output:
 VERSION   CHANGE    FETCHED               STATUS   SIZE
 8         content   2026-08-31 11:42      200      94 KB
 7         raw only  2026-08-29 09:14      200      93 KB
-6         content   2026-08-25 16:31      200      92 KB
+6         rendered only 2026-08-28 10:00   200      93 KB
+5         content   2026-08-25 16:31      200      92 KB
 ```
 
 The first archived response is marked `initial`. Later versions are classified
-as `content` when visible text changed or `raw only` when only the exact HTML
-bytes changed. Classification always uses the source's current ignore selectors,
+as `content` when the comparison DOM changed, `raw only` when only the response
+changed, or `rendered only` when JavaScript changed the DOM without changing the
+response. Classification always uses the source's current ignore selectors,
 including for older versions. In terminal output, HTTP status `200` is shown in green.
 
 Machine-readable output:
@@ -331,12 +350,13 @@ fetchary diff 12 --element-raw
 fetchary diff 12 --raw
 ```
 
-The default text diff removes elements matching the source's current ignore
+Normal diffs use `rendered.html` when available and gracefully fall back to the
+historical raw response. The default text diff removes elements matching the source's current ignore
 selectors before applying normal text extraction. `--element-content` shows
 each changed text fragment together with its nearest useful HTML element and
 also applies ignore selectors. `--element-raw` groups raw changes by HTML
 element, includes tag and attribute changes, and does not apply ignore
-selectors. `--raw` compares the exact archived HTML and never applies selectors.
+selectors. `--raw` always compares exact HTTP responses and never applies selectors.
 
 `--html` may generate or open a rendered HTML diff.
 
@@ -397,6 +417,13 @@ Change the monitored URL:
 fetchary edit 12 --url https://example.com/new-url
 ```
 
+Change capture behavior:
+
+```bash
+fetchary edit 12 --mode http
+fetchary edit 12 --mode browser --wait-after-load 8s
+```
+
 Replace all ignore selectors:
 
 ```bash
@@ -415,8 +442,8 @@ Supplying `--ignore-selector` to `edit` replaces the complete list; it does not
 append to the stored list. It cannot be combined with
 `--clear-ignore-selectors`.
 
-Ignore selectors affect comparison only. Every changed HTTP response is still
-archived byte-for-byte and retains its raw SHA-256 evidence hash.
+Ignore selectors affect comparison only. Raw responses and rendered DOMs remain
+unmodified and retain independent SHA-256 evidence hashes.
 
 ---
 
@@ -511,9 +538,10 @@ Example export structure:
 fetchary-export-12/
 ├── metadata.json
 ├── versions/
-│   ├── 001.html
-│   ├── 002.html
-│   └── 003.html
+│   ├── 001-response.html
+│   ├── 001-rendered.html
+│   ├── 002-response.html
+│   └── 002-rendered.html
 └── hashes.txt
 ```
 
@@ -704,6 +732,7 @@ Each archived version gets its own subdirectory:
 ```text
 ~/.fetchary/pages/12/8/
 ├── response.html
+├── rendered.html
 └── metadata.json
 ```
 
@@ -713,12 +742,20 @@ Example `metadata.json`:
 {
     "url": "https://example.com/news",
     "finalUrl": "https://example.com/news",
+    "browserFinalUrl": "https://example.com/news",
     "fetchedAt": "2026-08-31T11:42:16+02:00",
     "status": 200,
     "contentType": "text/html",
     "contentLength": 96256,
-    "sha256": "89fa21...",
-    "textSha256": "52b14c...",
+    "capture": {
+        "mode": "browser",
+        "engine": "chromium",
+        "waitUntil": "load",
+        "waitAfterLoadMs": 5000
+    },
+    "rawSha256": "89fa21...",
+    "renderedSha256": "71ab42...",
+    "comparisonSha256": "52b14c...",
     "etag": "\"abc123\"",
     "lastModified": "Mon, 31 Aug 2026 08:12:00 GMT"
 }
@@ -743,6 +780,11 @@ CREATE TABLE urls (
     last_checked_at TEXT,
     last_changed_at TEXT,
     current_hash TEXT,
+    current_raw_hash TEXT,
+    current_rendered_hash TEXT,
+    current_comparison_hash TEXT,
+    capture_mode TEXT NOT NULL DEFAULT 'browser',
+    wait_after_load_ms INTEGER NOT NULL DEFAULT 5000,
     current_version_id INTEGER
 );
 ```
@@ -760,42 +802,39 @@ CREATE TABLE versions (
     content_length INTEGER NOT NULL,
     hash TEXT NOT NULL,
     file TEXT NOT NULL,
+    raw_hash TEXT,
+    rendered_hash TEXT,
+    comparison_hash TEXT,
+    rendered_file TEXT,
+    capture_mode TEXT NOT NULL DEFAULT 'http',
+    browser_final_url TEXT,
     etag TEXT,
     last_modified TEXT,
     FOREIGN KEY (url_id) REFERENCES urls(id)
 );
 ```
 
-The raw HTML itself is stored on disk rather than inside SQLite.
+The raw HTTP body and rendered DOM are stored on disk rather than inside SQLite.
 
 ## Change detection
 
-fetchary keeps two change signals: the response body's SHA-256 detects exact raw
-changes for archiving, while a hash of the extracted visible text determines
-whether page content changed.
+fetchary keeps three hashes: the exact HTTP response, the exact rendered DOM,
+and the normalized comparison DOM after ignore selectors. A version is archived
+when the raw or rendered hash changes; `last_changed_at` changes only when the
+comparison hash changes.
 
 Simplified logic:
 
 ```text
-Fetch URL
-↓
-Receive raw HTML
-↓
-Calculate SHA-256
-↓
-Compare with current_hash
-↓
-Same hash?
-├── yes → update last_checked_at
-└── no  → archive HTML
-          create version
-          update current_hash
-          compare visible-text hash
-          ├── same      → report raw only
-          └── different → update last_changed_at and report content changed
+URL
+├── HTTP fetch → response.html → raw SHA-256
+└── Chromium → load → post-load wait → rendered.html → rendered SHA-256
+                                              └── temporary comparison DOM
+                                                   → comparison SHA-256
 ```
 
-The original HTTP response body should be archived without DOM cleanup, readability extraction, normalization, or AI processing.
+The original HTTP response body is archived without DOM cleanup, normalization,
+or rendering. Ignore selectors never modify either archived artifact.
 
 This preserves the fetched source as closely as possible.
 
@@ -837,30 +876,18 @@ fetchary remove <id>
 
 Everything else can be added later.
 
-## Non-goals for v0.1
+## Non-goals
 
-fetchary v0.1 intentionally does not need:
+Chromium is used only for deterministic DOM capture. fetchary is not:
 
 ```text
-Browser automation
-JavaScript rendering
-Puppeteer or Playwright
 Screenshots
-AI-based change analysis
-DOM-aware change detection
-Link crawling
-Cloud accounts
-Web UI
-Built-in scheduling
-Notifications
+a crawler
+a full browser automation framework
+a scraping framework
+a screenshot service
+an authenticated-session manager
 ```
-
-Built-in scheduling is available in v0.2 through `schedule`, `unschedule`,
-`schedules`, and `run`.
-
-The initial product philosophy is:
-
-> URL in. HTML archived. Changes visible.
 
 ## Example workflow
 

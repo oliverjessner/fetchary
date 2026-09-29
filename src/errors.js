@@ -12,6 +12,7 @@ class FetcharyError extends Error {
 }
 
 class FetcharyFetchError extends FetcharyError {}
+class FetcharyBrowserError extends FetcharyError {}
 class FetcharyNotFoundError extends FetcharyError {}
 class FetcharyIntervalError extends FetcharyError {}
 class FetcharyStorageError extends FetcharyError {}
@@ -21,6 +22,7 @@ class FetcharyRunnerError extends FetcharyError {}
 module.exports = {
   FetcharyError,
   FetcharyFetchError,
+  FetcharyBrowserError,
   FetcharyNotFoundError,
   FetcharyIntervalError,
   FetcharyStorageError,

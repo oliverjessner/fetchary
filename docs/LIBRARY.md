@@ -4,7 +4,15 @@
 
 The library is the core implementation. The CLI should remain a thin wrapper around the same public API so that fetching, archiving, change detection, scheduling, and storage behave identically in both modes.
 
+Fetchary preserves both what the server returned and what the browser rendered.
+New HTML sources default to browser capture: Chromium waits for the `load` event,
+waits another five seconds, and snapshots `page.content()`. This intentionally
+does not use `networkidle`. Clearly non-HTML responses and sources configured as
+`http` skip Chromium.
+
 ## Installation
+
+Node.js 26.0 or newer is required.
 
 ```bash
 npm install fetchary
@@ -41,7 +49,7 @@ console.log(source.id);
 
 const result = await fetchary.fetch(source.id);
 
-console.log(result.contentChanged, result.rawChanged);
+console.log(result.contentChanged, result.rawChanged, result.renderedChanged);
 
 await fetchary.close();
 ```
@@ -82,6 +90,10 @@ type FetcharyOptions = {
     fetch?: typeof globalThis.fetch;
 };
 ```
+
+Puppeteer and its bundled Chrome for Testing are runtime dependencies; callers
+do not configure an executable path. One browser is created lazily per Fetchary
+instance and is closed by `fetchary.close()`.
 
 ### `dataDir`
 
@@ -149,6 +161,8 @@ With metadata:
 const source = await fetchary.add('https://example.com/news', {
     name: 'Example News',
     tag: 'research',
+    mode: 'browser',
+    waitAfterLoad: '5s',
 });
 ```
 
@@ -180,6 +194,8 @@ type AddOptions = {
     tag?: string;
     every?: string;
     ignoreSelectors?: string[];
+    mode?: 'browser' | 'http';
+    waitAfterLoad?: string | number;
 };
 ```
 
@@ -192,6 +208,8 @@ Example result:
   name: "Example News",
   tag: "research",
   ignoreSelectors: ["relative-time", ".timestamp"],
+  captureMode: "browser",
+  waitAfterLoadMs: 5000,
   enabled: true,
   version: 1,
   changed: true
@@ -258,6 +276,9 @@ Example:
   lastCheckedAt: "2026-08-31T09:42:16.000Z",
   lastChangedAt: "2026-08-29T07:14:00.000Z",
   currentHash: "89fa21...",
+  currentRawHash: "89fa21...",
+  currentRenderedHash: "71ab42...",
+  currentComparisonHash: "52b14c...",
   currentVersionId: 8,
   versions: 8,
   schedule: {
@@ -304,6 +325,7 @@ Example result for one source:
   url: "https://example.com/news",
   changed: true,
   rawChanged: true,
+  renderedChanged: true,
   contentChanged: true,
   previousHash: "4d37a3...",
   hash: "89fa21...",
@@ -323,6 +345,7 @@ Unchanged response:
   url: "https://example.com/news",
   changed: false,
   rawChanged: false,
+  renderedChanged: false,
   contentChanged: false,
   hash: "89fa21...",
   contentHash: "52b14c...",
@@ -334,17 +357,18 @@ Unchanged response:
 ```
 
 `changed` is an alias for `contentChanged` and reports a visible-text change.
-`rawChanged` reports whether the exact response bytes changed and a new version
-was archived. A response can therefore have `rawChanged: true` and
+`rawChanged` reports whether the exact response bytes changed.
+`renderedChanged` reports whether the exact browser DOM changed. A new version
+is archived when either is true. A response can therefore have `rawChanged: true` and
 `contentChanged: false` when only a rotating token, nonce, or other HTML detail
 changed.
 
-If a source has `ignoreSelectors`, Fetchary parses both raw HTML versions into
-temporary DOMs, removes every matched element (including its descendants), and
-then applies the existing text normalization. Raw SHA-256 hashing and archive
-writes still use the original response bytes.
+If a source has `ignoreSelectors`, Fetchary parses the rendered HTML (or raw HTTP
+document in HTTP mode) into a temporary DOM, removes every matched element, and
+then applies text normalization. Raw and rendered SHA-256 hashing and archive
+writes always use the unmodified artifacts.
 
-If the raw HTML bytes have not changed, no new archived version is created.
+If neither the raw bytes nor rendered DOM changed, no new version is created.
 
 Only `last_checked_at` is updated.
 
@@ -423,9 +447,15 @@ Example:
   contentType: "text/html",
   contentLength: 95110,
   hash: "4d37a3...",
+  rawHash: "4d37a3...",
+  renderedHash: "71ab42...",
+  comparisonHash: "52b14c...",
   etag: "\"abc123\"",
   lastModified: "Sat, 29 Aug 2026 08:57:00 GMT",
-  file: "/Users/user/.fetchary/pages/12/7/response.html"
+  file: "/Users/user/.fetchary/pages/12/7/response.html",
+  rawFile: "/Users/user/.fetchary/pages/12/7/response.html",
+  renderedFile: "/Users/user/.fetchary/pages/12/7/rendered.html",
+  captureMode: "browser"
 }
 ```
 
@@ -451,6 +481,14 @@ The method reads the local archive.
 
 It must not fetch the live URL again.
 
+`read()` remains backwards-compatible and returns the exact raw response.
+Use `readRendered()` to read the rendered DOM; historical HTTP-only versions
+gracefully fall back to their raw response:
+
+```js
+const renderedHtml = await fetchary.readRendered(12, 7);
+```
+
 ---
 
 ### `diff(sourceId, options?)`
@@ -472,7 +510,7 @@ const diff = await fetchary.diff(12, {
 });
 ```
 
-Raw HTML comparison:
+Raw HTTP response comparison:
 
 ```js
 const diff = await fetchary.diff(12, {
@@ -481,6 +519,9 @@ const diff = await fetchary.diff(12, {
     mode: 'raw',
 });
 ```
+
+Text and element diffs use rendered HTML when available. `mode: 'raw'` always
+uses `response.html`.
 
 Possible options:
 
@@ -565,6 +606,15 @@ await fetchary.edit(12, {
 });
 ```
 
+Change capture behavior:
+
+```js
+await fetchary.edit(12, {
+    captureMode: 'browser',
+    waitAfterLoadMs: '8s',
+});
+```
+
 Possible input:
 
 ```ts
@@ -573,6 +623,8 @@ type EditSourceInput = {
     name?: string | null;
     tag?: string | null;
     ignoreSelectors?: string[];
+    captureMode?: 'browser' | 'http';
+    waitAfterLoadMs?: string | number;
 };
 ```
 
@@ -954,9 +1006,10 @@ Example structure:
 fetchary-export-12/
 ├── metadata.json
 ├── versions/
-│   ├── 001.html
-│   ├── 002.html
-│   └── 003.html
+│   ├── 001-response.html
+│   ├── 001-rendered.html
+│   ├── 002-response.html
+│   └── 002-rendered.html
 └── hashes.txt
 ```
 
@@ -1008,7 +1061,7 @@ The archive operation itself should not depend on user hooks succeeding.
 The library should expose typed errors.
 
 ```js
-import { FetcharyError, FetcharyFetchError, FetcharyNotFoundError, FetcharyIntervalError } from 'fetchary';
+import { FetcharyError, FetcharyFetchError, FetcharyBrowserError, FetcharyNotFoundError, FetcharyIntervalError } from 'fetchary';
 ```
 
 Example:
@@ -1028,6 +1081,7 @@ Recommended errors:
 ```text
 FetcharyError
 ├── FetcharyFetchError
+├── FetcharyBrowserError
 ├── FetcharyNotFoundError
 ├── FetcharyIntervalError
 ├── FetcharyStorageError
@@ -1079,6 +1133,7 @@ interface Fetchary {
     history(id: number, options?: HistoryOptions): Promise<Version[]>;
     version(sourceId: number, versionId?: number): Promise<Version>;
     read(sourceId: number, versionId?: number): Promise<string>;
+    readRendered(sourceId: number, versionId?: number): Promise<string>;
     diff(sourceId: number, options?: DiffOptions): Promise<DiffResult>;
 
     edit(id: number, changes: EditSourceInput): Promise<Source>;
@@ -1163,10 +1218,12 @@ dataDir/
     └── <source-id>/
         └── <version-id>/
             ├── response.html
+            ├── rendered.html
             └── metadata.json
 ```
 
-The response body is stored as raw HTML.
+`response.html` stores the exact HTTP response bytes. `rendered.html` stores the
+UTF-8 bytes returned by `page.content()` when browser capture applies.
 
 It should not be normalized, cleaned, parsed, rewritten, or processed before hashing and archiving.
 
@@ -1181,13 +1238,11 @@ This is important so that the archived file and recorded hash correspond exactly
 The core change-detection path is shared by CLI, library, and scheduler:
 
 ```text
-HTTP request
-↓
-response body
-↓
-raw SHA-256 + visible-text SHA-256
-↓
-compare with the previous version
+URL
+├── HTTP request → exact response bytes → raw SHA-256
+└── Chromium → load + configured wait → rendered DOM → rendered SHA-256
+                                               └── temporary filtered DOM
+                                                    → comparison SHA-256
 ↓
 raw unchanged?
 ├── yes → update last checked

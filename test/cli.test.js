@@ -34,13 +34,25 @@ test('CLI wraps add/list/fetch/show/history/diff and uses documented exit codes'
   const url = 'https://example.test/page';
   const base = ['--data-dir', dataDir];
 
-  const added = await runCli(['add', url, '--name', 'Test page', '--tag', 'test', '--json', ...base]);
+  const added = await runCli(['add', url, '--name', 'Test page', '--tag', 'test', '--mode', 'http', '--json', ...base]);
   assert.equal(added.code, 0, added.stderr);
   assert.equal(JSON.parse(added.stdout).version, 1);
+  assert.equal(JSON.parse(added.stdout).captureMode, 'http');
+  assert.equal(JSON.parse(added.stdout).waitAfterLoadMs, 5_000);
+
+  const browserConfigured = await runCli(['edit', '1', '--mode', 'browser', '--wait-after-load', '500ms', '--json', ...base]);
+  assert.equal(JSON.parse(browserConfigured.stdout).captureMode, 'browser');
+  assert.equal(JSON.parse(browserConfigured.stdout).waitAfterLoadMs, 500);
+  const captureShown = await runCli(['show', '1', ...base]);
+  assert.match(captureShown.stdout, /^Capture mode:\s+browser$/m);
+  assert.match(captureShown.stdout, /^Wait after load:\s+500ms$/m);
+  await runCli(['edit', '1', '--mode', 'http', ...base]);
 
   const listed = await runCli(['list', '--json', ...base]);
   assert.equal(listed.code, 0, listed.stderr);
   assert.equal(JSON.parse(listed.stdout)[0].name, 'Test page');
+  assert.equal(JSON.parse(listed.stdout)[0].captureMode, 'http');
+  assert.equal(JSON.parse(listed.stdout)[0].waitAfterLoadMs, 500);
   const humanList = await runCli(['list', ...base]);
   assert.match(humanList.stdout, /^ID\s+NAME\s+TAG\s+URL\s+VERSION\s+LAST CHECK\s+LAST CHANGE/m);
   assert.match(humanList.stdout, /^1\s+Test page\s+test\s+https:\/\/example\.test\/page\s+1\s+/m);
@@ -204,14 +216,14 @@ test('invalid argument counts include command usage and an example', async t => 
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fetchary-cli-usage-'));
   t.after(() => fs.rmSync(dataDir, { recursive: true, force: true }));
   const cases = [
-    { args: ['add'], usage: 'fetchary add <url> [--name <name>] [--tag <tag>] [--every <interval>] [--ignore-selector <css> ...]', example: 'fetchary add https://github.com/owner/repo --ignore-selector "relative-time"' },
+    { args: ['add'], usage: 'fetchary add <url> [--name <name>] [--tag <tag>] [--every <interval>] [--mode <browser|http>] [--wait-after-load <duration>] [--ignore-selector <css> ...]', example: 'fetchary add https://github.com/owner/repo --mode browser --ignore-selector "relative-time"' },
     { args: ['list', 'extra'], usage: 'fetchary list [--tag <tag>] [--json]', example: 'fetchary list --tag research' },
     { args: ['status', 'extra'], usage: 'fetchary status', example: 'fetchary status' },
     { args: ['show'], usage: 'fetchary show <id>', example: 'fetchary show 1' },
     { args: ['history'], usage: 'fetchary history <id>', example: 'fetchary history 1' },
     { args: ['diff'], usage: 'fetchary diff <id> or fetchary diff <id> <version1> <version2>', example: 'fetchary diff 4 1 2' },
     { args: ['open'], usage: 'fetchary open <id> [version] [--html]', example: 'fetchary open 1 2 --html' },
-    { args: ['edit'], usage: 'fetchary edit <id> [--url <url>] [--name <name>] [--tag <tag>] [--ignore-selector <css> ... | --clear-ignore-selectors]', example: 'fetchary edit 1 --ignore-selector "relative-time"' },
+    { args: ['edit'], usage: 'fetchary edit <id> [--url <url>] [--name <name>] [--tag <tag>] [--mode <browser|http>] [--wait-after-load <duration>] [--ignore-selector <css> ... | --clear-ignore-selectors]', example: 'fetchary edit 1 --mode http' },
     { args: ['enable'], usage: 'fetchary enable <id>', example: 'fetchary enable 1' },
     { args: ['disable'], usage: 'fetchary disable <id>', example: 'fetchary disable 1' },
     { args: ['remove'], usage: 'fetchary remove <id> [--purge]', example: 'fetchary remove 1' },
@@ -231,6 +243,17 @@ test('invalid argument counts include command usage and an example', async t => 
   }
 });
 
+test('CLI rejects invalid browser capture settings', async t => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fetchary-cli-capture-invalid-'));
+  t.after(() => fs.rmSync(dataDir, { recursive: true, force: true }));
+  const invalidMode = await runCli(['add', 'https://example.test/mode', '--mode', 'other', '--data-dir', dataDir]);
+  assert.equal(invalidMode.code, 2);
+  assert.match(invalidMode.stderr, /capture mode must be "browser" or "http"/);
+  const invalidWait = await runCli(['add', 'https://example.test/wait', '--wait-after-load', '-1s', '--data-dir', dataDir]);
+  assert.equal(invalidWait.code, 2);
+  assert.match(invalidWait.stderr, /wait after load must be a non-negative duration/);
+});
+
 test('CLI distinguishes raw-only changes from visible content changes', async t => {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fetchary-cli-changes-'));
   t.after(() => fs.rmSync(dataDir, { recursive: true, force: true }));
@@ -240,7 +263,7 @@ test('CLI distinguishes raw-only changes from visible content changes', async t 
   t.after(() => { globalThis.fetch = originalFetch; });
   const base = ['--data-dir', dataDir];
 
-  await runCli(['add', 'https://example.test/dynamic', ...base]);
+  await runCli(['add', 'https://example.test/dynamic', '--mode', 'http', ...base]);
   body = '<h1>same</h1><script nonce="two">ignored</script>\n';
   const rawOnly = await runCli(['fetch', '1', ...base]);
   assert.equal(rawOnly.code, 0, rawOnly.stderr);
@@ -275,6 +298,7 @@ test('CLI configures repeatable ignore selectors and applies current rules every
     '--ignore-selector', ' relative-time ',
     '--ignore-selector=.timestamp',
     '--ignore-selector', 'relative-time',
+    '--mode', 'http',
     '--json', ...base,
   ]);
   assert.equal(added.code, 0, added.stderr);

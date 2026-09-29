@@ -27,7 +27,7 @@ const HELP = `Fetchary 👁️ — ${pkg.version}
 Usage: fetchary <command> [arguments] [options]
 
 Commands:
-  add <url>                   Add and immediately archive a URL
+  add <url>                   Add and immediately capture a URL
   list                        List monitored sources
   fetch [id...]               Fetch one, several, or all enabled sources
   status                      Show storage statistics
@@ -58,6 +58,10 @@ Global options:
 Comparison options for add and edit:
   --ignore-selector <css>     Ignore matching elements (repeatable)
   --clear-ignore-selectors    Remove all ignored selectors when editing
+
+Capture options for add and edit:
+  --mode <browser|http>       Capture rendered HTML or HTTP only (default: browser)
+  --wait-after-load <time>    Browser wait after load, for example 500ms or 5s
 
 Diff and open options:
   --element-content           Show content changes with their HTML elements
@@ -92,14 +96,14 @@ Run scheduled checks:
 `;
 
 const COMMAND_GUIDANCE = Object.freeze({
-  add: { usage: 'fetchary add <url> [--name <name>] [--tag <tag>] [--every <interval>] [--ignore-selector <css> ...]', example: 'fetchary add https://github.com/owner/repo --ignore-selector "relative-time"' },
+  add: { usage: 'fetchary add <url> [--name <name>] [--tag <tag>] [--every <interval>] [--mode <browser|http>] [--wait-after-load <duration>] [--ignore-selector <css> ...]', example: 'fetchary add https://github.com/owner/repo --mode browser --ignore-selector "relative-time"' },
   list: { usage: 'fetchary list [--tag <tag>] [--json]', example: 'fetchary list --tag research' },
   status: { usage: 'fetchary status', example: 'fetchary status' },
   show: { usage: 'fetchary show <id>', example: 'fetchary show 1' },
   history: { usage: 'fetchary history <id>', example: 'fetchary history 1' },
   diff: { usage: 'fetchary diff <id> or fetchary diff <id> <version1> <version2>', example: 'fetchary diff 4 1 2' },
   open: { usage: 'fetchary open <id> [version] [--html]', example: 'fetchary open 1 2 --html' },
-  edit: { usage: 'fetchary edit <id> [--url <url>] [--name <name>] [--tag <tag>] [--ignore-selector <css> ... | --clear-ignore-selectors]', example: 'fetchary edit 1 --ignore-selector "relative-time"' },
+  edit: { usage: 'fetchary edit <id> [--url <url>] [--name <name>] [--tag <tag>] [--mode <browser|http>] [--wait-after-load <duration>] [--ignore-selector <css> ... | --clear-ignore-selectors]', example: 'fetchary edit 1 --mode http' },
   enable: { usage: 'fetchary enable <id>', example: 'fetchary enable 1' },
   disable: { usage: 'fetchary disable <id>', example: 'fetchary disable 1' },
   remove: { usage: 'fetchary remove <id> [--purge]', example: 'fetchary remove 1' },
@@ -110,7 +114,7 @@ const COMMAND_GUIDANCE = Object.freeze({
   run: { usage: 'fetchary run [--poll-interval <milliseconds>]', example: 'fetchary run --poll-interval 2000' },
 });
 
-const VALUE_OPTIONS = new Set(['name', 'tag', 'url', 'output', 'data-dir', 'poll-interval', 'every']);
+const VALUE_OPTIONS = new Set(['name', 'tag', 'url', 'output', 'data-dir', 'poll-interval', 'every', 'mode', 'wait-after-load']);
 const REPEATABLE_VALUE_OPTIONS = new Set(['ignore-selector']);
 const FLAG_OPTIONS = new Set(['json', 'quiet', 'verbose', 'no-color', 'help', 'example', 'version', 'purge', 'raw', 'element-content', 'element-raw', 'html', 'now', 'clear-ignore-selectors']);
 const ANSI = Object.freeze({
@@ -201,6 +205,10 @@ function size(value) {
   return `${(value / 1024 / 1024).toFixed(1)} MB`;
 }
 
+function duration(milliseconds) {
+  return milliseconds % 1_000 === 0 ? `${milliseconds / 1_000}s` : `${milliseconds}ms`;
+}
+
 function table(rows, columns) {
   if (!rows.length) return '';
   const widths = columns.map(column => Math.max(column.label.length, ...rows.map(row => visibleLength(column.value(row)))));
@@ -212,18 +220,34 @@ function table(rows, columns) {
 }
 
 async function classifyVersions(versions, ignoreSelectors = []) {
+  const byId = new Map(versions.map(version => [version.id, version]));
   const hashes = new Map(await Promise.all(versions.map(async version => [
     version.id,
-    comparisonHash(await fs.promises.readFile(version.file, 'utf8'), { ignoreSelectors }),
+    comparisonHash(await fs.promises.readFile(version.renderedFile && fs.existsSync(version.renderedFile) ? version.renderedFile : version.file, 'utf8'), { ignoreSelectors }),
   ])));
   return versions.map(version => {
-    if (version.id === 1) return { ...version, change: 'initial', rawChanged: false, contentChanged: null };
+    if (version.id === 1) return { ...version, change: 'initial', rawChanged: false, renderedChanged: false, contentChanged: null };
+    const previous = byId.get(version.id - 1);
     const previousHash = hashes.get(version.id - 1);
     const contentChanged = previousHash == null ? null : hashes.get(version.id) !== previousHash;
+    const rawChanged = previous == null ? null : version.rawHash !== previous.rawHash;
+    const renderedChanged = previous == null
+      ? null
+      : version.renderedHash == null ? false : version.renderedHash !== previous.renderedHash;
+    const change = contentChanged == null
+      ? 'unknown'
+      : contentChanged
+        ? 'content'
+        : rawChanged && renderedChanged
+          ? 'raw + rendered'
+          : renderedChanged
+            ? 'rendered only'
+            : 'raw only';
     return {
       ...version,
-      change: contentChanged == null ? 'unknown' : contentChanged ? 'content' : 'raw only',
-      rawChanged: true,
+      change,
+      rawChanged,
+      renderedChanged,
       contentChanged,
     };
   });
@@ -371,6 +395,8 @@ async function execute(fetchary, parsed, write, format = {}) {
         name: options.name,
         tag: options.tag,
         every: options.every,
+        mode: options.mode,
+        waitAfterLoad: options['wait-after-load'],
         ...(options['ignore-selector'] ? { ignoreSelectors: options['ignore-selector'] } : {}),
       });
       emitValue(source, `${color('✓ Added', 'green')} ${color(`#${source.id}`, 'blue')} ${color(source.url, 'cyan')}\n${color('✓ Saved', 'green')} version ${color(String(source.version), 'blue')}`);
@@ -395,18 +421,31 @@ async function execute(fetchary, parsed, write, format = {}) {
       const value = await fetchary.fetch(target);
       const results = Array.isArray(value) ? value : [value];
       const contentChanged = results.filter(result => result.contentChanged).length;
-      const rawOnly = results.filter(result => result.rawChanged && !result.contentChanged).length;
-      const unchanged = results.length - contentChanged - rawOnly;
+      const rawOnly = results.filter(result => result.rawChanged && !result.renderedChanged && !result.contentChanged).length;
+      const renderedOnly = results.filter(result => !result.rawChanged && result.renderedChanged && !result.contentChanged).length;
+      const rawAndRenderedOnly = results.filter(result => result.rawChanged && result.renderedChanged && !result.contentChanged).length;
+      const unchanged = results.length - contentChanged - rawOnly - renderedOnly - rawAndRenderedOnly;
+      const summary = [
+        `${color(String(contentChanged), contentChanged ? 'yellow' : 'gray')} ${color('content changed', contentChanged ? 'yellow' : 'gray')}`,
+        `${color(String(rawOnly), rawOnly ? 'yellow' : 'gray')} ${color('raw only', rawOnly ? 'yellow' : 'gray')}`,
+        ...(renderedOnly ? [`${color(String(renderedOnly), 'yellow')} ${color('rendered only', 'yellow')}`] : []),
+        ...(rawAndRenderedOnly ? [`${color(String(rawAndRenderedOnly), 'yellow')} ${color('raw + rendered only', 'yellow')}`] : []),
+        `${color(String(unchanged), 'gray')} ${color('unchanged', 'gray')}`,
+      ].join(', ');
       const human = [
         `Fetching ${results.length} source${results.length === 1 ? '' : 's'}...`,
         '',
         ...results.map(result => `${color(`#${result.id}`, 'blue')} ${result.contentChanged
           ? `${color('content changed', 'yellow')} → version ${color(String(result.version), 'blue')}`
-          : result.rawChanged
+          : result.rawChanged && result.renderedChanged
+            ? `${color('raw and rendered changed', 'yellow')}, ${color('content unchanged', 'gray')} → version ${color(String(result.version), 'blue')}`
+            : result.rawChanged
             ? `${color('raw changed', 'yellow')}, ${color('content unchanged', 'gray')} → version ${color(String(result.version), 'blue')}`
+            : result.renderedChanged
+              ? `${color('rendered changed', 'yellow')}, ${color('content unchanged', 'gray')} → version ${color(String(result.version), 'blue')}`
             : color('unchanged', 'gray')}`),
         '',
-        `${color(String(contentChanged), contentChanged ? 'yellow' : 'gray')} ${color('content changed', contentChanged ? 'yellow' : 'gray')}, ${color(String(rawOnly), rawOnly ? 'yellow' : 'gray')} ${color('raw only', rawOnly ? 'yellow' : 'gray')}, ${color(String(unchanged), 'gray')} ${color('unchanged', 'gray')}`,
+        summary,
       ].join('\n');
       emitValue(value, human);
       return contentChanged ? 10 : 0;
@@ -420,7 +459,7 @@ async function execute(fetchary, parsed, write, format = {}) {
     case 'show': {
       requireArgs(args, command, 1);
       const source = await fetchary.get(args[0]);
-      emitValue(source, `ID:               ${color(String(source.id), 'blue')}\nName:             ${source.name || '-'}\nTag:              ${color(source.tag || '-', 'blue')}\nURL:              ${link(color(source.url, 'cyan'), source.url)}\nEnabled:          ${color(source.enabled ? 'yes' : 'no', source.enabled ? 'green' : 'yellow')}\nIgnore selectors: ${source.ignoreSelectors.length ? source.ignoreSelectors.join(', ') : '-'}\nCreated:          ${color(localDate(source.createdAt), 'gray')}\nLast checked:     ${color(localDate(source.lastCheckedAt), 'gray')}\nLast changed:     ${color(localDate(source.lastChangedAt), 'gray')}\nVersions:         ${color(String(source.versions), 'blue')}\nCurrent hash:     ${color(source.currentHash || '-', 'gray')}`);
+      emitValue(source, `ID:               ${color(String(source.id), 'blue')}\nName:             ${source.name || '-'}\nTag:              ${color(source.tag || '-', 'blue')}\nURL:              ${link(color(source.url, 'cyan'), source.url)}\nEnabled:          ${color(source.enabled ? 'yes' : 'no', source.enabled ? 'green' : 'yellow')}\nCapture mode:     ${color(source.captureMode, 'blue')}\nWait after load:  ${color(duration(source.waitAfterLoadMs), 'blue')}\nIgnore selectors: ${source.ignoreSelectors.length ? source.ignoreSelectors.join(', ') : '-'}\nCreated:          ${color(localDate(source.createdAt), 'gray')}\nLast checked:     ${color(localDate(source.lastCheckedAt), 'gray')}\nLast changed:     ${color(localDate(source.lastChangedAt), 'gray')}\nVersions:         ${color(String(source.versions), 'blue')}\nRaw hash:         ${color(source.currentRawHash || '-', 'gray')}\nRendered hash:    ${color(source.currentRenderedHash || '-', 'gray')}\nComparison hash:  ${color(source.currentComparisonHash || '-', 'gray')}`);
       return 0;
     }
     case 'history': {
@@ -475,6 +514,8 @@ async function execute(fetchary, parsed, write, format = {}) {
       }
       const changes = {};
       for (const key of ['name', 'tag', 'url']) if (options[key] !== undefined) changes[key] = options[key];
+      if (options.mode !== undefined) changes.captureMode = options.mode;
+      if (options['wait-after-load'] !== undefined) changes.waitAfterLoadMs = options['wait-after-load'];
       if (options['ignore-selector']) changes.ignoreSelectors = options['ignore-selector'];
       if (options['clear-ignore-selectors']) changes.ignoreSelectors = [];
       const source = await fetchary.edit(args[0], changes);

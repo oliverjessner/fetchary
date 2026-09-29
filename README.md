@@ -6,9 +6,9 @@
 
 > **A local-first evidence layer for the public web.**
 
-Fetchary monitors public web resources and preserves exactly what the server returned.
+Fetchary monitors public web resources and preserves both what the server returned and what a real browser rendered.
 
-Every response body is stored byte-for-byte, hashed with SHA-256, and versioned only when its contents change. The result is a small, inspectable archive you can query, diff, export, and independently verify.
+Every response body is stored byte-for-byte and hashed with SHA-256. For HTML pages, Fetchary also renders the page with its bundled Chromium, archives the resulting DOM separately, and detects changes in that rendered content.
 
 Ignore dynamic DOM elements during comparison without altering the archived evidence.
 
@@ -16,14 +16,9 @@ Fetchary works as both a command-line tool and a Node.js library. Both interface
 
 ```text
 URL
- ↓
-HTTP response
- ↓
-exact response body
- ↓
-SHA-256
- ↓
-versioned local archive
+ ├── HTTP fetch ── exact response bytes ── raw SHA-256
+ └── Chromium ── load + 5s ── rendered DOM ── rendered SHA-256
+                                      └── temporary filtered DOM ── comparison SHA-256
 ```
 
 No cloud account. No proprietary storage. No rewriting of captured content.
@@ -40,7 +35,7 @@ Fetchary also keeps **what was actually returned**.
 
 Each archived version contains the exact response bytes used to calculate its SHA-256 hash. This makes captures reproducible and independently verifiable after the original resource has changed or disappeared.
 
-Fetchary is deliberately small. It performs normal HTTP requests and stores their results locally instead of trying to reproduce an entire browser.
+Fetchary is deliberately small. Chromium is used only as a deterministic rendering step: wait for `load`, wait another five seconds by default, then capture `page.content()`. Fetchary intentionally does not use `networkidle`, which is unreliable on pages with analytics, polling, ads, or WebSockets.
 
 ## Core principles
 
@@ -66,13 +61,13 @@ The bytes written to disk are the same bytes used to calculate the SHA-256 hash.
 
 ### Change-aware
 
-A new version is created only when the response body actually changes.
+A new version is created when either the exact response body or the rendered DOM changes.
 
 Repeated identical responses update the source's last-check time without duplicating the archived content.
 
 Per-source CSS ignore selectors can remove timestamps, counters, and other noisy
-elements from a temporary comparison DOM. Raw response bytes, raw hashes,
-archives, and raw diffs are never filtered.
+elements from a temporary comparison DOM. Raw responses, rendered archives,
+their hashes, and raw diffs are never filtered.
 
 ### Independently verifiable
 
@@ -81,7 +76,8 @@ Exports include archived versions, metadata, and SHA-256 hashes.
 You can verify a capture using standard system tools:
 
 ```bash
-shasum -a 256 fetchary-export-12/versions/001.html
+shasum -a 256 fetchary-export-12/versions/001-response.html
+shasum -a 256 fetchary-export-12/versions/001-rendered.html
 ```
 
 ### Composable
@@ -90,7 +86,9 @@ Use Fetchary interactively from the terminal, run it continuously as a monitor, 
 
 ## Installation
 
-Fetchary requires Node.js 22.5 or newer.
+Fetchary requires Node.js 26.0 or newer.
+Installing Fetchary also downloads Puppeteer's bundled Chrome for Testing; no
+system Chrome installation or executable-path configuration is required.
 
 ### npm library
 
@@ -129,6 +127,14 @@ Ignore dynamic elements when deciding whether visible content changed:
 fetchary add https://github.com/owner/repo \
   --ignore-selector "relative-time" \
   --ignore-selector ".timestamp"
+```
+
+New sources default to browser mode for HTML. Use HTTP-only capture for APIs,
+feeds, binary resources, or lightweight server-response monitoring:
+
+```bash
+fetchary add https://example.com/api/status --mode http
+fetchary edit 1 --mode browser --wait-after-load 10s
 ```
 
 Fetch it:
@@ -201,7 +207,7 @@ Only one Fetchary runner may manage a data directory at a time. Fetch failures a
 ## CLI
 
 ```text
-fetchary add <url> [--name <name>] [--tag <tag>] [--every <interval>] [--ignore-selector <css> ...]
+fetchary add <url> [--name <name>] [--tag <tag>] [--every <interval>] [--mode <browser|http>] [--wait-after-load <duration>] [--ignore-selector <css> ...]
 fetchary list [--tag <tag>] [--json]
 fetchary fetch [id...]
 fetchary status
@@ -209,7 +215,7 @@ fetchary show <id>
 fetchary history <id> [--json]
 fetchary diff <id> [from to] [--element-content|--element-raw|--raw] [--html]
 fetchary open <id> [version] [--html]
-fetchary edit <id> [--url <url>] [--name <name>] [--tag <tag>] [--ignore-selector <css> ... | --clear-ignore-selectors]
+fetchary edit <id> [--url <url>] [--name <name>] [--tag <tag>] [--mode <browser|http>] [--wait-after-load <duration>] [--ignore-selector <css> ... | --clear-ignore-selectors]
 fetchary enable <id>
 fetchary disable <id>
 fetchary remove <id> [--purge]
@@ -280,6 +286,8 @@ const source = await fetchary.add('https://example.com/news', {
     name: 'Example News',
     tag: 'research',
     every: '30m',
+    mode: 'browser',
+    waitAfterLoad: '5s',
     ignoreSelectors: ['relative-time', '.timestamp'],
 });
 
@@ -287,6 +295,7 @@ const result = await fetchary.fetch(source.id);
 
 console.log(result.changed);
 console.log(result.hash);
+console.log(result.renderedHash);
 
 await fetchary.close();
 ```
@@ -339,6 +348,7 @@ fetch
 history
 version
 read
+readRendered
 diff
 export
 ```
@@ -381,6 +391,7 @@ Read and compare archived versions without contacting the live website:
 
 ```js
 const html = await fetchary.read(12, 4);
+const renderedHtml = await fetchary.readRendered(12, 4);
 
 const latestTextDiff = await fetchary.diff(12);
 
@@ -405,6 +416,7 @@ Typed errors include:
 
 ```text
 FetcharyFetchError
+FetcharyBrowserError
 FetcharyNotFoundError
 FetcharyIntervalError
 FetcharyStorageError
@@ -469,21 +481,23 @@ Fetchary separates metadata from captured content.
     └── <source-id>/
         └── <version-number>/
             ├── response.html
+            ├── rendered.html
             └── metadata.json
 ```
 
 SQLite stores source, version, and schedule metadata.
 
-Captured response bodies remain ordinary files on disk.
+Captured response bodies and rendered DOMs remain ordinary files on disk.
 
 The SHA-256 hash is calculated from the exact same `Buffer` written to `response.html`.
 
-If the hash has not changed, Fetchary updates the source's last-check time but does not create another version.
+`response.html` is always the byte-exact HTTP body. `rendered.html`, when present,
+is the UTF-8 DOM returned by Puppeteer's `page.content()`. HTTP-only and clearly
+non-HTML resources do not create a rendered file.
 
-When a raw response changes, Fetchary also builds a temporary DOM, removes all
-elements matching the source's `ignoreSelectors`, and runs its normal text
-normalization on the result. That comparison decides `contentChanged` and
-`changed`. The temporary DOM is discarded; it is never written to the archive.
+Change detection tracks raw, rendered, and comparison hashes independently. The
+comparison DOM is built from rendered HTML when available, otherwise from the
+HTTP document. Ignore selectors are removed only from this temporary DOM.
 
 ## Evidence exports
 
@@ -494,14 +508,15 @@ fetchary-export-12/
 ├── metadata.json
 ├── hashes.txt
 └── versions/
-    ├── 001.html
-    └── 002.html
+    ├── 001-response.html
+    ├── 001-rendered.html
+    └── 002-response.html
 ```
 
 The archived files can be inspected without Fetchary and verified independently:
 
 ```bash
-shasum -a 256 fetchary-export-12/versions/001.html
+shasum -a 256 fetchary-export-12/versions/001-response.html
 ```
 
 This makes the archive portable instead of tying evidence to a proprietary database or application.
@@ -528,23 +543,20 @@ await fetchary.remove(12, { purge: true });
 
 ## What Fetchary is not
 
-Fetchary intentionally does not try to be a complete browser or web crawler.
+Fetchary intentionally does not try to be a crawler or general browser automation framework.
 
 It does not currently provide:
 
-- browser automation
-- JavaScript rendering
 - screenshots
 - crawling
+- clicking, login/session management, or user scripts
 - AI analysis
 - cloud accounts
 - notifications
 
-Fetchary performs normal HTTP requests.
-
-That constraint is intentional: its job is to create a small, transparent, reproducible record of what an HTTP endpoint returned over time.
-
-For rendered-page archiving, screenshots, authenticated browser sessions, or large-scale crawling, dedicated browser-based archiving systems may be a better fit.
+Chromium is limited to loading monitored HTML pages and snapshotting their DOM.
+For screenshots, authenticated sessions, interactive automation, or large-scale
+crawling, dedicated browser automation or archiving systems remain a better fit.
 
 ## Fetchary vs. a traditional change detector
 
@@ -568,6 +580,9 @@ npm run test:coverage
 The test suite covers:
 
 - exact-byte archiving and hashing
+- JavaScript rendering with local Chromium
+- separate raw, rendered, and comparison hashes
+- browser lifecycle and failure cleanup
 - changed and unchanged fetches
 - source lifecycle
 - exports
