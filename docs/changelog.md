@@ -1,3 +1,7 @@
+# 0.4.1
+
+- Improving schedule run std out
+
 # 0.4.0
 
 - two flags --element-raw and --element-content for dif
