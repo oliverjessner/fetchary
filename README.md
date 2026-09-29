@@ -214,7 +214,7 @@ fetchary status
 fetchary show <id>
 fetchary history <id> [--json]
 fetchary diff <id> [from to] [--element-content|--element-raw|--raw] [--html]
-fetchary open <id> [version] [--html]
+fetchary open <id> [version] [--html] [--raw]
 fetchary edit <id> [--url <url>] [--name <name>] [--tag <tag>] [--mode <browser|http>] [--wait-after-load <duration>] [--ignore-selector <css> ... | --clear-ignore-selectors]
 fetchary enable <id>
 fetchary disable <id>

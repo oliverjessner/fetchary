@@ -34,7 +34,7 @@ Commands:
   show <id>                   Show source details
   history <id>                List archived versions
   diff <id> [from] [to]       Compare archived versions
-  open <id> [version]         Open a local archived HTML file
+  open <id> [version]         Open rendered HTML (use --raw for the response)
   edit <id>                   Edit URL, name, tag, or ignore selectors
   enable <id>                 Enable a source
   disable <id>                Disable a source
@@ -66,7 +66,7 @@ Capture options for add and edit:
 Diff and open options:
   --element-content           Show content changes with their HTML elements
   --element-raw               Show raw changes grouped by HTML element
-  --raw                       Compare exact archived HTML
+  --raw                       Use the exact archived HTTP response
   --html                      Render a diff or open archived HTML in an editor
 `;
 
@@ -102,7 +102,7 @@ const COMMAND_GUIDANCE = Object.freeze({
   show: { usage: 'fetchary show <id>', example: 'fetchary show 1' },
   history: { usage: 'fetchary history <id>', example: 'fetchary history 1' },
   diff: { usage: 'fetchary diff <id> or fetchary diff <id> <version1> <version2>', example: 'fetchary diff 4 1 2' },
-  open: { usage: 'fetchary open <id> [version] [--html]', example: 'fetchary open 1 2 --html' },
+  open: { usage: 'fetchary open <id> [version] [--html] [--raw]', example: 'fetchary open 1 2 --raw' },
   edit: { usage: 'fetchary edit <id> [--url <url>] [--name <name>] [--tag <tag>] [--mode <browser|http>] [--wait-after-load <duration>] [--ignore-selector <css> ... | --clear-ignore-selectors]', example: 'fetchary edit 1 --mode http' },
   enable: { usage: 'fetchary enable <id>', example: 'fetchary enable 1' },
   disable: { usage: 'fetchary disable <id>', example: 'fetchary disable 1' },
@@ -569,8 +569,11 @@ async function execute(fetchary, parsed, write, format = {}) {
     case 'open': {
       requireArgs(args, command, 1, 2);
       const archived = await fetchary.version(args[0], args[1]);
-      await (options.html ? edit(archived.file) : open(archived.file));
-      emitValue(archived, `${color('✓ Opened', 'green')} ${color(archived.file, 'cyan')}`);
+      const file = options.raw || !archived.renderedFile || !fs.existsSync(archived.renderedFile)
+        ? archived.file
+        : archived.renderedFile;
+      await (options.html ? edit(file) : open(file));
+      emitValue({ ...archived, openedFile: file }, `${color('✓ Opened', 'green')} ${color(file, 'cyan')}`);
       return 0;
     }
     case 'edit': {

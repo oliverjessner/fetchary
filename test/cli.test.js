@@ -7,6 +7,7 @@ const path = require('node:path');
 const test = require('node:test');
 const pkg = require('../package.json');
 const { main } = require('../cli/index');
+const { createFetchary } = require('../src');
 
 async function runCli(args, options = {}) {
   let stdout = '';
@@ -233,7 +234,7 @@ test('invalid argument counts include command usage and an example', async t => 
     { args: ['show'], usage: 'fetchary show <id>', example: 'fetchary show 1' },
     { args: ['history'], usage: 'fetchary history <id>', example: 'fetchary history 1' },
     { args: ['diff'], usage: 'fetchary diff <id> or fetchary diff <id> <version1> <version2>', example: 'fetchary diff 4 1 2' },
-    { args: ['open'], usage: 'fetchary open <id> [version] [--html]', example: 'fetchary open 1 2 --html' },
+    { args: ['open'], usage: 'fetchary open <id> [version] [--html] [--raw]', example: 'fetchary open 1 2 --raw' },
     { args: ['edit'], usage: 'fetchary edit <id> [--url <url>] [--name <name>] [--tag <tag>] [--mode <browser|http>] [--wait-after-load <duration>] [--ignore-selector <css> ... | --clear-ignore-selectors]', example: 'fetchary edit 1 --mode http' },
     { args: ['enable'], usage: 'fetchary enable <id>', example: 'fetchary enable 1' },
     { args: ['disable'], usage: 'fetchary disable <id>', example: 'fetchary disable 1' },
@@ -263,6 +264,46 @@ test('CLI rejects invalid browser capture settings', async t => {
   const invalidWait = await runCli(['add', 'https://example.test/wait', '--wait-after-load', '-1s', '--data-dir', dataDir]);
   assert.equal(invalidWait.code, 2);
   assert.match(invalidWait.stderr, /wait after load must be a non-negative duration/);
+});
+
+test('open prefers rendered browser captures and supports explicit raw evidence', async t => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fetchary-cli-open-rendered-'));
+  t.after(() => fs.rmSync(dataDir, { recursive: true, force: true }));
+  const fetchary = await createFetchary({
+    dataDir,
+    fetch: async () => new Response('<main>server response</main>', { headers: { 'content-type': 'text/html' } }),
+    launchBrowser: async () => ({
+      async newPage() {
+        return {
+          async goto() {},
+          async content() { return '<html><body><main>rendered DOM</main></body></html>'; },
+          url() { return 'https://example.test/rendered'; },
+          async close() {},
+        };
+      },
+      async close() {},
+    }),
+  });
+  t.after(() => fetchary.close());
+  const source = await fetchary.add('https://example.test/rendered', { waitAfterLoad: 0 });
+  const archived = await fetchary.version(source.id);
+  await fetchary.close();
+
+  let openedFile;
+  const rendered = await runCli(['open', String(source.id), '--data-dir', dataDir], {
+    openFile: async file => { openedFile = file; },
+  });
+  assert.equal(rendered.code, 0, rendered.stderr);
+  assert.equal(openedFile, archived.renderedFile);
+  assert.equal(JSON.parse((await runCli(['open', String(source.id), '--json', '--data-dir', dataDir], {
+    openFile: async () => {},
+  })).stdout).openedFile, archived.renderedFile);
+
+  const raw = await runCli(['open', String(source.id), '--raw', '--data-dir', dataDir], {
+    openFile: async file => { openedFile = file; },
+  });
+  assert.equal(raw.code, 0, raw.stderr);
+  assert.equal(openedFile, archived.file);
 });
 
 test('CLI distinguishes raw-only changes from visible content changes', async t => {

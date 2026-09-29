@@ -386,7 +386,7 @@ Open an archived HTML version in the default browser.
 Open the latest version:
 
 ```bash
-fetchary open <id> [--html]
+fetchary open <id> [version] [--html] [--raw]
 ```
 
 Example:
@@ -399,12 +399,15 @@ Open a specific version:
 
 ```bash
 fetchary open 12 4 --html
+fetchary open 12 4 --raw
 ```
 
-Without `--html`, fetchary opens the archived page in the system's default
-application. With `--html`, it opens the local `response.html` in the standard
-editor. Fetchary uses `$VISUAL`, then `$EDITOR`, followed by the platform editor
-fallback. Neither variant requests the live website again.
+Browser captures open `rendered.html` by default; historical and HTTP-only
+versions fall back to `response.html`. Use `--raw` to explicitly open the exact
+HTTP response. Without `--html`, fetchary opens the selected artifact in the
+system's default application. With `--html`, it opens that artifact in the
+standard editor. Fetchary uses `$VISUAL`, then `$EDITOR`, followed by the
+platform editor fallback. No variant requests the live website again.
 
 ---
 
