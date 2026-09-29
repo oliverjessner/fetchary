@@ -612,7 +612,9 @@ fetchary run [--poll-interval <milliseconds>]
 ```
 
 The polling interval controls how often the runner checks for work; each source's
-schedule determines how often it is fetched.
+schedule determines how often it is fetched. At startup, the command prints each
+scheduled page and its fetch interval. Schedules belonging to disabled sources are
+shown as disabled and are not fetched until the source is enabled again.
 
 ```bash
 fetchary schedule 12 15m

@@ -350,6 +350,16 @@ async function execute(fetchary, parsed, write, format = {}) {
   const link = (value, url = value) => terminalLink(value, url, format.hyperlinks);
   const open = format.openFile || openFile;
   const edit = format.openEditor || openEditor;
+  const waitForShutdown = format.waitForShutdown || (runner => new Promise(resolve => {
+    const stop = async () => {
+      process.off('SIGINT', stop);
+      process.off('SIGTERM', stop);
+      await runner.stop();
+      resolve();
+    };
+    process.on('SIGINT', stop);
+    process.on('SIGTERM', stop);
+  }));
   const emit = value => { if (!options.quiet) write(value); };
   const emitValue = (value, human) => emit(options.json ? `${JSON.stringify(value, null, 2)}\n` : `${human}\n`);
 
@@ -523,18 +533,24 @@ async function execute(fetchary, parsed, write, format = {}) {
     case 'run': {
       requireArgs(args, command, 0);
       const pollInterval = options['poll-interval'] == null ? undefined : Number(options['poll-interval']);
+      const schedules = await fetchary.schedules();
+      const scheduledPages = await Promise.all(schedules.map(async schedule => ({
+        schedule,
+        source: await fetchary.get(schedule.sourceId),
+      })));
       const runner = await fetchary.run({ pollInterval });
-      emit(`${color('Fetchary scheduler running.', 'green')} ${color('Press Ctrl+C to stop.', 'gray')}\n`);
-      await new Promise(resolve => {
-        const stop = async () => {
-          process.off('SIGINT', stop);
-          process.off('SIGTERM', stop);
-          await runner.stop();
-          resolve();
-        };
-        process.on('SIGINT', stop);
-        process.on('SIGTERM', stop);
-      });
+      const scheduleSummary = scheduledPages.length
+        ? [
+            'Scheduled pages:',
+            ...scheduledPages.flatMap(({ schedule, source }) => {
+              const label = source.name ? `${source.name} — ${link(source.url)}` : link(source.url);
+              const disabled = source.enabled ? '' : ` ${color('(source disabled)', 'yellow')}`;
+              return [`  ${color(`#${source.id}`, 'blue')} ${label} — every ${color(schedule.every, 'blue')}${disabled}`];
+            }),
+          ].join('\n')
+        : color('No pages scheduled.', 'gray');
+      emit(`${color('Fetchary scheduler running.', 'green')} ${color('Press Ctrl+C to stop.', 'gray')}\n${scheduleSummary}\n`);
+      await waitForShutdown(runner);
       return 0;
     }
     default:
@@ -590,6 +606,7 @@ async function main(argv = process.argv.slice(2), io = {}) {
       hyperlinks,
       openFile: io.openFile,
       openEditor: io.openEditor,
+      waitForShutdown: io.waitForShutdown,
     });
   } catch (error) {
     const json = parsed.options.json;

@@ -16,6 +16,7 @@ async function runCli(args, options = {}) {
     hyperlinks: options.hyperlinks,
     openFile: options.openFile,
     openEditor: options.openEditor,
+    waitForShutdown: options.waitForShutdown,
     stdout: { isTTY: options.isTTY, write: chunk => { stdout += chunk; } },
     stderr: { write: chunk => { stderr += chunk; } },
   });
@@ -133,6 +134,16 @@ test('CLI wraps add/list/fetch/show/history/diff and uses documented exit codes'
   const scheduled = await runCli(['schedule', '1', '15m', '--json', ...base]);
   assert.equal(JSON.parse(scheduled.stdout).intervalSeconds, 900);
   assert.equal(JSON.parse((await runCli(['schedules', '--json', ...base])).stdout).length, 1);
+  const running = await runCli(['run', ...base], {
+    waitForShutdown: async runner => { await runner.stop(); },
+  });
+  assert.equal(running.code, 0, running.stderr);
+  assert.equal(running.stdout, [
+    'Fetchary scheduler running. Press Ctrl+C to stop.',
+    'Scheduled pages:',
+    '  #1 Edited page — https://example.test/page — every 15m',
+    '',
+  ].join('\n'));
   const unscheduled = await runCli(['unschedule', '1', ...base], { color: true });
   assert.equal(unscheduled.code, 0);
   assert.match(unscheduled.stdout, /\x1b\[33m✓ Unscheduled\x1b\[0m/);
@@ -175,6 +186,18 @@ test('CLI wraps add/list/fetch/show/history/diff and uses documented exit codes'
   assert.match(examples.stdout, /fetchary add https:\/\/example\.com\/news/);
   assert.match(examples.stdout, /fetchary diff 1/);
   assert.match(examples.stdout, /fetchary run/);
+});
+
+test('run reports when no pages are scheduled', async t => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fetchary-cli-run-empty-'));
+  t.after(() => fs.rmSync(dataDir, { recursive: true, force: true }));
+
+  const running = await runCli(['run', '--data-dir', dataDir], {
+    waitForShutdown: async runner => { await runner.stop(); },
+  });
+
+  assert.equal(running.code, 0, running.stderr);
+  assert.equal(running.stdout, 'Fetchary scheduler running. Press Ctrl+C to stop.\nNo pages scheduled.\n');
 });
 
 test('invalid argument counts include command usage and an example', async t => {
