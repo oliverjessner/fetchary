@@ -449,6 +449,7 @@ fetchary.on('fetch:error', event => {
 Available events include:
 
 ```text
+fetch:start
 fetch
 change
 version

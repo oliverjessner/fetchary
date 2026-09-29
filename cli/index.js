@@ -418,7 +418,73 @@ async function execute(fetchary, parsed, write, format = {}) {
     }
     case 'fetch': {
       const target = args.length === 0 ? undefined : args.length === 1 ? args[0] : args;
-      const value = await fetchary.fetch(target);
+      const total = target == null
+        ? (await fetchary.list()).filter(source => source.enabled).length
+        : new Set(args.map(value => /^\d+$/.test(value) ? String(Number(value)) : value)).size;
+      let started = 0;
+      let completed = 0;
+      let current;
+      let animation;
+      let frame = 0;
+      const active = new Map();
+      const showProgress = !options.json && !options.quiet;
+      const renderProgressBar = () => {
+        const width = 24;
+        const filled = total === 0 ? width : Math.min(width, Math.round((completed / total) * width));
+        const remaining = width - filled;
+        const pulse = remaining > 0 ? frame % remaining : -1;
+        const bar = [
+          color('━'.repeat(filled), 'cyan'),
+          remaining > 0 ? color('─'.repeat(pulse), 'gray') : '',
+          remaining > 0 ? color('●', 'cyan') : '',
+          remaining > 0 ? color('─'.repeat(remaining - pulse - 1), 'gray') : '',
+        ].join('');
+        const page = current
+          ? `  ${color(`#${current.sourceId}`, 'blue')} ${current.name || current.url} ${color(`[${current.captureMode}]`, 'gray')}`
+          : '';
+        emit(`\r\x1b[2K  ${bar}  ${completed}/${total}${page}`);
+      };
+      const onFetchStart = event => {
+        if (!showProgress) return;
+        current = event;
+        active.set(event.sourceId, event);
+        if (started === 0) emit(`${color('Fetching now', 'cyan')}\n`);
+        started++;
+        if (format.interactive) {
+          renderProgressBar();
+          if (!animation) {
+            animation = setInterval(() => {
+              frame++;
+              renderProgressBar();
+            }, 80);
+            animation.unref?.();
+          }
+          return;
+        }
+        const name = event.name ? ` ${event.name}` : '';
+        emit(`  ${color('◉', 'cyan')} ${color(`#${event.sourceId}`, 'blue')}${name}\n`);
+        emit(`    ${color('↳', 'gray')} ${link(color(event.url, 'cyan'), event.url)} ${color(`[${event.captureMode}]`, 'gray')}\n`);
+      };
+      const onFetchComplete = event => {
+        if (!showProgress || !format.interactive) return;
+        completed++;
+        active.delete(event.sourceId);
+        current = [...active.values()].at(-1) || null;
+        renderProgressBar();
+      };
+      fetchary.on('fetch:start', onFetchStart);
+      fetchary.on('fetch', onFetchComplete);
+      fetchary.on('fetch:error', onFetchComplete);
+      let value;
+      try {
+        value = await fetchary.fetch(target);
+      } finally {
+        fetchary.off('fetch:start', onFetchStart);
+        fetchary.off('fetch', onFetchComplete);
+        fetchary.off('fetch:error', onFetchComplete);
+        if (animation) clearInterval(animation);
+        if (showProgress && format.interactive && started > 0) emit('\n');
+      }
       const results = Array.isArray(value) ? value : [value];
       const contentChanged = results.filter(result => result.contentChanged).length;
       const rawOnly = results.filter(result => result.rawChanged && !result.renderedChanged && !result.contentChanged).length;
@@ -433,7 +499,7 @@ async function execute(fetchary, parsed, write, format = {}) {
         `${color(String(unchanged), 'gray')} ${color('unchanged', 'gray')}`,
       ].join(', ');
       const human = [
-        `Fetching ${results.length} source${results.length === 1 ? '' : 's'}...`,
+        started ? '\nResults' : `Fetching ${results.length} source${results.length === 1 ? '' : 's'}...`,
         '',
         ...results.map(result => `${color(`#${result.id}`, 'blue')} ${result.contentChanged
           ? `${color('content changed', 'yellow')} → version ${color(String(result.version), 'blue')}`
@@ -648,6 +714,7 @@ async function main(argv = process.argv.slice(2), io = {}) {
       openFile: io.openFile,
       openEditor: io.openEditor,
       waitForShutdown: io.waitForShutdown,
+      interactive: Boolean(stdout.isTTY && color),
     });
   } catch (error) {
     const json = parsed.options.json;

@@ -191,14 +191,27 @@ fetchary fetch 12 14 18
 Example output:
 
 ```text
-Fetching 3 sources...
+Fetching now
+  ◉ #12 Example News
+    ↳ https://example.com/news [browser]
+  ◉ #14 Press Release
+    ↳ https://example.org/press [browser]
+  ◉ #18 Company Page
+    ↳ https://example.net/company [http]
 
-#12 Example News     unchanged
-#14 Press Release    content changed → version 7
-#18 Company Page     raw changed, content unchanged → version 4
+Results
+
+#12 unchanged
+#14 content changed → version 7
+#18 raw changed, content unchanged → version 4
 
 1 content changed, 1 raw only, 1 unchanged
 ```
+
+In an interactive terminal Fetchary renders this as an in-place progress bar,
+including the current page and completed/total count. Redirected output uses the
+log-friendly `◉` entries shown above. Progress is suppressed by `--json` and
+`--quiet`.
 
 `content changed` means the normalized comparison DOM differs. `raw changed, content unchanged`
 means that the exact HTML bytes changed—for example because of a rotating CSRF

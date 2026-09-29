@@ -899,6 +899,17 @@ continues using the stored schedules.
 
 ## Events
 
+### `fetch:start`
+
+Emitted immediately before a source capture starts. The CLI uses this event to
+show the page currently being fetched.
+
+```js
+fetchary.on('fetch:start', event => {
+    console.log(event.sourceId, event.name, event.url, event.captureMode);
+});
+```
+
 Applications embedding fetchary often need to react when a page changes or a fetch fails.
 
 The library should expose events without requiring applications to parse console output.

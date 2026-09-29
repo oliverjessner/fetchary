@@ -141,7 +141,18 @@ test('CLI wraps add/list/fetch/show/history/diff and uses documented exit codes'
   assert.match(enabled.stdout, /\x1b\[32m✓ Enabled\x1b\[0m \x1b\[34m#1\x1b\[0m/);
   const unchangedHuman = await runCli(['fetch', '1', ...base], { color: true });
   assert.equal(unchangedHuman.code, 0);
+  assert.match(unchangedHuman.stdout, /\x1b\[36mFetching now\x1b\[0m/);
+  assert.match(unchangedHuman.stdout, /\x1b\[36m◉\x1b\[0m \x1b\[34m#1\x1b\[0m Edited page/);
+  assert.match(unchangedHuman.stdout, /https:\/\/example\.test\/page.*\[http\]/);
+  assert.equal(unchangedHuman.stdout.indexOf('Fetching now') < unchangedHuman.stdout.indexOf('Results'), true);
   assert.match(unchangedHuman.stdout, /\x1b\[90munchanged\x1b\[0m/);
+
+  const interactiveFetch = await runCli(['fetch', '1', ...base], { color: true, isTTY: true });
+  assert.equal(interactiveFetch.code, 0, interactiveFetch.stderr);
+  assert.match(interactiveFetch.stdout, /\r\x1b\[2K/);
+  assert.match(interactiveFetch.stdout, /0\/1/);
+  assert.match(interactiveFetch.stdout, /1\/1/);
+  assert.match(interactiveFetch.stdout, /Edited page/);
 
   const scheduled = await runCli(['schedule', '1', '15m', '--json', ...base]);
   assert.equal(JSON.parse(scheduled.stdout).intervalSeconds, 900);

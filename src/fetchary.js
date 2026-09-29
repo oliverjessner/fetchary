@@ -328,6 +328,13 @@ class Fetchary extends EventEmitter {
 
   async _performFetch(id) {
     const source = this._requireSource(id);
+    this._emit('fetch:start', {
+      id,
+      sourceId: id,
+      url: source.url,
+      name: source.name,
+      captureMode: source.captureMode,
+    });
     await this._hook('beforeFetch', { sourceId: id, url: source.url });
     let captured;
     try {

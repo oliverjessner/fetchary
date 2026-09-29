@@ -1,4 +1,4 @@
-# Next
+# 0.5.0
 
 - browser capture for HTML using Puppeteer and bundled Chrome for Testing
 - separate raw response, rendered DOM, and comparison hashes

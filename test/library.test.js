@@ -43,7 +43,7 @@ test('archives exact response bytes and distinguishes raw from visible content c
   });
   t.after(() => fetchary.close());
 
-  const events = { fetch: 0, change: 0, version: 0 };
+  const events = { 'fetch:start': 0, fetch: 0, change: 0, version: 0 };
   for (const name of Object.keys(events)) fetchary.on(name, () => events[name]++);
 
   const source = await fetchary.add('https://example.com/page', { name: 'Page', tag: 'research', mode: 'http' });
@@ -74,7 +74,7 @@ test('archives exact response bytes and distinguishes raw from visible content c
   assert.equal(changed.version, 2);
   assert.equal(changed.previousHash, archived.hash);
   assert.deepEqual(fs.readFileSync((await fetchary.version(source.id, 2)).file), second);
-  assert.deepEqual(events, { fetch: 3, change: 2, version: 2 });
+  assert.deepEqual(events, { 'fetch:start': 3, fetch: 3, change: 2, version: 2 });
   assert.equal(requests[0].init.headers['user-agent'], 'fetchary-test/1');
 
   const diff = await fetchary.diff(source.id);
@@ -97,7 +97,7 @@ test('archives exact response bytes and distinguishes raw from visible content c
   assert.equal((await fetchary.history(source.id)).length, 3);
   assert.equal((await fetchary.get(source.id)).lastChangedAt, lastContentChange);
   assert.equal((await fetchary.diff(source.id)).changed, false);
-  assert.deepEqual(events, { fetch: 4, change: 2, version: 3 });
+  assert.deepEqual(events, { 'fetch:start': 4, fetch: 4, change: 2, version: 3 });
 });
 
 test('ignore selectors filter comparisons without altering raw archived evidence', async t => {
