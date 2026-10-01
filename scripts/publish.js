@@ -188,24 +188,39 @@ async function sha256File(filePath) {
 async function waitForPublishedTarball(version, expectedSha256, options = {}) {
   const attempts = options.attempts ?? 30;
   const delayMs = options.delayMs ?? 2_000;
+  const timeoutMs = options.timeoutMs ?? 30_000;
+  const fetchTarball = options.fetch ?? fetch;
   const url = `https://registry.npmjs.org/fetchary/-/fetchary-${version}.tgz`;
+  const requestId = crypto.randomUUID();
 
   process.stdout.write(`\n==> Wait for npm tarball\n${url}\n`);
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    // The registry CDN can cache a pre-publication 404 for several minutes,
+    // even with cache: 'no-store'. Give every retry a fresh cache key.
+    const requestUrl = new URL(url);
+    requestUrl.searchParams.set('fetchary-publish', `${requestId}-${attempt}`);
+    let contents;
     try {
-      const response = await fetch(url, { cache: 'no-store' });
+      const response = await fetchTarball(requestUrl.href, {
+        cache: 'no-store',
+        signal: AbortSignal.timeout(timeoutMs),
+      });
       if (response.ok) {
-        const contents = Buffer.from(await response.arrayBuffer());
-        const actualSha256 = crypto.createHash('sha256').update(contents).digest('hex');
-        if (actualSha256 !== expectedSha256) {
-          throw new Error(`tarball SHA256 is ${actualSha256}, expected ${expectedSha256}`);
-        }
-        process.stdout.write(`npm tarball is available (attempt ${attempt}).\n`);
-        return;
+        contents = Buffer.from(await response.arrayBuffer());
+      } else {
+        process.stdout.write(`Attempt ${attempt}/${attempts}: HTTP ${response.status}; retrying.\n`);
+        await response.body?.cancel();
       }
-      process.stdout.write(`Attempt ${attempt}/${attempts}: HTTP ${response.status}; retrying.\n`);
     } catch (error) {
       process.stdout.write(`Attempt ${attempt}/${attempts}: ${error.message}; retrying.\n`);
+    }
+    if (contents !== undefined) {
+      const actualSha256 = crypto.createHash('sha256').update(contents).digest('hex');
+      if (actualSha256 !== expectedSha256) {
+        throw new Error(`tarball SHA256 is ${actualSha256}, expected ${expectedSha256}`);
+      }
+      process.stdout.write(`npm tarball is available (attempt ${attempt}).\n`);
+      return;
     }
     if (attempt < attempts) await new Promise(resolve => setTimeout(resolve, delayMs));
   }
@@ -277,7 +292,11 @@ Options:
 `);
 }
 
-main().catch((error) => {
-  process.stderr.write(`\nPublish failed: ${error instanceof Error ? error.message : String(error)}\n`);
-  process.exitCode = 1;
-});
+if (require.main === module) {
+  main().catch((error) => {
+    process.stderr.write(`\nPublish failed: ${error instanceof Error ? error.message : String(error)}\n`);
+    process.exitCode = 1;
+  });
+}
+
+module.exports = { waitForPublishedTarball };
