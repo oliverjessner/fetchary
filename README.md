@@ -40,6 +40,8 @@ Fetchary is deliberately small. Chromium is used only as a deterministic renderi
 For public Threads pages, Fetchary declines the optional-cookie prompt when it
 appears during that wait, so the consent dialog does not cover the archived
 DOM. This does not sign in or bypass Threads' logged-out content limits.
+Site-specific overlay handling lives in `src/vendors/`; add another vendor
+module and register it in `src/vendors/index.js` to support another website.
 
 ## Core principles
 

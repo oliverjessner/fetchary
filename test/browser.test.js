@@ -158,6 +158,9 @@ test('Threads cookie consent is declined during the post-load wait', async t => 
     innerText: '  Decline   optional cookies  ',
     click() { clicked = true; },
   };
+  const consentDialog = {
+    querySelectorAll() { return [consentButton]; },
+  };
   const fetchary = await createFetchary({
     dataDir,
     fetch: async () => new Response('<div id="app"></div>', { headers: { 'content-type': 'text/html' } }),
@@ -167,9 +170,9 @@ test('Threads cookie consent is declined during the post-load wait', async t => 
           async goto() {},
           async evaluate(callback) {
             evaluations++;
-            const elements = evaluations > 1 ? [consentButton] : [];
+            const dialogs = evaluations > 1 ? [consentDialog] : [];
             return vm.runInNewContext(`(${callback.toString()})()`, {
-              document: { querySelectorAll() { return elements; } },
+              document: { querySelectorAll() { return dialogs; } },
             });
           },
           async content() { return '<html><body><main>Threads profile</main></body></html>'; },

@@ -15,6 +15,10 @@ prompt when it appears during the configured post-load wait. The capture result
 records this as `dismissedOverlays: ['threads-cookie-consent']`; it does not log
 in or bypass logged-out content limits.
 
+Vendor-specific browser behavior is isolated in `src/vendors/`. Each module
+declares its URL matcher and overlay actions and is registered in
+`src/vendors/index.js`, keeping the generic browser capture site-agnostic.
+
 ## Installation
 
 Node.js 26.0 or newer is required.
