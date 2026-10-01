@@ -329,18 +329,50 @@ class Fetchary extends EventEmitter {
 
   async followerCount(id) {
     const source = await this.get(id);
+    const details = await this._followerDetails(source);
+    if (!details) {
+      throw new FetcharyValidationError(`source ${source.id} does not support vendor follower counts`, { sourceId: source.id });
+    }
+    if (details.count === null) {
+      throw new FetcharyNotFoundError(`follower count is unavailable in the latest capture for source ${source.id} (${details.vendor})`, { sourceId: source.id });
+    }
+    return details.count;
+  }
+
+  async followers(options = {}) {
+    const sources = await this.list(options);
+    const followers = [];
+    for (const source of sources) {
+      if (!source.versions) continue;
+      const details = await this._followerDetails(source);
+      if (!details || details.count === null) continue;
+      followers.push({
+        id: source.id,
+        follower: details.count,
+        name: source.name || details.vendor,
+        url: source.url,
+        lastCheckedAt: source.lastCheckedAt,
+        lastChangedAt: source.lastChangedAt,
+      });
+    }
+    const sum = followers.reduce((total, row) => total + row.follower, 0);
+    if (!Number.isSafeInteger(sum)) throw new FetcharyValidationError('follower sum exceeds the maximum safe integer');
+    return { followers, sum };
+  }
+
+  async _followerDetails(source) {
     const archived = await this.version(source.id);
     const url = archived.browserFinalUrl || archived.finalUrl || source.url;
     const vendor = this.vendorRegistry.modules.find(module => module.matches(url));
-    if (!vendor || typeof vendor.followerCount !== 'function') {
-      throw new FetcharyValidationError(`source ${source.id} does not support vendor follower counts`, { sourceId: source.id });
-    }
+    if (!vendor || typeof vendor.followerCount !== 'function') return null;
     const { document } = parseHTML(await this.readRendered(source.id, archived.id));
-    const count = await vendor.followerCount(document, url);
-    if (!Number.isSafeInteger(count) || count < 0) {
-      throw new FetcharyNotFoundError(`follower count is unavailable in the latest capture for source ${source.id} (${vendor.name})`, { sourceId: source.id });
+    let count = await vendor.followerCount(document, url);
+    if ((!Number.isSafeInteger(count) || count < 0) && archived.renderedFile &&
+        typeof vendor.followerCountFromRaw === 'function' && vendor.matches(archived.finalUrl)) {
+      const raw = parseHTML(await this.read(source.id, archived.id)).document;
+      count = await vendor.followerCountFromRaw(raw, archived.finalUrl, url);
     }
-    return count;
+    return { vendor: vendor.name, count: Number.isSafeInteger(count) && count >= 0 ? count : null };
   }
 
   async fetch(target) {

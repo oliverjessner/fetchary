@@ -95,6 +95,22 @@ or `fetchary vendor twitch disable` to turn off their actions. TikTok consent
 controls in open shadow DOM are supported. CAPTCHA prompts and content gates
 remain part of the captured page.
 
+LinkedIn pages reject optional cookies and close recognized, dismissible sign-in
+dialogs. The vendor is registered automatically and can be disabled with
+`fetchary vendor linkedin disable`.
+
+```bash
+fetchary add https://www.linkedin.com/company/linkedin/ --name "LinkedIn company"
+```
+
+Public personal, company, school, and showcase pages can supply follower counts
+to `fetchary follower`. Connections and post reactions are excluded. Full login
+walls and verification pages remain in the capture; counts are unavailable when
+neither the rendered page nor the archived HTTP response exposes the profile.
+If Chromium reaches an authentication wall but the HTTP response in the same
+capture contains the public profile, its follower count is used. Both archived
+files are preserved and no additional request is made.
+
 Optional metadata:
 
 ```bash
@@ -312,7 +328,7 @@ is returned as `fetchBytes`.
 Show detailed information about a monitored URL.
 
 ```bash
-fetchary show <id> [--follower] [--json]
+fetchary show <id> [--json]
 ```
 
 In supported interactive terminals, the displayed URL is clickable.
@@ -341,26 +357,72 @@ Comparison hash: 52b14c...
 Ignore selectors: relative-time, .timestamp
 ```
 
-Use `--follower` to print only the follower count from the latest saved vendor
-profile, with no labels, colors, or source details:
+---
+
+### `fetchary follower`
+
+Print a single vendor profile's latest archived follower count, or list all
+available counts with a sum. Without an ID, `--tag` filters the list and its sum.
 
 ```bash
-node cli/index.js show 5 --follower
-# 63
+fetchary follower [id] [--tag <tag>] [--json]
 ```
 
-Supported vendors are GitHub, Threads, X, Instagram, TikTok, Twitch, and
-YouTube; YouTube returns subscribers. `--json` also returns a single number.
+With an ID, output is only the number:
+
+```bash
+fetchary follower 3
+# 65
+```
+
+Without an ID:
+
+```bash
+fetchary follower
+fetchary follower --tag personal
+```
+
+Example output:
+
+```text
+ID  FOLLOWER  NAME     URL                                    LAST CHECK  LAST CHANGE
+5   65        github   https://github.com/oliverjessner        1 min ago   1 min ago
+6   1473      threads  https://www.threads.com/@oliverjessner  1 min ago   1 min ago
+9   1711      youtube  https://youtube.com/@oliverjessner     1 min ago   1 min ago
+------
+sum: 3.249
+```
+
+Supported vendors are GitHub, Threads, X, Instagram, TikTok, Twitch, LinkedIn, and
+YouTube; YouTube returns subscribers. `NAME` uses the source's name, or the
+vendor name if none was set. `LAST CHECK` and `LAST CHANGE` are the source's
+capture and content-change timestamps, as in `list`. URLs are clickable in
+supported terminals.
+
+The list omits removed sources, unsupported sources, and captures without an
+available count. Sources disabled for fetching and disabled vendor integrations
+still contribute their saved counts. Zero counts are included. Empty lists
+print `No follower counts available.` and `sum: 0`. `--tag` applies to lists
+only and cannot be combined with an ID.
+
+With an ID, `--json` returns a number. For lists, it returns
+`{ "followers": [...], "sum": 3249 }`; each row contains `id`, `follower`,
+`name`, `url`, `lastCheckedAt`, and `lastChangedAt`. JSON numbers are unformatted;
+the terminal sum uses dots as thousands separators.
+
 Exact embedded profile statistics and tooltips take priority over rounded
 counts. If only `1.5K` is available, the output is `1500` with the precision of
 the captured page.
 
 This command reads the newest rendered archive, falling back to raw HTML for
-HTTP-only captures. It does not fetch or modify captured evidence; use
+HTTP-only captures. LinkedIn can also fall back to the HTTP profile response
+from the same capture when its rendered page has no count. It does not fetch
+or modify captured evidence; use
 `fetchary fetch 5` to update the capture first. Ignore selectors and vendor
-activation do not filter archive reads. Unsupported sources exit with code 2;
-missing or hidden counts exit with code 1 and no number on stdout.
-`--follower` is only available with `show`.
+activation do not filter archive reads. For a single ID, unsupported sources
+exit with code 2; missing or hidden counts exit with code 1 and no number on
+stdout. Archive read errors still fail the list instead of silently changing
+its total.
 
 ---
 

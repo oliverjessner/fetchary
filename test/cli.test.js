@@ -212,12 +212,15 @@ test('CLI wraps add/list/fetch/show/history/diff and uses documented exit codes'
   assert.match(examples.stdout, /fetchary run/);
 });
 
-test('show --follower prints only the latest archived vendor count, including JSON and unavailable errors', async t => {
+test('follower <id> prints only the latest archived vendor count, including JSON and unavailable errors', async t => {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fetchary-cli-followers-'));
   t.after(() => fs.rmSync(dataDir, { recursive: true, force: true }));
   let html;
   const fetchary = await createFetchary({ dataDir, fetch: async () => new Response(html, { headers: { 'content-type': 'text/html' } }) });
   t.after(() => fetchary.close());
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => { throw new Error('follower commands must not fetch'); };
+  t.after(() => { globalThis.fetch = originalFetch; });
   const base = ['--data-dir', dataDir];
   const fixtures = [
     ['https://github.com/example', '<a href="/example?tab=followers">63 followers</a>', 63],
@@ -227,42 +230,126 @@ test('show --follower prints only the latest archived vendor count, including JS
     ['https://instagram.com/example/', '<meta property="og:description" content="1.234 Follower, 50 Beiträge">', 1234],
     ['https://tiktok.com/@example', '<strong data-e2e="followers-count">0</strong>', 0],
     ['https://twitch.tv/example', '<div class="home-header-sticky"><p>2.5M followers</p></div>', 2500000],
+    ['https://linkedin.com/company/example/', '<h3 class="top-card-layout__first-subline">Berlin 2,345 followers</h3>', 2345],
   ];
   for (const [url, body, expected] of fixtures) {
     html = body;
     const source = await fetchary.add(url, { mode: 'http', ignoreSelectors: ['a', 'strong', 'meta', 'span', 'p'] });
-    const shown = await runCli(['show', String(source.id), '--follower', ...base], { color: true, hyperlinks: true, isTTY: true });
+    const shown = await runCli(['follower', String(source.id), ...base], { color: true, hyperlinks: true, isTTY: true });
     assert.equal(shown.code, 0, shown.stderr);
     assert.equal(shown.stdout, `${expected}\n`);
     assert.equal(shown.stderr, '');
-    const json = await runCli(['show', String(source.id), '--follower', '--json', ...base]);
+    const json = await runCli(['follower', String(source.id), '--json', ...base]);
     assert.equal(json.code, 0, json.stderr);
     assert.equal(JSON.parse(json.stdout), expected);
-    assert.equal((await runCli(['show', String(source.id), '--follower', '--quiet', ...base])).stdout, '');
+    assert.equal((await runCli(['follower', String(source.id), '--quiet', ...base])).stdout, '');
   }
   html = '<a href="/example?tab=followers">64 followers</a>';
   await fetchary.fetch(1);
-  assert.equal((await runCli(['show', '1', '--follower', ...base])).stdout, '64\n');
+  assert.equal((await runCli(['follower', '1', ...base])).stdout, '64\n');
   assert.match((await runCli(['show', '1', ...base])).stdout, /^ID:\s+1$/m);
   html = '<main>Login required</main>';
   await fetchary.fetch(1);
-  const unavailable = await runCli(['show', '1', '--follower', '--json', ...base]);
+  const unavailable = await runCli(['follower', '1', '--json', ...base]);
   assert.equal(unavailable.code, 1);
   assert.equal(unavailable.stdout, '');
   assert.equal(JSON.parse(unavailable.stderr).error, 'FetcharyNotFoundError');
   assert.match(JSON.parse(unavailable.stderr).message, /follower count is unavailable/);
-  const missing = await runCli(['show', '9999', '--follower', ...base]);
+  const missing = await runCli(['follower', '9999', ...base]);
   assert.equal(missing.code, 1);
   assert.equal(missing.stdout, '');
   const unsupported = await fetchary.add('https://example.test/', { mode: 'http' });
-  const invalid = await runCli(['show', String(unsupported.id), '--follower', ...base]);
+  const invalid = await runCli(['follower', String(unsupported.id), ...base]);
   assert.equal(invalid.code, 2);
   assert.equal(invalid.stdout, '');
   assert.match(invalid.stderr, /does not support vendor follower counts/);
-  const invalidCommand = await runCli(['list', '--follower', ...base]);
-  assert.equal(invalidCommand.code, 2);
-  assert.match(invalidCommand.stderr, /--follower is only supported by show/);
-  assert.match((await runCli(['--help'])).stdout, /--follower\s+Print only the latest archived vendor follower count/);
+  const taggedId = await runCli(['follower', '1', '--tag', 'personal', ...base]);
+  assert.equal(taggedId.code, 2);
+  assert.match(taggedId.stderr, /--tag is only supported when listing followers without an id/);
+  const oldFlag = await runCli(['show', '1', '--follower', ...base]);
+  assert.equal(oldFlag.code, 2);
+  assert.match(oldFlag.stderr, /unknown option --follower/);
+  const help = (await runCli(['--help'])).stdout;
+  assert.match(help, /follower \[id\]\s+Show a follower count or list all counts with a sum/);
+  assert.equal(help.includes('--follower'), false);
+  const examples = (await runCli(['--example'])).stdout;
+  assert.match(examples, /fetchary follower 3/);
+  assert.match(examples, /fetchary follower --tag personal/);
+});
+
+test('follower lists counts with a sum and tag filtering, without fetching or including unavailable sources', async t => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fetchary-cli-follower-list-'));
+  t.after(() => fs.rmSync(dataDir, { recursive: true, force: true }));
+  let html;
+  const fetchary = await createFetchary({ dataDir, fetch: async () => new Response(html, { headers: { 'content-type': 'text/html' } }) });
+  t.after(() => fetchary.close());
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => { throw new Error('follower commands must not fetch'); };
+  t.after(() => { globalThis.fetch = originalFetch; });
+  const base = ['--data-dir', dataDir];
+  const fixtures = [
+    ['https://github.com/example', '<a href="/example?tab=followers">65 followers</a>', 'personal', undefined],
+    ['https://x.com/example', '<a href="/example/verified_followers">200 Followers</a>', 'business', 'Work account'],
+    ['https://threads.com/@example', '<meta name="description" content="1,473 followers • 200 threads">', 'personal', undefined],
+    ['https://youtube.com/@example', '<yt-page-header-renderer><span>1,511 subscribers</span></yt-page-header-renderer>', 'personal', undefined],
+    ['https://tiktok.com/@example', '<strong data-e2e="followers-count">0</strong>', 'personal', undefined],
+    ['https://linkedin.com/company/example/', '<h3 class="top-card-layout__first-subline">Berlin 0 followers</h3>', 'business', undefined],
+    ['https://instagram.com/example/', '<main>Login required</main>', 'personal', undefined],
+    ['https://example.test/', '<meta name="description" content="900 followers">', 'personal', undefined],
+  ];
+  for (const [url, body, tag, name] of fixtures) {
+    html = body;
+    await fetchary.add(url, { mode: 'http', tag, name });
+  }
+  html = '<a href="/removed?tab=followers">100 followers</a>';
+  const removed = await fetchary.add('https://github.com/removed', { mode: 'http', tag: 'personal' });
+  await fetchary.remove(removed.id);
+  await fetchary.disable(1);
+  await fetchary.setVendorActive('github', false);
+
+  const shown = await runCli(['follower', ...base]);
+  assert.equal(shown.code, 0, shown.stderr);
+  assert.equal(shown.stderr, '');
+  assert.match(shown.stdout, /^ID\s+FOLLOWER\s+NAME\s+URL\s+LAST CHECK\s+LAST CHANGE\n/);
+  assert.match(shown.stdout, /^1\s+65\s+github\s+https:\/\/github.com\/example\s+\d+s ago\s+\d+s ago$/m);
+  assert.match(shown.stdout, /^2\s+200\s+Work account\s+https:\/\/x.com\/example/m);
+  assert.match(shown.stdout, /^5\s+0\s+tiktok\s+/m);
+  assert.equal(shown.stdout.includes('instagram'), false);
+  assert.equal(shown.stdout.includes('example.test'), false);
+  assert.equal(shown.stdout.includes('/removed'), false);
+  assert.match(shown.stdout, /\n------\nsum: 3\.249\n$/);
+
+  const json = await runCli(['follower', '--json', ...base]);
+  assert.equal(json.code, 0, json.stderr);
+  const result = JSON.parse(json.stdout);
+  assert.equal(result.sum, 3249);
+  assert.deepEqual(result.followers.map(row => row.id), [1, 2, 3, 4, 5, 6]);
+  assert.deepEqual(result.followers[0], {
+    id: 1, follower: 65, name: 'github', url: 'https://github.com/example',
+    lastCheckedAt: (await fetchary.get(1)).lastCheckedAt,
+    lastChangedAt: (await fetchary.get(1)).lastChangedAt,
+  });
+
+  const tagged = await runCli(['follower', '--tag', 'personal', '--json', ...base]);
+  assert.equal(tagged.code, 0, tagged.stderr);
+  assert.deepEqual(JSON.parse(tagged.stdout).followers.map(row => row.id), [1, 3, 4, 5]);
+  assert.equal(JSON.parse(tagged.stdout).sum, 3049);
+  const taggedTable = await runCli(['follower', '--tag', 'personal', ...base]);
+  assert.equal(taggedTable.code, 0, taggedTable.stderr);
+  assert.equal(taggedTable.stdout.includes('Work account'), false);
+  assert.match(taggedTable.stdout, /\n------\nsum: 3\.049\n$/);
+  const empty = await runCli(['follower', '--tag', 'unknown', ...base]);
+  assert.equal(empty.code, 0, empty.stderr);
+  assert.equal(empty.stdout, 'No follower counts available.\n------\nsum: 0\n');
+  assert.deepEqual(JSON.parse((await runCli(['follower', '--tag', 'unknown', '--json', ...base])).stdout), { followers: [], sum: 0 });
+  assert.equal((await runCli(['follower', '--quiet', ...base])).stdout, '');
+  const linked = await runCli(['follower', ...base], { hyperlinks: true, isTTY: true });
+  assert.match(linked.stdout, /\x1b\]8;;https:\/\/github.com\/example\x1b\\https:\/\/github.com\/example\x1b\]8;;\x1b\\/);
+  assert.equal((await runCli(['follower', '--no-color', ...base], { hyperlinks: true, isTTY: true })).stdout.includes('\x1b'), false);
+
+  html = '<a href="/example?tab=followers">66 followers</a>';
+  await fetchary.fetch(1);
+  assert.equal(JSON.parse((await runCli(['follower', '--json', ...base])).stdout).sum, 3250);
 });
 
 test('run reports when no pages are scheduled', async t => {
@@ -286,7 +373,8 @@ test('invalid argument counts include command usage and an example', async t => 
     { args: ['vendors', 'extra'], usage: 'fetchary vendors [--json]', example: 'fetchary vendors' },
     { args: ['vendor', 'instagram'], usage: 'fetchary vendor <name> <enable|disable> [--json]', example: 'fetchary vendor instagram disable' },
     { args: ['status', 'extra'], usage: 'fetchary status', example: 'fetchary status' },
-    { args: ['show'], usage: 'fetchary show <id> [--follower] [--json]', example: 'fetchary show 1 --follower' },
+    { args: ['follower', '1', '2'], usage: 'fetchary follower [id] [--tag <tag>] [--json]', example: 'fetchary follower 3' },
+    { args: ['show'], usage: 'fetchary show <id> [--json]', example: 'fetchary show 1' },
     { args: ['history'], usage: 'fetchary history <id>', example: 'fetchary history 1' },
     { args: ['diff'], usage: 'fetchary diff <id> or fetchary diff <id> <version1> <version2>', example: 'fetchary diff 4 1 2' },
     { args: ['open'], usage: 'fetchary open <id> [version] [--html] [--raw]', example: 'fetchary open 1 2 --raw' },

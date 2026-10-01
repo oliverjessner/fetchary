@@ -60,6 +60,13 @@ login dialogs in English and German. TikTok consent controls are also handled
 inside open shadow DOM. Actions are recorded as `tiktok-cookie-consent`,
 `tiktok-login-dialog`, `twitch-cookie-consent`, and `twitch-login-dialog`.
 CAPTCHA prompts and content gates are preserved.
+The LinkedIn vendor rejects optional cookies and closes recognized, dismissible
+sign-in dialogs. Actions are recorded as `linkedin-cookie-consent` and
+`linkedin-login-dialog`. Follower counts are supported for public personal,
+company, school, and showcase pages in English and German. Full login walls
+and verification challenges remain part of the capture.
+If LinkedIn redirects Chromium to a login wall, follower counts can still be
+read from the public profile in the archived HTTP response of the same capture.
 
 List or toggle site integrations:
 
@@ -73,18 +80,22 @@ New vendors default to active. Existing settings survive restarts and discovery.
 Disabling a vendor skips its browser preparation and overlay actions for all
 sources in that data directory; ordinary fetching and archiving continue.
 
-Print only a profile's follower count from its latest saved capture:
+Read follower counts from the latest saved captures:
 
 ```bash
-fetchary show 5 --follower
+fetchary follower 3               # Only this profile's count
+fetchary follower                 # Table of all available counts and their sum
+fetchary follower --tag personal  # Filter the table and sum by tag
 ```
 
-Supported profiles: GitHub, Threads, X, Instagram, TikTok, Twitch, and YouTube
+Supported profiles: GitHub, Threads, X, Instagram, TikTok, Twitch, LinkedIn, and YouTube
 (subscribers). This reads the archive without fetching. Use `fetchary fetch 5`
 first to refresh the capture. Compact counts such as `1.5K` are returned as
 `1500`; their precision remains limited by the captured page. Missing or hidden
-counts produce an error rather than zero. GitHub is automatically registered as
-a vendor for profile counts.
+counts produce an error for a single ID and are omitted from the list. The
+list's `NAME` uses the source name, falling back to its vendor name. The sum
+includes only the displayed rows and uses thousands separators (`sum: 3.249`).
+GitHub is automatically registered as a vendor for profile counts.
 
 ## Core principles
 
@@ -411,6 +422,7 @@ vendors
 syncVendors
 setVendorActive
 followerCount
+followers
 ```
 
 ```js
@@ -418,6 +430,7 @@ await fetchary.vendors();
 await fetchary.setVendorActive('instagram', false);
 await fetchary.syncVendors(); // Discover newly added modules without restarting.
 console.log(await fetchary.followerCount(5)); // Latest archived profile count.
+console.log(await fetchary.followers({ tag: 'personal' })); // { followers, sum }
 ```
 
 ### Scheduling

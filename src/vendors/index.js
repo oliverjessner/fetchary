@@ -18,7 +18,8 @@ function discoverVendors(directory = __dirname) {
     if (!vendor || typeof vendor.name !== 'string' || !/^[a-z][a-z0-9-]*$/.test(vendor.name) ||
         typeof vendor.matches !== 'function' || !Array.isArray(vendor.overlays) ||
         (vendor.prepare !== undefined && typeof vendor.prepare !== 'function') ||
-        (vendor.followerCount !== undefined && typeof vendor.followerCount !== 'function')) {
+        (vendor.followerCount !== undefined && typeof vendor.followerCount !== 'function') ||
+        (vendor.followerCountFromRaw !== undefined && typeof vendor.followerCountFromRaw !== 'function')) {
       throw new FetcharyValidationError(`invalid vendor module "${file}"`);
     }
     if (names.has(vendor.name)) throw new FetcharyValidationError(`duplicate vendor name "${vendor.name}"`);

@@ -55,6 +55,29 @@ flags. Cookie and login actions are best-effort and run during the configured
 post-load wait; delayed controls require a sufficient wait, such as the default
 five seconds.
 
+The LinkedIn vendor supports `linkedin.com` and localized subdomains. It rejects
+optional cookies and closes recognized, dismissible sign-in modals, recording
+`linkedin-cookie-consent` and `linkedin-login-dialog`. English/German labels
+and LinkedIn's stable consent actions are supported. Hidden controls, unrelated
+dialogs, full `/authwall` or `/checkpoint` pages, and CAPTCHA challenges are
+preserved.
+
+LinkedIn follower counts are read from public `/in/`, `/company/`, `/school/`,
+and `/showcase/` pages when available. Profile JSON follower statistics, header
+counts, and description metadata are supported. Connections, employees, post
+reactions, and recommended profiles are not used as follower counts. The module
+is registered automatically and respects its persisted activation flag during
+browser capture.
+
+If Chromium redirects a LinkedIn profile to a login wall, follower extraction
+can use the public profile in the same capture's archived HTTP response.
+This also applies when the rendered page is the same profile without a count.
+The response must belong to LinkedIn and contain a recognized profile; a
+different rendered profile or an external redirect does not use this fallback.
+A valid rendered count, including zero, has priority. No network request is
+made and both archives stay unchanged. If neither archive supplies a count,
+it remains unavailable; older captures are not reused.
+
 ## Installation
 
 Node.js 26.0 or newer is required.
@@ -774,11 +797,15 @@ Read a vendor profile's follower count from its latest archive:
 
 ```js
 const followers = await fetchary.followerCount(5); // number, for example 63
+
+const all = await fetchary.followers(); // { followers: [...], sum: 3249 }
+const personal = await fetchary.followers({ tag: 'personal' });
 ```
 
-Supported vendors: GitHub, Threads, X, Instagram, TikTok, Twitch, and YouTube
+Supported vendors: GitHub, Threads, X, Instagram, TikTok, Twitch, LinkedIn, and YouTube
 (subscribers). This uses the archived final URL to select the vendor, prefers
-rendered HTML, and falls back to raw HTML for HTTP-only captures. It performs
+rendered HTML, and falls back to raw HTML for HTTP-only captures. LinkedIn
+also supports the same-capture HTTP fallback described above. It performs
 no network request and does not apply ignore selectors or vendor activation
 flags. Call `fetch(id)` first when you need a new capture.
 
@@ -788,10 +815,26 @@ page's limited precision. Unsupported vendors throw `FetcharyValidationError`;
 missing, hidden, or unrecognized counts throw `FetcharyNotFoundError`.
 Zero is returned only when the archived profile reports zero.
 
+`followers({ tag })` returns available counts for non-removed sources, ordered
+by ID, and their sum. Each row contains `id`, `follower`, `name`, `url`,
+`lastCheckedAt`, and `lastChangedAt`. The name falls back to the vendor name
+when the source has no name. Timestamps use the source's check and content-change
+times. Disabled sources and vendors remain included because this reads archives.
+Unsupported sources and unavailable counts are omitted; zero counts are included.
+Archive read errors propagate. An empty list returns `{ followers: [], sum: 0 }`.
+The sum must remain a safe integer or a `FetcharyValidationError` is thrown.
+
 Vendor modules can optionally export `followerCount(document, url)`, returning
 a non-negative safe integer or `null` when unavailable. `document` is the
 parsed archive DOM and `url` is its final capture URL. This hook is validated
 during automatic discovery.
+
+Modules can also opt into an HTTP fallback with
+`followerCountFromRaw(document, rawUrl, renderedUrl)`. It is called only when
+the rendered count is unavailable and the archived HTTP final URL matches
+the same vendor. Return a non-negative safe integer or `null`. LinkedIn uses
+this hook to accept the same profile or a rendered authentication wall and
+reject unrelated profiles. The hook is validated during discovery.
 
 ## Scheduling
 

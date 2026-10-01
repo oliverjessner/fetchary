@@ -2,8 +2,10 @@
 
 - automatic vendor discovery and persisted activation flags in SQLite
 - vendor listing and activation controls in the CLI and library
-- support for youtube, instagram, twitch, tiktok
-- show --follower to only show the amount of followers if it is a vendor
+- support for youtube, instagram, twitch, tiktok, linkedin
+- LinkedIn follower fallback to the same capture's HTTP profile when Chromium reaches a login wall
+- follower [id] to show a vendor count or list all available counts with a sum
+- follower --tag to filter the list and its sum by source tag
 
 # 1.0.0
 

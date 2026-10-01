@@ -22,6 +22,20 @@ export type Vendor = {
   active: boolean;
 };
 
+export type Follower = {
+  id: number;
+  follower: number;
+  name: string;
+  url: string;
+  lastCheckedAt: string | null;
+  lastChangedAt: string | null;
+};
+
+export type FollowerList = {
+  followers: Follower[];
+  sum: number;
+};
+
 export type Schedule = {
   sourceId: number;
   enabled: boolean;
@@ -128,6 +142,8 @@ export declare class Fetchary extends EventEmitter {
   get(id: number): Promise<Source>;
   /** Follower count from the latest archived vendor profile (YouTube subscribers). */
   followerCount(id: number): Promise<number>;
+  /** Available follower counts and their sum, optionally filtered by source tag. */
+  followers(options?: { tag?: string }): Promise<FollowerList>;
   fetch(): Promise<FetchResult[]>;
   fetch(id: number): Promise<FetchResult>;
   fetch(ids: number[]): Promise<FetchResult[]>;

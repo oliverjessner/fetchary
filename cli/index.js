@@ -29,11 +29,12 @@ Usage: fetchary <command> [arguments] [options]
 Commands:
   add <url>                   Add and immediately capture a URL
   list                        List monitored sources
+  follower [id]               Show a follower count or list all counts with a sum
   vendors                     List vendors and their activation state
   vendor <name> <enable|disable>  Enable or disable a vendor
   fetch [id...]               Fetch one, several, or all enabled sources
   status                      Show storage statistics
-  show <id>                   Show source details (--follower for the latest count)
+  show <id>                   Show source details
   history <id>                List archived versions
   diff <id> [from] [to]       Compare archived versions
   open <id> [version]         Open rendered HTML (use --raw for the response)
@@ -71,8 +72,8 @@ Diff and open options:
   --raw                       Use the exact archived HTTP response
   --html                      Render a diff or open archived HTML in an editor
 
-Show options:
-  --follower                  Print only the latest archived vendor follower count
+Follower list options:
+  --tag <tag>                 Only include sources with this tag
 `;
 
 const EXAMPLES = `Fetchary examples
@@ -86,6 +87,11 @@ Ignore a dynamic element during comparison:
 List sources and fetch one of them:
   fetchary list
   fetchary fetch 1
+
+Read archived follower counts:
+  fetchary follower 3
+  fetchary follower
+  fetchary follower --tag personal
 
 Inspect and compare archived versions:
   fetchary history 1
@@ -108,10 +114,11 @@ Manage site integrations:
 const COMMAND_GUIDANCE = Object.freeze({
   add: { usage: 'fetchary add <url> [--name <name>] [--tag <tag>] [--every <interval>] [--mode <browser|http>] [--wait-after-load <duration>] [--ignore-selector <css> ...]', example: 'fetchary add https://github.com/owner/repo --mode browser --ignore-selector "relative-time"' },
   list: { usage: 'fetchary list [--tag <tag>] [--json]', example: 'fetchary list --tag research' },
+  follower: { usage: 'fetchary follower [id] [--tag <tag>] [--json]', example: 'fetchary follower 3' },
   vendors: { usage: 'fetchary vendors [--json]', example: 'fetchary vendors' },
   vendor: { usage: 'fetchary vendor <name> <enable|disable> [--json]', example: 'fetchary vendor instagram disable' },
   status: { usage: 'fetchary status', example: 'fetchary status' },
-  show: { usage: 'fetchary show <id> [--follower] [--json]', example: 'fetchary show 1 --follower' },
+  show: { usage: 'fetchary show <id> [--json]', example: 'fetchary show 1' },
   history: { usage: 'fetchary history <id>', example: 'fetchary history 1' },
   diff: { usage: 'fetchary diff <id> or fetchary diff <id> <version1> <version2>', example: 'fetchary diff 4 1 2' },
   open: { usage: 'fetchary open <id> [version] [--html] [--raw]', example: 'fetchary open 1 2 --raw' },
@@ -128,7 +135,7 @@ const COMMAND_GUIDANCE = Object.freeze({
 
 const VALUE_OPTIONS = new Set(['name', 'tag', 'url', 'output', 'data-dir', 'poll-interval', 'every', 'mode', 'wait-after-load']);
 const REPEATABLE_VALUE_OPTIONS = new Set(['ignore-selector']);
-const FLAG_OPTIONS = new Set(['json', 'quiet', 'verbose', 'no-color', 'help', 'example', 'version', 'purge', 'raw', 'element-content', 'element-raw', 'html', 'now', 'clear-ignore-selectors', 'follower']);
+const FLAG_OPTIONS = new Set(['json', 'quiet', 'verbose', 'no-color', 'help', 'example', 'version', 'purge', 'raw', 'element-content', 'element-raw', 'html', 'now', 'clear-ignore-selectors']);
 const ANSI = Object.freeze({
   red: '\x1b[31m',
   green: '\x1b[32m',
@@ -399,8 +406,6 @@ async function execute(fetchary, parsed, write, format = {}) {
   const emit = value => { if (!options.quiet) write(value); };
   const emitValue = (value, human) => emit(options.json ? `${JSON.stringify(value, null, 2)}\n` : `${human}\n`);
 
-  if (options.follower && command !== 'show') throw usageError(command, '--follower is only supported by show');
-
   switch (command) {
     case 'add': {
       requireArgs(args, command, 1);
@@ -428,6 +433,27 @@ async function execute(fetchary, parsed, write, format = {}) {
         { label: 'LAST CHECK', value: row => relativeTime(row.lastCheckedAt) },
         { label: 'LAST CHANGE', value: row => relativeTime(row.lastChangedAt) },
       ]) : 'No monitored sources.');
+      return 0;
+    }
+    case 'follower': {
+      requireArgs(args, command, 0, 1);
+      if (args.length) {
+        if (options.tag !== undefined) throw usageError(command, '--tag is only supported when listing followers without an id');
+        const count = await fetchary.followerCount(args[0]);
+        emitValue(count, String(count));
+        return 0;
+      }
+      const result = await fetchary.followers({ tag: options.tag });
+      const rows = result.followers;
+      const human = rows.length ? table(rows, [
+        { label: 'ID', value: row => row.id },
+        { label: 'FOLLOWER', value: row => row.follower },
+        { label: 'NAME', value: row => row.name },
+        { label: 'URL', value: row => link(row.url) },
+        { label: 'LAST CHECK', value: row => relativeTime(row.lastCheckedAt) },
+        { label: 'LAST CHANGE', value: row => relativeTime(row.lastChangedAt) },
+      ]) : 'No follower counts available.';
+      emitValue(result, `${human}\n------\nsum: ${result.sum.toLocaleString('de-DE')}`);
       return 0;
     }
     case 'fetch': {
@@ -555,11 +581,6 @@ async function execute(fetchary, parsed, write, format = {}) {
     }
     case 'show': {
       requireArgs(args, command, 1);
-      if (options.follower) {
-        const count = await fetchary.followerCount(args[0]);
-        emitValue(count, String(count));
-        return 0;
-      }
       const source = await fetchary.get(args[0]);
       emitValue(source, `ID:               ${color(String(source.id), 'blue')}\nName:             ${source.name || '-'}\nTag:              ${color(source.tag || '-', 'blue')}\nURL:              ${link(color(source.url, 'cyan'), source.url)}\nEnabled:          ${color(source.enabled ? 'yes' : 'no', source.enabled ? 'green' : 'yellow')}\nCapture mode:     ${color(source.captureMode, 'blue')}\nWait after load:  ${color(duration(source.waitAfterLoadMs), 'blue')}\nIgnore selectors: ${source.ignoreSelectors.length ? source.ignoreSelectors.join(', ') : '-'}\nCreated:          ${color(localDate(source.createdAt), 'gray')}\nLast checked:     ${color(localDate(source.lastCheckedAt), 'gray')}\nLast changed:     ${color(localDate(source.lastChangedAt), 'gray')}\nVersions:         ${color(String(source.versions), 'blue')}\nRaw hash:         ${color(source.currentRawHash || '-', 'gray')}\nRendered hash:    ${color(source.currentRenderedHash || '-', 'gray')}\nComparison hash:  ${color(source.currentComparisonHash || '-', 'gray')}`);
       return 0;
