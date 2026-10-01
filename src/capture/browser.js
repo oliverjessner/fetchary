@@ -1,7 +1,7 @@
 'use strict';
 
 const { FetcharyBrowserError } = require('../errors');
-const { dismissVendorOverlays } = require('../vendors');
+const { prepareVendorPage, dismissVendorOverlays } = require('../vendors');
 
 function browserError(message, options, cause, phase) {
   if (cause instanceof FetcharyBrowserError) return cause;
@@ -54,6 +54,7 @@ class BrowserCapture {
     try {
       try {
         page = await browser.newPage();
+        await prepareVendorPage(page, options.url);
         await page.goto(options.url, { waitUntil: 'load', timeout: options.timeout });
       } catch (cause) {
         throw browserError(`browser navigation failed for ${options.url}`, options, cause, 'navigation');

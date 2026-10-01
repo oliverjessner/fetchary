@@ -18,6 +18,10 @@ in or bypass logged-out content limits.
 Vendor-specific browser behavior is isolated in `src/vendors/`. Each module
 declares its URL matcher and overlay actions and is registered in
 `src/vendors/index.js`, keeping the generic browser capture site-agnostic.
+The X vendor handles non-essential-cookie prompts and dismissible login dialogs;
+successful actions are recorded as `x-cookie-consent` and `x-login-dialog`. Its
+pre-navigation hook replaces Chromium's `HeadlessChrome` token with `Chrome`,
+which allows X to serve the same public page it serves regular Chromium.
 
 ## Installation
 

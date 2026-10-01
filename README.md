@@ -42,6 +42,10 @@ appears during that wait, so the consent dialog does not cover the archived
 DOM. This does not sign in or bypass Threads' logged-out content limits.
 Site-specific overlay handling lives in `src/vendors/`; add another vendor
 module and register it in `src/vendors/index.js` to support another website.
+The X vendor refuses non-essential cookies and closes X login dialogs before
+the rendered DOM is archived. Before navigation, it also uses Chromium's normal
+browser User-Agent because X rejects the `HeadlessChrome` token. It does not
+sign in or bypass access controls.
 
 ## Core principles
 

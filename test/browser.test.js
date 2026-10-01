@@ -194,6 +194,61 @@ test('Threads cookie consent is declined during the post-load wait', async t => 
   assert.deepEqual(metadata.capture.dismissedOverlays, ['threads-cookie-consent']);
 });
 
+test('X cookie consent and login dialogs are dismissed by the X vendor', async t => {
+  const dataDir = tempDir(t);
+  let cookieClicked = false;
+  let loginClosed = false;
+  let browserUserAgent;
+  const cookieButton = {
+    innerText: 'Refuse non-essential cookies',
+    click() { cookieClicked = true; },
+  };
+  const closeButton = {
+    click() { loginClosed = true; },
+  };
+  const loginDialog = {
+    innerText: 'Sign in to X\nSee what is happening in the world right now.',
+    querySelector() { return closeButton; },
+  };
+  const document = {
+    querySelectorAll(selector) {
+      return selector.startsWith('button') ? [cookieButton] : [loginDialog];
+    },
+  };
+  const fetchary = await createFetchary({
+    dataDir,
+    fetch: async () => new Response('<div id="react-root"></div>', { headers: { 'content-type': 'text/html' } }),
+    launchBrowser: async () => ({
+      async newPage() {
+        return {
+          browser() {
+            return { async userAgent() { return 'Mozilla/5.0 HeadlessChrome/140.0.0.0 Safari/537.36'; } };
+          },
+          async setUserAgent(value) { browserUserAgent = value; },
+          async goto() {},
+          async evaluate(callback) {
+            return vm.runInNewContext(`(${callback.toString()})()`, { document, Set });
+          },
+          async content() { return '<html><body><main>X profile</main></body></html>'; },
+          url() { return 'https://x.com/example'; },
+          async close() {},
+        };
+      },
+      async close() {},
+    }),
+  });
+  t.after(() => fetchary.close());
+
+  const source = await fetchary.add('https://x.com/example', { waitAfterLoad: 0 });
+  const version = await fetchary.version(source.id);
+  const metadata = JSON.parse(fs.readFileSync(path.join(path.dirname(version.file), 'metadata.json'), 'utf8'));
+
+  assert.equal(cookieClicked, true);
+  assert.equal(loginClosed, true);
+  assert.equal(browserUserAgent, 'Mozilla/5.0 Chrome/140.0.0.0 Safari/537.36');
+  assert.deepEqual(metadata.capture.dismissedOverlays, ['x-cookie-consent', 'x-login-dialog']);
+});
+
 test('one lazy browser is shared, pages always close, and browser errors are typed', async t => {
   const dataDir = tempDir(t);
   let launches = 0;
