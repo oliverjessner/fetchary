@@ -7,6 +7,7 @@ const http = require('node:http');
 const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+const vm = require('node:vm');
 const { DatabaseSync } = require('node:sqlite');
 const {
   createFetchary,
@@ -147,6 +148,47 @@ test('non-HTML browser sources use HTTP semantics without launching Chromium', a
   assert.equal(version.captureMode, 'http');
   assert.equal(version.renderedFile, null);
   assert.equal(launches, 0);
+});
+
+test('Threads cookie consent is declined during the post-load wait', async t => {
+  const dataDir = tempDir(t);
+  let evaluations = 0;
+  let clicked = false;
+  const consentButton = {
+    innerText: '  Decline   optional cookies  ',
+    click() { clicked = true; },
+  };
+  const fetchary = await createFetchary({
+    dataDir,
+    fetch: async () => new Response('<div id="app"></div>', { headers: { 'content-type': 'text/html' } }),
+    launchBrowser: async () => ({
+      async newPage() {
+        return {
+          async goto() {},
+          async evaluate(callback) {
+            evaluations++;
+            const elements = evaluations > 1 ? [consentButton] : [];
+            return vm.runInNewContext(`(${callback.toString()})()`, {
+              document: { querySelectorAll() { return elements; } },
+            });
+          },
+          async content() { return '<html><body><main>Threads profile</main></body></html>'; },
+          url() { return 'https://www.threads.com/@example'; },
+          async close() {},
+        };
+      },
+      async close() {},
+    }),
+  });
+  t.after(() => fetchary.close());
+
+  const source = await fetchary.add('https://www.threads.com/@example', { waitAfterLoad: '120ms' });
+  const version = await fetchary.version(source.id);
+  const metadata = JSON.parse(fs.readFileSync(path.join(path.dirname(version.file), 'metadata.json'), 'utf8'));
+
+  assert.equal(clicked, true);
+  assert.equal(evaluations >= 2, true, 'the consent control may appear after load');
+  assert.deepEqual(metadata.capture.dismissedOverlays, ['threads-cookie-consent']);
 });
 
 test('one lazy browser is shared, pages always close, and browser errors are typed', async t => {

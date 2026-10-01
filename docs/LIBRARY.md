@@ -10,6 +10,11 @@ waits another five seconds, and snapshots `page.content()`. This intentionally
 does not use `networkidle`. Clearly non-HTML responses and sources configured as
 `http` skip Chromium.
 
+On public Threads pages, browser capture also declines the optional-cookie
+prompt when it appears during the configured post-load wait. The capture result
+records this as `dismissedOverlays: ['threads-cookie-consent']`; it does not log
+in or bypass logged-out content limits.
+
 ## Installation
 
 Node.js 26.0 or newer is required.

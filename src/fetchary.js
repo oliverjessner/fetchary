@@ -433,6 +433,7 @@ class Fetchary extends EventEmitter {
               engine: 'chromium',
               waitUntil: 'load',
               waitAfterLoadMs: source.waitAfterLoadMs,
+              dismissedOverlays: captured.dismissedOverlays,
             } : {}),
           },
           rawSha256: rawHash,
@@ -517,6 +518,7 @@ class Fetchary extends EventEmitter {
       renderedLength: renderedBody?.length ?? null,
       finalUrl: captured.rawFinalUrl,
       browserFinalUrl: captured.browserFinalUrl,
+      dismissedOverlays: captured.dismissedOverlays,
     };
     if (outcome.archived) {
       const archivedVersion = await this.version(id, outcome.version);

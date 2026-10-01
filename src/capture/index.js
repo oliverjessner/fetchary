@@ -31,6 +31,7 @@ class CaptureManager {
         renderedHtml: null,
         browserFinalUrl: null,
         renderedCapturedAt: null,
+        dismissedOverlays: [],
         captureMode: 'http',
       };
     }

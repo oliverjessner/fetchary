@@ -12,6 +12,47 @@ function browserError(message, options, cause, phase) {
   });
 }
 
+function isThreadsUrl(value) {
+  try {
+    const hostname = new URL(value).hostname.toLowerCase();
+    return hostname === 'threads.com' || hostname.endsWith('.threads.com');
+  } catch {
+    return false;
+  }
+}
+
+async function dismissThreadsCookieDialog(page, url) {
+  if (!isThreadsUrl(url)) return null;
+  try {
+    return await page.evaluate(() => {
+      const button = [...document.querySelectorAll('button, [role="button"]')].find(element => {
+        const text = (element.innerText || element.textContent || '').replace(/\s+/g, ' ').trim();
+        return text === 'Decline optional cookies';
+      });
+      if (!button) return null;
+      button.click();
+      return 'threads-cookie-consent';
+    });
+  } catch {
+    return null;
+  }
+}
+
+async function waitAfterLoad(page, options) {
+  const dismissedOverlays = [];
+  const deadline = Date.now() + options.waitAfterLoadMs;
+  do {
+    if (!dismissedOverlays.includes('threads-cookie-consent')) {
+      const dismissed = await dismissThreadsCookieDialog(page, options.url);
+      if (dismissed) dismissedOverlays.push(dismissed);
+    }
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) break;
+    await new Promise(resolve => setTimeout(resolve, Math.min(100, remaining)));
+  } while (true);
+  return dismissedOverlays;
+}
+
 class BrowserCapture {
   constructor(options = {}) {
     this.launch = options.launch || (async launchOptions => {
@@ -44,8 +85,9 @@ class BrowserCapture {
         throw browserError(`browser navigation failed for ${options.url}`, options, cause, 'navigation');
       }
 
+      let dismissedOverlays;
       try {
-        await new Promise(resolve => setTimeout(resolve, options.waitAfterLoadMs));
+        dismissedOverlays = await waitAfterLoad(page, options);
       } catch (cause) {
         throw browserError(`post-load wait failed for ${options.url}`, options, cause, 'post-load-wait');
       }
@@ -62,6 +104,7 @@ class BrowserCapture {
         renderedHtml,
         browserFinalUrl,
         renderedCapturedAt: new Date().toISOString(),
+        dismissedOverlays,
       };
     } finally {
       if (page) {
@@ -81,4 +124,4 @@ class BrowserCapture {
   }
 }
 
-module.exports = { BrowserCapture };
+module.exports = { BrowserCapture, dismissThreadsCookieDialog };

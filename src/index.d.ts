@@ -97,6 +97,8 @@ export type FetchResult = {
   renderedLength: number | null;
   finalUrl: string;
   browserFinalUrl: string | null;
+  /** Known overlays dismissed before the browser DOM snapshot was taken. */
+  dismissedOverlays: string[];
 };
 
 export type DiffResult = {

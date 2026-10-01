@@ -37,6 +37,10 @@ Each archived version contains the exact response bytes used to calculate its SH
 
 Fetchary is deliberately small. Chromium is used only as a deterministic rendering step: wait for `load`, wait another five seconds by default, then capture `page.content()`. Fetchary intentionally does not use `networkidle`, which is unreliable on pages with analytics, polling, ads, or WebSockets.
 
+For public Threads pages, Fetchary declines the optional-cookie prompt when it
+appears during that wait, so the consent dialog does not cover the archived
+DOM. This does not sign in or bypass Threads' logged-out content limits.
+
 ## Core principles
 
 ### Local-first
