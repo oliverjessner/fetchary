@@ -2,10 +2,12 @@
 
 const threads = require('./threads');
 const x = require('./x');
+const youtube = require('./youtube');
+const instagram = require('./instagram');
 
 // Add new site integrations here. Each vendor owns its URL matching and
 // overlay selectors so the browser capture remains vendor-agnostic.
-const vendors = [threads, x];
+const vendors = [threads, x, youtube, instagram];
 
 async function prepareVendorPage(page, url) {
   for (const vendor of vendors) {

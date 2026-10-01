@@ -46,6 +46,14 @@ The X vendor refuses non-essential cookies and closes X login dialogs before
 the rendered DOM is archived. Before navigation, it also uses Chromium's normal
 browser User-Agent because X rejects the `HeadlessChrome` token. It does not
 sign in or bypass access controls.
+The YouTube vendor chooses “Reject all” / “Alle ablehnen” on English and German
+cookie dialogs, including standalone `consent.youtube.com` pages. Short
+`youtu.be` links are supported through their redirects. Consent actions are
+recorded as `youtube-cookie-consent` in capture metadata.
+The Instagram vendor declines optional cookies and closes dismissible login
+dialogs in English and German. Actions are recorded as
+`instagram-cookie-consent` and `instagram-login-dialog` in capture metadata.
+Pages that require a login remain subject to Instagram's access limits.
 
 ## Core principles
 

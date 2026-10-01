@@ -65,6 +65,23 @@ fetchary immediately performs the first fetch and stores the initial version.
 HTML sources use browser mode by default. Clearly non-HTML responses such as
 JSON, XML, images, or archives automatically use HTTP-only capture semantics.
 
+YouTube pages automatically reject optional cookies in English and German
+consent dialogs when using browser mode, including redirects through
+`consent.youtube.com` and short `youtu.be` links:
+
+```bash
+fetchary add https://www.youtube.com/@YouTube --name "YouTube channel"
+```
+
+Instagram pages automatically decline optional cookies and close dismissible
+login dialogs in English and German when using browser mode:
+
+```bash
+fetchary add https://www.instagram.com/instagram/ --name "Instagram profile"
+```
+
+Login requirements still apply when Instagram does not offer a dismiss control.
+
 Optional metadata:
 
 ```bash

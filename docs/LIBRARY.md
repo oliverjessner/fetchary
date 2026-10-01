@@ -22,6 +22,21 @@ The X vendor handles non-essential-cookie prompts and dismissible login dialogs;
 successful actions are recorded as `x-cookie-consent` and `x-login-dialog`. Its
 pre-navigation hook replaces Chromium's `HeadlessChrome` token with `Chrome`,
 which allows X to serve the same public page it serves regular Chromium.
+The YouTube vendor rejects optional cookies using the English “Reject all” or
+German “Alle ablehnen” control, both in inline consent dialogs and on
+`consent.youtube.com`. Standalone consent submissions wait up to five seconds
+for the destination page's `load` event before capture, including when
+`waitAfterLoad` is zero. Successful actions are recorded as
+`youtube-cookie-consent` in `dismissedOverlays`. `youtu.be` redirects are handled
+automatically. Vendor actions are best-effort; unavailable controls or failed
+actions do not prevent archiving.
+
+The Instagram vendor handles English and German optional-cookie prompts and
+dismissible login dialogs during the post-load wait. Successful actions are
+recorded as `instagram-cookie-consent` and `instagram-login-dialog`. It recognizes
+both login forms and the profile's sign-up invitation, including close controls
+whose label is on a nested SVG. Unrelated dialogs and login pages without a
+dismiss control are preserved. No authentication is performed.
 
 ## Installation
 

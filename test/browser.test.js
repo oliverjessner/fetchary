@@ -249,6 +249,119 @@ test('X cookie consent and login dialogs are dismissed by the X vendor', async t
   assert.deepEqual(metadata.capture.dismissedOverlays, ['x-cookie-consent', 'x-login-dialog']);
 });
 
+test('YouTube cookie rejection handles localized dialogs and consent redirects in Chromium', async t => {
+  const dataDir = tempDir(t);
+  const raw = '<!doctype html><html><body>Original YouTube response</body></html>\n';
+  const submissions = [];
+  const fixtures = {
+    english: { label: '  Reject   all  ' },
+    german: { label: 'Alle ablehnen' },
+    accessible: { label: 'Reject all', ariaLabel: true },
+    delayed: { label: 'Reject all', delay: 40 },
+    unsupported: { label: 'Manage options' },
+    redirect: { label: 'Alle ablehnen' },
+    short: { label: 'Reject all', input: true },
+  };
+
+  function rejectControl(fixture) {
+    if (fixture.input) return `<input id="reject" type="submit" value="${fixture.label}">`;
+    if (fixture.ariaLabel) return `<button id="reject" aria-label="${fixture.label}">Cookie choice</button>`;
+    return `<button id="reject">${fixture.label}</button>`;
+  }
+
+  function inlineConsent(fixture) {
+    const dialog = `<ytd-consent-bump-v2-lightbox id="consent">
+      <button id="hidden" style="display:none">Reject all</button>
+      <button id="disabled" disabled>Reject all</button>
+      <button id="aria-disabled" aria-disabled="true">Reject all</button>
+      <button id="accept">Accept all</button>
+      ${rejectControl(fixture)}
+    </ytd-consent-bump-v2-lightbox>`;
+    return `<!doctype html><html><body>
+      <main>YouTube channel</main>
+      <button id="unrelated">Reject all</button>
+      <script>
+        document.querySelector('#unrelated').onclick = () => { document.body.dataset.unwantedClick = 'unrelated'; };
+        const showConsent = () => {
+          document.body.insertAdjacentHTML('beforeend', ${JSON.stringify(dialog)});
+          for (const id of ['hidden', 'disabled', 'aria-disabled', 'accept']) {
+            document.getElementById(id).onclick = () => { document.body.dataset.unwantedClick = id; };
+          }
+          document.querySelector('#reject').onclick = () => { document.querySelector('#consent').remove(); };
+        };
+        ${fixture.delay ? `setTimeout(showConsent, ${fixture.delay});` : 'showConsent();'}
+      </script>
+    </body></html>`;
+  }
+
+  const fetchary = await createFetchary({
+    dataDir,
+    fetch: async () => new Response(raw, { headers: { 'content-type': 'text/html' } }),
+    launchBrowser: async options => {
+      const browser = await require('puppeteer').launch(options);
+      return {
+        async newPage() {
+          const page = await browser.newPage();
+          await page.setRequestInterception(true);
+          page.on('request', async request => {
+            const url = new URL(request.url());
+            const key = url.searchParams.get('case') || url.pathname.split('/').pop();
+            if (url.hostname === 'youtu.be' || url.pathname.startsWith('/redirect/')) {
+              await request.respond({ status: 302, headers: { location: `https://consent.youtube.com/m?case=${key}` } });
+            } else if (url.hostname === 'consent.youtube.com' && url.pathname === '/m') {
+              await request.respond({ contentType: 'text/html', body: `<!doctype html><html><body>
+                <h1>Before you continue to YouTube</h1>
+                <form method="post" action="https://consent.youtube.com/save?case=${key}">
+                  ${rejectControl(fixtures[key])}
+                  <button>Accept all</button>
+                </form>
+              </body></html>` });
+            } else if (url.hostname === 'consent.youtube.com' && url.pathname === '/save') {
+              submissions.push({ key, method: request.method() });
+              await request.respond({ status: 302, headers: { location: `https://www.youtube.com/target/${key}` } });
+            } else if (url.pathname.startsWith('/target/')) {
+              await request.respond({ contentType: 'text/html', body: '<!doctype html><html><body><main>YouTube destination</main></body></html>' });
+            } else if (url.pathname.startsWith('/inline/')) {
+              await request.respond({ contentType: 'text/html', body: inlineConsent(fixtures[key]) });
+            } else {
+              await request.respond({ status: 404, body: '' });
+            }
+          });
+          return page;
+        },
+        async close() { await browser.close(); },
+      };
+    },
+  });
+  t.after(() => fetchary.close());
+
+  for (const [key, fixture] of Object.entries(fixtures)) {
+    await t.test(key, async () => {
+      const redirect = key === 'redirect' || key === 'short';
+      const url = key === 'short' ? 'https://youtu.be/short'
+        : `https://www.youtube.com/${redirect ? 'redirect' : 'inline'}/${key}`;
+      const source = await fetchary.add(url, { waitAfterLoad: fixture.delay ? '150ms' : 0 });
+      const version = await fetchary.version(source.id);
+      const rendered = await fetchary.readRendered(source.id);
+      const { document } = require('linkedom').parseHTML(rendered);
+      const metadata = JSON.parse(fs.readFileSync(path.join(path.dirname(version.file), 'metadata.json'), 'utf8'));
+
+      assert.equal(await fetchary.read(source.id), raw, 'cookie actions preserve the exact HTTP evidence');
+      assert.equal(version.renderedHash, crypto.createHash('sha256').update(rendered).digest('hex'));
+      assert.equal(document.body.hasAttribute('data-unwanted-click'), false);
+      assert.deepEqual(metadata.capture.dismissedOverlays, key === 'unsupported' ? [] : ['youtube-cookie-consent']);
+      if (redirect) {
+        assert.equal(version.browserFinalUrl, `https://www.youtube.com/target/${key}`);
+        assert.equal(document.querySelector('main').textContent, 'YouTube destination');
+        assert.equal(submissions.some(submission => submission.key === key && submission.method === 'POST'), true);
+      } else {
+        assert.equal(Boolean(document.getElementById('consent')), key === 'unsupported');
+        assert.equal(document.querySelector('main').textContent, 'YouTube channel');
+      }
+    });
+  }
+});
+
 test('one lazy browser is shared, pages always close, and browser errors are typed', async t => {
   const dataDir = tempDir(t);
   let launches = 0;

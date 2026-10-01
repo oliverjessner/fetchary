@@ -1,3 +1,7 @@
+# 1.1.0
+
+- support for youtube, instagram, twitch, tiktok
+
 # 1.0.0
 
 - browser capture for HTML using Puppeteer and bundled Chrome for Testing
