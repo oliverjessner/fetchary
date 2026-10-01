@@ -212,6 +212,59 @@ test('CLI wraps add/list/fetch/show/history/diff and uses documented exit codes'
   assert.match(examples.stdout, /fetchary run/);
 });
 
+test('show --follower prints only the latest archived vendor count, including JSON and unavailable errors', async t => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fetchary-cli-followers-'));
+  t.after(() => fs.rmSync(dataDir, { recursive: true, force: true }));
+  let html;
+  const fetchary = await createFetchary({ dataDir, fetch: async () => new Response(html, { headers: { 'content-type': 'text/html' } }) });
+  t.after(() => fetchary.close());
+  const base = ['--data-dir', dataDir];
+  const fixtures = [
+    ['https://github.com/example', '<a href="/example?tab=followers">63 followers</a>', 63],
+    ['https://www.threads.com/@example', '<meta name="description" content="1.5K followers • 200 threads">', 1500],
+    ['https://x.com/example', '<a href="/example/verified_followers">203Followers</a>', 203],
+    ['https://youtube.com/@example', '<yt-page-header-renderer><span>1.93K subscribers</span></yt-page-header-renderer>', 1930],
+    ['https://instagram.com/example/', '<meta property="og:description" content="1.234 Follower, 50 Beiträge">', 1234],
+    ['https://tiktok.com/@example', '<strong data-e2e="followers-count">0</strong>', 0],
+    ['https://twitch.tv/example', '<div class="home-header-sticky"><p>2.5M followers</p></div>', 2500000],
+  ];
+  for (const [url, body, expected] of fixtures) {
+    html = body;
+    const source = await fetchary.add(url, { mode: 'http', ignoreSelectors: ['a', 'strong', 'meta', 'span', 'p'] });
+    const shown = await runCli(['show', String(source.id), '--follower', ...base], { color: true, hyperlinks: true, isTTY: true });
+    assert.equal(shown.code, 0, shown.stderr);
+    assert.equal(shown.stdout, `${expected}\n`);
+    assert.equal(shown.stderr, '');
+    const json = await runCli(['show', String(source.id), '--follower', '--json', ...base]);
+    assert.equal(json.code, 0, json.stderr);
+    assert.equal(JSON.parse(json.stdout), expected);
+    assert.equal((await runCli(['show', String(source.id), '--follower', '--quiet', ...base])).stdout, '');
+  }
+  html = '<a href="/example?tab=followers">64 followers</a>';
+  await fetchary.fetch(1);
+  assert.equal((await runCli(['show', '1', '--follower', ...base])).stdout, '64\n');
+  assert.match((await runCli(['show', '1', ...base])).stdout, /^ID:\s+1$/m);
+  html = '<main>Login required</main>';
+  await fetchary.fetch(1);
+  const unavailable = await runCli(['show', '1', '--follower', '--json', ...base]);
+  assert.equal(unavailable.code, 1);
+  assert.equal(unavailable.stdout, '');
+  assert.equal(JSON.parse(unavailable.stderr).error, 'FetcharyNotFoundError');
+  assert.match(JSON.parse(unavailable.stderr).message, /follower count is unavailable/);
+  const missing = await runCli(['show', '9999', '--follower', ...base]);
+  assert.equal(missing.code, 1);
+  assert.equal(missing.stdout, '');
+  const unsupported = await fetchary.add('https://example.test/', { mode: 'http' });
+  const invalid = await runCli(['show', String(unsupported.id), '--follower', ...base]);
+  assert.equal(invalid.code, 2);
+  assert.equal(invalid.stdout, '');
+  assert.match(invalid.stderr, /does not support vendor follower counts/);
+  const invalidCommand = await runCli(['list', '--follower', ...base]);
+  assert.equal(invalidCommand.code, 2);
+  assert.match(invalidCommand.stderr, /--follower is only supported by show/);
+  assert.match((await runCli(['--help'])).stdout, /--follower\s+Print only the latest archived vendor follower count/);
+});
+
 test('run reports when no pages are scheduled', async t => {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fetchary-cli-run-empty-'));
   t.after(() => fs.rmSync(dataDir, { recursive: true, force: true }));
@@ -233,7 +286,7 @@ test('invalid argument counts include command usage and an example', async t => 
     { args: ['vendors', 'extra'], usage: 'fetchary vendors [--json]', example: 'fetchary vendors' },
     { args: ['vendor', 'instagram'], usage: 'fetchary vendor <name> <enable|disable> [--json]', example: 'fetchary vendor instagram disable' },
     { args: ['status', 'extra'], usage: 'fetchary status', example: 'fetchary status' },
-    { args: ['show'], usage: 'fetchary show <id>', example: 'fetchary show 1' },
+    { args: ['show'], usage: 'fetchary show <id> [--follower] [--json]', example: 'fetchary show 1 --follower' },
     { args: ['history'], usage: 'fetchary history <id>', example: 'fetchary history 1' },
     { args: ['diff'], usage: 'fetchary diff <id> or fetchary diff <id> <version1> <version2>', example: 'fetchary diff 4 1 2' },
     { args: ['open'], usage: 'fetchary open <id> [version] [--html] [--raw]', example: 'fetchary open 1 2 --raw' },

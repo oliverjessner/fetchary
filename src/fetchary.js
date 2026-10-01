@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { EventEmitter } = require('node:events');
+const { parseHTML } = require('linkedom');
 const { openDatabase, transaction } = require('./storage/database');
 const { VendorRegistry } = require('./storage/vendors');
 const { CaptureManager } = require('./capture');
@@ -324,6 +325,22 @@ class Fetchary extends EventEmitter {
   async get(id, options = {}) {
     this._assertOpen();
     return this._requireSource(id, Boolean(options.includeRemoved));
+  }
+
+  async followerCount(id) {
+    const source = await this.get(id);
+    const archived = await this.version(source.id);
+    const url = archived.browserFinalUrl || archived.finalUrl || source.url;
+    const vendor = this.vendorRegistry.modules.find(module => module.matches(url));
+    if (!vendor || typeof vendor.followerCount !== 'function') {
+      throw new FetcharyValidationError(`source ${source.id} does not support vendor follower counts`, { sourceId: source.id });
+    }
+    const { document } = parseHTML(await this.readRendered(source.id, archived.id));
+    const count = await vendor.followerCount(document, url);
+    if (!Number.isSafeInteger(count) || count < 0) {
+      throw new FetcharyNotFoundError(`follower count is unavailable in the latest capture for source ${source.id} (${vendor.name})`, { sourceId: source.id });
+    }
+    return count;
   }
 
   async fetch(target) {

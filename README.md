@@ -73,6 +73,19 @@ New vendors default to active. Existing settings survive restarts and discovery.
 Disabling a vendor skips its browser preparation and overlay actions for all
 sources in that data directory; ordinary fetching and archiving continue.
 
+Print only a profile's follower count from its latest saved capture:
+
+```bash
+fetchary show 5 --follower
+```
+
+Supported profiles: GitHub, Threads, X, Instagram, TikTok, Twitch, and YouTube
+(subscribers). This reads the archive without fetching. Use `fetchary fetch 5`
+first to refresh the capture. Compact counts such as `1.5K` are returned as
+`1500`; their precision remains limited by the captured page. Missing or hidden
+counts produce an error rather than zero. GitHub is automatically registered as
+a vendor for profile counts.
+
 ## Core principles
 
 ### Local-first
@@ -397,12 +410,14 @@ export
 vendors
 syncVendors
 setVendorActive
+followerCount
 ```
 
 ```js
 await fetchary.vendors();
 await fetchary.setVendorActive('instagram', false);
 await fetchary.syncVendors(); // Discover newly added modules without restarting.
+console.log(await fetchary.followerCount(5)); // Latest archived profile count.
 ```
 
 ### Scheduling

@@ -3,6 +3,7 @@
 - automatic vendor discovery and persisted activation flags in SQLite
 - vendor listing and activation controls in the CLI and library
 - support for youtube, instagram, twitch, tiktok
+- show --follower to only show the amount of followers if it is a vendor
 
 # 1.0.0
 

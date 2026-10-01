@@ -1,5 +1,7 @@
 'use strict';
 
+const { elementCount, labeledCount } = require('../metrics/followers');
+
 const COOKIE_CONSENT = 'youtube-cookie-consent';
 
 function matches(url) {
@@ -58,4 +60,17 @@ const overlays = [
   },
 ];
 
-module.exports = { name: 'youtube', matches, overlays };
+function followerCount(document, url) {
+  if (!/^\/(?:@[^/]+|(?:channel|c|user)\/[^/]+)(?:\/[^/]+)?\/?$/.test(new URL(url).pathname)) return null;
+  const labels = 'subscribers?|abonnenten';
+  const legacy = elementCount(document.querySelector('ytd-c4-tabbed-header-renderer #subscriber-count, ytd-channel-header-renderer #subscriber-count'), labels);
+  if (legacy !== null) return legacy;
+  for (const element of document.querySelectorAll('yt-page-header-renderer span, ytd-page-header-renderer span, yt-page-header-view-model span')) {
+    if (labeledCount(element.getAttribute('aria-label'), labels) === null && labeledCount(element.textContent, labels) === null) continue;
+    const count = elementCount(element, labels);
+    if (count !== null) return count;
+  }
+  return null;
+}
+
+module.exports = { name: 'youtube', matches, overlays, followerCount };

@@ -1,5 +1,7 @@
 'use strict';
 
+const { linkCount, profileName } = require('../metrics/followers');
+
 const COOKIE_CONSENT = 'x-cookie-consent';
 const LOGIN_DIALOG = 'x-login-dialog';
 
@@ -61,4 +63,10 @@ const overlays = [
   },
 ];
 
-module.exports = { name: 'x', matches, prepare, overlays };
+function followerCount(document, url) {
+  const username = profileName(url, /^\/([\w]+)\/?$/);
+  if (!username) return null;
+  return linkCount(document, url, target => [`/${username}/followers`, `/${username}/verified_followers`].includes(target.pathname.replace(/\/$/, '').toLowerCase()));
+}
+
+module.exports = { name: 'x', matches, prepare, overlays, followerCount };

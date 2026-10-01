@@ -87,6 +87,9 @@ test('invalid or duplicate vendor modules fail synchronization without partially
   fs.writeFileSync(path.join(directory, 'invalid.js'), 'module.exports = { name: "invalid" };');
   assert.throws(() => registry.sync(), error => error instanceof FetcharyValidationError && /invalid vendor module/.test(error.message));
   assert.deepEqual(registry.list(), [{ name: 'alpha', active: false }]);
+  fs.writeFileSync(path.join(directory, 'invalid.js'), 'module.exports = { name: "invalid", matches() {}, overlays: [], followerCount: 123 };');
+  assert.throws(() => registry.sync(), error => error instanceof FetcharyValidationError && /invalid vendor module/.test(error.message));
+  assert.deepEqual(registry.list(), [{ name: 'alpha', active: false }]);
   fs.unlinkSync(path.join(directory, 'invalid.js'));
   assert.deepEqual(registry.sync(), [{ name: 'alpha', active: false }, { name: 'beta', active: true }]);
 });

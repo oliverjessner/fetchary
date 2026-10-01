@@ -1,5 +1,7 @@
 'use strict';
 
+const { parseCount, elementCount, labeledCount, jsonObjects, profileName } = require('../metrics/followers');
+
 function matches(url) {
   try {
     const hostname = new URL(url).hostname.toLowerCase();
@@ -60,4 +62,21 @@ const overlays = [
   },
 ];
 
-module.exports = { name: 'twitch', matches, overlays };
+function followerCount(document, url) {
+  const username = profileName(url, /^\/([\w]+)(?:\/about)?\/?$/);
+  if (!username || ['directory', 'downloads', 'settings', 'login', 'signup'].includes(username)) return null;
+  for (const object of jsonObjects(document)) {
+    if (String(object.login || '').toLowerCase() !== username) continue;
+    const count = parseCount(object.followers?.totalCount);
+    if (count !== null) return count;
+  }
+  const count = elementCount(document.querySelector('[data-a-target="followers-count"], [data-a-target="followers-count-value"]'));
+  if (count !== null) return count;
+  for (const element of document.querySelectorAll('[data-a-target="channel-header"] span, [data-a-target="channel-about-panel"] span, .home-header-sticky p')) {
+    if (labeledCount(element.textContent) === null) continue;
+    return elementCount(element);
+  }
+  return null;
+}
+
+module.exports = { name: 'twitch', matches, overlays, followerCount };

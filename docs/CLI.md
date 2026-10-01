@@ -312,7 +312,7 @@ is returned as `fetchBytes`.
 Show detailed information about a monitored URL.
 
 ```bash
-fetchary show <id>
+fetchary show <id> [--follower] [--json]
 ```
 
 In supported interactive terminals, the displayed URL is clickable.
@@ -340,6 +340,27 @@ Rendered hash:  71ab42...
 Comparison hash: 52b14c...
 Ignore selectors: relative-time, .timestamp
 ```
+
+Use `--follower` to print only the follower count from the latest saved vendor
+profile, with no labels, colors, or source details:
+
+```bash
+node cli/index.js show 5 --follower
+# 63
+```
+
+Supported vendors are GitHub, Threads, X, Instagram, TikTok, Twitch, and
+YouTube; YouTube returns subscribers. `--json` also returns a single number.
+Exact embedded profile statistics and tooltips take priority over rounded
+counts. If only `1.5K` is available, the output is `1500` with the precision of
+the captured page.
+
+This command reads the newest rendered archive, falling back to raw HTML for
+HTTP-only captures. It does not fetch or modify captured evidence; use
+`fetchary fetch 5` to update the capture first. Ignore selectors and vendor
+activation do not filter archive reads. Unsupported sources exit with code 2;
+missing or hidden counts exit with code 1 and no number on stdout.
+`--follower` is only available with `show`.
 
 ---
 

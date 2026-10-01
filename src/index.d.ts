@@ -126,6 +126,8 @@ export declare class Fetchary extends EventEmitter {
   add(url: string, options?: { name?: string; tag?: string; every?: string; ignoreSelectors?: string[]; mode?: CaptureMode; captureMode?: CaptureMode; waitAfterLoad?: string | number; waitAfterLoadMs?: string | number }): Promise<Source & { version: number; changed: boolean; rawChanged: boolean; renderedChanged: boolean; contentChanged: boolean }>;
   list(options?: { tag?: string }): Promise<Source[]>;
   get(id: number): Promise<Source>;
+  /** Follower count from the latest archived vendor profile (YouTube subscribers). */
+  followerCount(id: number): Promise<number>;
   fetch(): Promise<FetchResult[]>;
   fetch(id: number): Promise<FetchResult>;
   fetch(ids: number[]): Promise<FetchResult[]>;

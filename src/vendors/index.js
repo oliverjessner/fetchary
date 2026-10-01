@@ -17,7 +17,8 @@ function discoverVendors(directory = __dirname) {
     const vendor = require(path.join(directory, file));
     if (!vendor || typeof vendor.name !== 'string' || !/^[a-z][a-z0-9-]*$/.test(vendor.name) ||
         typeof vendor.matches !== 'function' || !Array.isArray(vendor.overlays) ||
-        (vendor.prepare !== undefined && typeof vendor.prepare !== 'function')) {
+        (vendor.prepare !== undefined && typeof vendor.prepare !== 'function') ||
+        (vendor.followerCount !== undefined && typeof vendor.followerCount !== 'function')) {
       throw new FetcharyValidationError(`invalid vendor module "${file}"`);
     }
     if (names.has(vendor.name)) throw new FetcharyValidationError(`duplicate vendor name "${vendor.name}"`);

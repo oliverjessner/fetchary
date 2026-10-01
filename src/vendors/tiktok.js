@@ -1,5 +1,7 @@
 'use strict';
 
+const { parseCount, elementCount, jsonObjects, profileName } = require('../metrics/followers');
+
 function matches(url) {
   try {
     const hostname = new URL(url).hostname.toLowerCase();
@@ -78,4 +80,15 @@ const overlays = [
   },
 ];
 
-module.exports = { name: 'tiktok', matches, overlays };
+function followerCount(document, url) {
+  const username = profileName(url, /^\/@([^/]+)\/?$/);
+  if (!username) return null;
+  for (const object of jsonObjects(document)) {
+    if (String(object.user?.uniqueId || '').toLowerCase() !== username) continue;
+    const count = parseCount(object.stats?.followerCount ?? object.statsV2?.followerCount);
+    if (count !== null) return count;
+  }
+  return elementCount(document.querySelector('[data-e2e="followers-count"]'));
+}
+
+module.exports = { name: 'tiktok', matches, overlays, followerCount };

@@ -1,5 +1,7 @@
 'use strict';
 
+const { parseCount, descriptionCount, jsonObjects, profileName } = require('../metrics/followers');
+
 const COOKIE_CONSENT = 'threads-cookie-consent';
 
 function matches(url) {
@@ -31,4 +33,15 @@ const overlays = [
   },
 ];
 
-module.exports = { name: 'threads', matches, overlays };
+function followerCount(document, url) {
+  const username = profileName(url, /^\/@([^/]+)\/?$/);
+  if (!username) return null;
+  for (const object of jsonObjects(document)) {
+    if (String(object.username || '').toLowerCase() !== username) continue;
+    const count = parseCount(object.follower_count);
+    if (count !== null) return count;
+  }
+  return descriptionCount(document);
+}
+
+module.exports = { name: 'threads', matches, overlays, followerCount };

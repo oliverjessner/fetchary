@@ -770,6 +770,29 @@ browser rendering, and archiving continue. A capture already in progress keeps
 its initial vendor selection. Removed modules retain their database records and
 flags but are not executed.
 
+Read a vendor profile's follower count from its latest archive:
+
+```js
+const followers = await fetchary.followerCount(5); // number, for example 63
+```
+
+Supported vendors: GitHub, Threads, X, Instagram, TikTok, Twitch, and YouTube
+(subscribers). This uses the archived final URL to select the vendor, prefers
+rendered HTML, and falls back to raw HTML for HTTP-only captures. It performs
+no network request and does not apply ignore selectors or vendor activation
+flags. Call `fetch(id)` first when you need a new capture.
+
+Exact embedded profile statistics or tooltips take priority over compact
+labels. Compact counts are expanded (`1.5K` becomes `1500`), retaining the
+page's limited precision. Unsupported vendors throw `FetcharyValidationError`;
+missing, hidden, or unrecognized counts throw `FetcharyNotFoundError`.
+Zero is returned only when the archived profile reports zero.
+
+Vendor modules can optionally export `followerCount(document, url)`, returning
+a non-negative safe integer or `null` when unavailable. `document` is the
+parsed archive DOM and `url` is its final capture URL. This hook is validated
+during automatic discovery.
+
 ## Scheduling
 
 Scheduling is part of the library and uses the same interval syntax as the CLI.

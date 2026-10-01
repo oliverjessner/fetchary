@@ -1,5 +1,7 @@
 'use strict';
 
+const { parseCount, linkCount, descriptionCount, jsonObjects, profileName } = require('../metrics/followers');
+
 const COOKIE_CONSENT = 'instagram-cookie-consent';
 const LOGIN_DIALOG = 'instagram-login-dialog';
 
@@ -83,4 +85,15 @@ const overlays = [
   },
 ];
 
-module.exports = { name: 'instagram', matches, overlays };
+function followerCount(document, url) {
+  const username = profileName(url, /^\/([\w.]+)\/?$/);
+  if (!username || ['accounts', 'explore', 'reels', 'p'].includes(username)) return null;
+  for (const object of jsonObjects(document)) {
+    if (String(object.username || '').toLowerCase() !== username) continue;
+    const count = parseCount(object.edge_followed_by?.count ?? object.follower_count);
+    if (count !== null) return count;
+  }
+  return linkCount(document, url, target => target.pathname.replace(/\/$/, '').toLowerCase() === `/${username}/followers`) ?? descriptionCount(document);
+}
+
+module.exports = { name: 'instagram', matches, overlays, followerCount };
