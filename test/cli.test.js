@@ -230,6 +230,8 @@ test('invalid argument counts include command usage and an example', async t => 
   const cases = [
     { args: ['add'], usage: 'fetchary add <url> [--name <name>] [--tag <tag>] [--every <interval>] [--mode <browser|http>] [--wait-after-load <duration>] [--ignore-selector <css> ...]', example: 'fetchary add https://github.com/owner/repo --mode browser --ignore-selector "relative-time"' },
     { args: ['list', 'extra'], usage: 'fetchary list [--tag <tag>] [--json]', example: 'fetchary list --tag research' },
+    { args: ['vendors', 'extra'], usage: 'fetchary vendors [--json]', example: 'fetchary vendors' },
+    { args: ['vendor', 'instagram'], usage: 'fetchary vendor <name> <enable|disable> [--json]', example: 'fetchary vendor instagram disable' },
     { args: ['status', 'extra'], usage: 'fetchary status', example: 'fetchary status' },
     { args: ['show'], usage: 'fetchary show <id>', example: 'fetchary show 1' },
     { args: ['history'], usage: 'fetchary history <id>', example: 'fetchary history 1' },
@@ -264,6 +266,42 @@ test('CLI rejects invalid browser capture settings', async t => {
   const invalidWait = await runCli(['add', 'https://example.test/wait', '--wait-after-load', '-1s', '--data-dir', dataDir]);
   assert.equal(invalidWait.code, 2);
   assert.match(invalidWait.stderr, /wait after load must be a non-negative duration/);
+});
+
+test('CLI lists persisted vendors and enables or disables them', async t => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fetchary-cli-vendors-'));
+  t.after(() => fs.rmSync(dataDir, { recursive: true, force: true }));
+  const base = ['--data-dir', dataDir];
+  const listed = await runCli(['vendors', '--json', ...base]);
+  assert.equal(listed.code, 0, listed.stderr);
+  const vendors = JSON.parse(listed.stdout);
+  assert.equal(vendors.find(vendor => vendor.name === 'instagram').active, true);
+  assert.equal(vendors.every(vendor => typeof vendor.active === 'boolean'), true);
+
+  const disabled = await runCli(['vendor', 'instagram', 'disable', '--json', ...base]);
+  assert.equal(disabled.code, 0, disabled.stderr);
+  assert.deepEqual(JSON.parse(disabled.stdout), { name: 'instagram', active: false });
+  const humanList = await runCli(['vendors', '--no-color', ...base]);
+  assert.match(humanList.stdout, /^VENDOR\s+ACTIVE/m);
+  assert.match(humanList.stdout, /^instagram\s+no$/m);
+  const reloaded = JSON.parse((await runCli(['vendors', '--json', ...base])).stdout);
+  assert.equal(reloaded.find(vendor => vendor.name === 'instagram').active, false);
+
+  const badAction = await runCli(['vendor', 'instagram', 'maybe', ...base]);
+  assert.equal(badAction.code, 2);
+  assert.match(badAction.stderr, /vendor action must be "enable" or "disable"/);
+  assert.match(badAction.stderr, /Usage:\s+fetchary vendor/);
+  const unknown = await runCli(['vendor', 'unknown', 'disable', ...base]);
+  assert.equal(unknown.code, 1);
+  assert.match(unknown.stderr, /vendor "unknown" does not exist/);
+
+  const enabled = await runCli(['vendor', 'instagram', 'enable', '--json', ...base]);
+  assert.equal(enabled.code, 0, enabled.stderr);
+  assert.deepEqual(JSON.parse(enabled.stdout), { name: 'instagram', active: true });
+  const quiet = await runCli(['vendor', 'instagram', 'disable', '--quiet', ...base]);
+  assert.equal(quiet.code, 0, quiet.stderr);
+  assert.equal(quiet.stdout, '');
+  assert.equal(JSON.parse((await runCli(['vendors', '--json', ...base])).stdout).find(vendor => vendor.name === 'instagram').active, false);
 });
 
 test('open prefers rendered browser captures and supports explicit raw evidence', async t => {

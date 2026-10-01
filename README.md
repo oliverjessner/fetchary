@@ -40,8 +40,9 @@ Fetchary is deliberately small. Chromium is used only as a deterministic renderi
 For public Threads pages, Fetchary declines the optional-cookie prompt when it
 appears during that wait, so the consent dialog does not cover the archived
 DOM. This does not sign in or bypass Threads' logged-out content limits.
-Site-specific overlay handling lives in `src/vendors/`; add another vendor
-module and register it in `src/vendors/index.js` to support another website.
+Site-specific overlay handling lives in `src/vendors/`. Vendor modules are
+discovered automatically at startup and registered in SQLite with a persisted
+activation flag. Add a vendor module to this directory to support another website.
 The X vendor refuses non-essential cookies and closes X login dialogs before
 the rendered DOM is archived. Before navigation, it also uses Chromium's normal
 browser User-Agent because X rejects the `HeadlessChrome` token. It does not
@@ -54,6 +55,23 @@ The Instagram vendor declines optional cookies and closes dismissible login
 dialogs in English and German. Actions are recorded as
 `instagram-cookie-consent` and `instagram-login-dialog` in capture metadata.
 Pages that require a login remain subject to Instagram's access limits.
+The TikTok and Twitch vendors decline optional cookies and close dismissible
+login dialogs in English and German. TikTok consent controls are also handled
+inside open shadow DOM. Actions are recorded as `tiktok-cookie-consent`,
+`tiktok-login-dialog`, `twitch-cookie-consent`, and `twitch-login-dialog`.
+CAPTCHA prompts and content gates are preserved.
+
+List or toggle site integrations:
+
+```bash
+fetchary vendors
+fetchary vendor instagram disable
+fetchary vendor instagram enable
+```
+
+New vendors default to active. Existing settings survive restarts and discovery.
+Disabling a vendor skips its browser preparation and overlay actions for all
+sources in that data directory; ordinary fetching and archiving continue.
 
 ## Core principles
 
@@ -227,6 +245,8 @@ Only one Fetchary runner may manage a data directory at a time. Fetch failures a
 ```text
 fetchary add <url> [--name <name>] [--tag <tag>] [--every <interval>] [--mode <browser|http>] [--wait-after-load <duration>] [--ignore-selector <css> ...]
 fetchary list [--tag <tag>] [--json]
+fetchary vendors [--json]
+fetchary vendor <name> <enable|disable> [--json]
 fetchary fetch [id...]
 fetchary status
 fetchary show <id>
@@ -369,6 +389,20 @@ read
 readRendered
 diff
 export
+```
+
+### Vendors
+
+```text
+vendors
+syncVendors
+setVendorActive
+```
+
+```js
+await fetchary.vendors();
+await fetchary.setVendorActive('instagram', false);
+await fetchary.syncVendors(); // Discover newly added modules without restarting.
 ```
 
 ### Scheduling

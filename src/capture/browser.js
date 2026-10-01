@@ -1,7 +1,7 @@
 'use strict';
 
 const { FetcharyBrowserError } = require('../errors');
-const { prepareVendorPage, dismissVendorOverlays } = require('../vendors');
+const { discoverVendors, prepareVendorPage, dismissVendorOverlays } = require('../vendors');
 
 function browserError(message, options, cause, phase) {
   if (cause instanceof FetcharyBrowserError) return cause;
@@ -13,12 +13,12 @@ function browserError(message, options, cause, phase) {
   });
 }
 
-async function waitAfterLoad(page, options) {
+async function waitAfterLoad(page, options, vendors) {
   const dismissedOverlays = [];
   const deadline = Date.now() + options.waitAfterLoadMs;
   do {
     const currentUrl = typeof page.url === 'function' ? page.url() : options.url;
-    const dismissed = await dismissVendorOverlays(page, currentUrl, dismissedOverlays);
+    const dismissed = await dismissVendorOverlays(page, currentUrl, dismissedOverlays, vendors);
     dismissedOverlays.push(...dismissed);
     const remaining = deadline - Date.now();
     if (remaining <= 0) break;
@@ -29,6 +29,7 @@ async function waitAfterLoad(page, options) {
 
 class BrowserCapture {
   constructor(options = {}) {
+    this.getVendors = options.getVendors || discoverVendors;
     this.launch = options.launch || (async launchOptions => {
       const puppeteer = require('puppeteer');
       return puppeteer.launch(launchOptions);
@@ -49,12 +50,13 @@ class BrowserCapture {
   }
 
   async capture(options) {
+    const vendors = this.getVendors();
     const browser = await this._getBrowser(options);
     let page;
     try {
       try {
         page = await browser.newPage();
-        await prepareVendorPage(page, options.url);
+        await prepareVendorPage(page, options.url, vendors);
         await page.goto(options.url, { waitUntil: 'load', timeout: options.timeout });
       } catch (cause) {
         throw browserError(`browser navigation failed for ${options.url}`, options, cause, 'navigation');
@@ -62,7 +64,7 @@ class BrowserCapture {
 
       let dismissedOverlays;
       try {
-        dismissedOverlays = await waitAfterLoad(page, options);
+        dismissedOverlays = await waitAfterLoad(page, options, vendors);
       } catch (cause) {
         throw browserError(`post-load wait failed for ${options.url}`, options, cause, 'post-load-wait');
       }

@@ -82,6 +82,19 @@ fetchary add https://www.instagram.com/instagram/ --name "Instagram profile"
 
 Login requirements still apply when Instagram does not offer a dismiss control.
 
+TikTok and Twitch pages also decline optional cookies and close recognized,
+dismissible login dialogs in English and German:
+
+```bash
+fetchary add https://www.tiktok.com/@tiktok --name "TikTok profile"
+fetchary add https://www.twitch.tv/twitch --name "Twitch channel"
+```
+
+Both vendors are registered automatically. Use `fetchary vendor tiktok disable`
+or `fetchary vendor twitch disable` to turn off their actions. TikTok consent
+controls in open shadow DOM are supported. CAPTCHA prompts and content gates
+remain part of the captured page.
+
 Optional metadata:
 
 ```bash
@@ -180,6 +193,35 @@ fetchary list --json
 
 JSON source objects include `captureMode`, `waitAfterLoadMs`, and the current
 raw, rendered, and comparison hashes.
+
+---
+
+### `fetchary vendors`
+
+List all persisted vendors and their activation state:
+
+```bash
+fetchary vendors
+fetchary vendors --json
+```
+
+The table has `VENDOR` and `ACTIVE` columns. JSON records contain `name` and a
+boolean `active`. At startup, Fetchary discovers modules in `src/vendors/` and
+inserts new vendors as active while preserving existing settings.
+
+### `fetchary vendor`
+
+Enable or disable a vendor for all sources in the selected data directory:
+
+```bash
+fetchary vendor instagram disable
+fetchary vendor instagram enable
+fetchary vendor youtube disable --json
+```
+
+Disabled vendors skip browser preparation and overlay actions. Ordinary
+capturing continues. The setting persists across restarts and is read on the
+next browser capture, including by an already running scheduler.
 
 ---
 
@@ -798,7 +840,7 @@ Example `metadata.json`:
 
 fetchary uses SQLite for metadata and indexing.
 
-A minimal schema can consist of two tables.
+Metadata includes sources, versions, schedules, and vendor activation.
 
 ### `urls`
 
@@ -848,6 +890,18 @@ CREATE TABLE versions (
 ```
 
 The raw HTTP body and rendered DOM are stored on disk rather than inside SQLite.
+
+### `vendors`
+
+```sql
+CREATE TABLE vendors (
+    name TEXT PRIMARY KEY NOT NULL,
+    active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1))
+);
+```
+
+SQLite stores the activation boolean as `0` or `1`; the library and CLI JSON
+expose it as `false` or `true`.
 
 ## Change detection
 

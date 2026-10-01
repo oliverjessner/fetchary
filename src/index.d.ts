@@ -17,6 +17,11 @@ export type FetcharyOptions = {
 
 export type CaptureMode = 'browser' | 'http';
 
+export type Vendor = {
+  name: string;
+  active: boolean;
+};
+
 export type Schedule = {
   sourceId: number;
   enabled: boolean;
@@ -115,6 +120,9 @@ export type FetcharyRunner = { stop(): Promise<void> };
 export declare class Fetchary extends EventEmitter {
   readonly dataDir: string;
   readonly databasePath: string;
+  vendors(): Promise<Vendor[]>;
+  syncVendors(): Promise<Vendor[]>;
+  setVendorActive(name: string, active: boolean): Promise<Vendor>;
   add(url: string, options?: { name?: string; tag?: string; every?: string; ignoreSelectors?: string[]; mode?: CaptureMode; captureMode?: CaptureMode; waitAfterLoad?: string | number; waitAfterLoadMs?: string | number }): Promise<Source & { version: number; changed: boolean; rawChanged: boolean; renderedChanged: boolean; contentChanged: boolean }>;
   list(options?: { tag?: string }): Promise<Source[]>;
   get(id: number): Promise<Source>;

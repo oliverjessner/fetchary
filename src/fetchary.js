@@ -6,6 +6,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { EventEmitter } = require('node:events');
 const { openDatabase, transaction } = require('./storage/database');
+const { VendorRegistry } = require('./storage/vendors');
 const { CaptureManager } = require('./capture');
 const { parseInterval } = require('./intervals');
 const { comparisonText, comparisonHash, validateIgnoreSelector, lineDiff, elementDiff } = require('./diff');
@@ -179,19 +180,42 @@ class Fetchary extends EventEmitter {
     this.closed = false;
     if (typeof this.httpFetch !== 'function') throw new FetcharyValidationError('a Fetch-compatible implementation is required');
     if (!Number.isFinite(this.timeout) || this.timeout <= 0) throw new FetcharyValidationError('timeout must be greater than zero');
-    this.capture = new CaptureManager({
-      fetch: this.httpFetch,
-      timeout: this.timeout,
-      userAgent: this.userAgent,
-      launchBrowser: options.launchBrowser,
-    });
     const storage = openDatabase(this.dataDir);
     this.db = storage.db;
     this.databasePath = storage.databasePath;
+    try {
+      this.vendorRegistry = new VendorRegistry(this.db);
+      this.vendorRegistry.sync();
+      this.capture = new CaptureManager({
+        fetch: this.httpFetch,
+        timeout: this.timeout,
+        userAgent: this.userAgent,
+        launchBrowser: options.launchBrowser,
+        getVendors: () => this.vendorRegistry.activeModules(),
+      });
+    } catch (error) {
+      this.db.close();
+      throw error;
+    }
   }
 
   _assertOpen() {
     if (this.closed) throw new FetcharyError('this Fetchary instance is closed');
+  }
+
+  async vendors() {
+    this._assertOpen();
+    return this.vendorRegistry.list();
+  }
+
+  async syncVendors() {
+    this._assertOpen();
+    return this.vendorRegistry.sync();
+  }
+
+  async setVendorActive(name, active) {
+    this._assertOpen();
+    return this.vendorRegistry.setActive(name, active);
   }
 
   _sourceRow(id, includeRemoved = false) {

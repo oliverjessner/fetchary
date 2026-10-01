@@ -142,6 +142,11 @@ function openDatabase(dataDir) {
         next_fetch_at TEXT NOT NULL,
         FOREIGN KEY (url_id) REFERENCES urls(id) ON DELETE CASCADE
       );
+
+      CREATE TABLE IF NOT EXISTS vendors (
+        name TEXT PRIMARY KEY NOT NULL,
+        active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1))
+      );
     `);
     migrateUrlsIgnoreSelectors(db);
     migrateVersionsRequiredColumns(db);

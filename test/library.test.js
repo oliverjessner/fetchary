@@ -375,6 +375,9 @@ test('storage migrates required version metadata while keeping content type null
   await fetchary.close();
 
   const migrated = new DatabaseSync(databasePath, { readOnly: true });
+  const vendors = migrated.prepare('SELECT name, active FROM vendors ORDER BY name').all();
+  assert.deepEqual(vendors.map(vendor => vendor.name), require('../src/vendors').discoverVendors().map(vendor => vendor.name).sort());
+  assert.equal(vendors.every(vendor => vendor.active === 1), true, 'legacy databases receive active vendors automatically');
   const urlColumns = new Map(migrated.prepare('PRAGMA table_info(urls)').all().map(column => [column.name, column]));
   assert.equal(Number(urlColumns.get('ignore_selectors').notnull), 1);
   assert.equal(urlColumns.get('ignore_selectors').dflt_value, "'[]'");

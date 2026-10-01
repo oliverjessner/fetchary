@@ -16,8 +16,9 @@ records this as `dismissedOverlays: ['threads-cookie-consent']`; it does not log
 in or bypass logged-out content limits.
 
 Vendor-specific browser behavior is isolated in `src/vendors/`. Each module
-declares its URL matcher and overlay actions and is registered in
-`src/vendors/index.js`, keeping the generic browser capture site-agnostic.
+declares its unique name, URL matcher, and overlay actions. Direct `.js` files
+in that directory, except `index.js`, are discovered automatically and registered
+in SQLite at startup, keeping the generic browser capture site-agnostic.
 The X vendor handles non-essential-cookie prompts and dismissible login dialogs;
 successful actions are recorded as `x-cookie-consent` and `x-login-dialog`. Its
 pre-navigation hook replaces Chromium's `HeadlessChrome` token with `Chrome`,
@@ -37,6 +38,22 @@ recorded as `instagram-cookie-consent` and `instagram-login-dialog`. It recogniz
 both login forms and the profile's sign-up invitation, including close controls
 whose label is on a nested SVG. Unrelated dialogs and login pages without a
 dismiss control are preserved. No authentication is performed.
+
+The TikTok vendor handles English/German cookie controls in `tiktok-cookie-banner`
+components, including nested open shadow roots, and inline cookie banners. It
+closes recognized, dismissible login dialogs and records `tiktok-cookie-consent`
+and `tiktok-login-dialog`. Short links on `vm.tiktok.com` and `vt.tiktok.com`
+are handled through their redirects. CAPTCHA controls are preserved.
+
+The Twitch vendor rejects optional cookies in the Twitch consent banner or
+OneTrust controls and closes dismissible authentication dialogs. It records
+`twitch-cookie-consent` and `twitch-login-dialog`. English and German labels are
+supported; unrelated dialogs and content classification gates are preserved.
+
+Both vendors are discovered automatically and respect their persisted `active`
+flags. Cookie and login actions are best-effort and run during the configured
+post-load wait; delayed controls require a sufficient wait, such as the default
+five seconds.
 
 ## Installation
 
@@ -717,6 +734,41 @@ type RemoveOptions = {
 `purge: true` is destructive.
 
 ---
+
+## Vendors
+
+Vendor activation is stored in the data directory's SQLite database. New
+vendor modules default to active; synchronization only inserts missing names
+and preserves existing flags. Existing databases receive the table automatically.
+
+```js
+const vendors = await fetchary.vendors();
+// [{ name: 'instagram', active: true }, ...], sorted by name.
+
+await fetchary.setVendorActive('instagram', false);
+await fetchary.setVendorActive('instagram', true);
+
+const synchronized = await fetchary.syncVendors();
+```
+
+`vendors()` lists persisted records. `setVendorActive(name, active)` requires
+a boolean and returns the updated record. Unknown names throw
+`FetcharyNotFoundError`; invalid names or activation values throw
+`FetcharyValidationError`. Names are trimmed and converted to lowercase.
+
+`syncVendors()` scans `src/vendors/` again and returns the persisted list.
+New module files are loaded without restarting; changing an already loaded
+module's implementation requires a restart. Each module must export `name`,
+`matches(url)`, and an `overlays` array of `{ id, dismiss(page) }` actions, with
+an optional `prepare(page)` hook. Names and overlay IDs must be unique. Invalid
+or duplicate modules fail synchronization without partially adding records.
+
+Each browser capture reads the current activation flags, including changes
+made by another instance using the same data directory. Disabled vendors skip
+both preparation and overlay actions, including after redirects. HTTP fetching,
+browser rendering, and archiving continue. A capture already in progress keeps
+its initial vendor selection. Removed modules retain their database records and
+flags but are not executed.
 
 ## Scheduling
 

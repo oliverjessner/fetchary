@@ -4,6 +4,8 @@ const assert = require('node:assert/strict');
 const test = require('node:test');
 const youtube = require('../src/vendors/youtube');
 const instagram = require('../src/vendors/instagram');
+const tiktok = require('../src/vendors/tiktok');
+const twitch = require('../src/vendors/twitch');
 const { dismissVendorOverlays } = require('../src/vendors');
 
 test('YouTube URL matching includes consent and short links without matching unrelated hosts', () => {
@@ -108,3 +110,28 @@ test('Instagram overlay failures are isolated and completed actions are skipped'
   assert.deepEqual(await dismissVendorOverlays(page, 'https://example.com/'), []);
   assert.equal(evaluations, 2);
 });
+
+for (const vendor of [tiktok, twitch]) {
+  test(`${vendor.name} matches its public hosts without matching unrelated domains`, () => {
+    const domain = vendor.name === 'tiktok' ? 'tiktok.com' : 'twitch.tv';
+    for (const url of [`https://${domain}/example`, `https://www.${domain}/example`, `https://m.${domain}/example`, `https://${domain.toUpperCase()}/example`]) {
+      assert.equal(vendor.matches(url), true, url);
+    }
+    for (const url of [`https://not${domain}/`, `https://${domain}.example.com/`, `https://${domain}@example.com/`, `https://example.com/${domain}`, 'not a URL', '']) {
+      assert.equal(vendor.matches(url), false, url);
+    }
+    const specialHost = vendor.name === 'tiktok' ? 'https://vm.tiktok.com/example/' : 'https://clips.twitch.tv/example';
+    assert.equal(vendor.matches(specialHost), true);
+  });
+
+  test(`${vendor.name} overlay failures are best-effort and completed actions are not repeated`, async () => {
+    let evaluations = 0;
+    const page = { async evaluate() { evaluations++; throw new Error('execution context destroyed'); } };
+    const url = vendor.name === 'tiktok' ? 'https://www.tiktok.com/@example' : 'https://www.twitch.tv/example';
+    assert.deepEqual(await dismissVendorOverlays(page, url), []);
+    assert.equal(evaluations, 2);
+    assert.deepEqual(await dismissVendorOverlays(page, url, vendor.overlays.map(overlay => overlay.id)), []);
+    assert.deepEqual(await dismissVendorOverlays(page, 'https://example.com/'), []);
+    assert.equal(evaluations, 2);
+  });
+}

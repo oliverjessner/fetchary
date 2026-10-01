@@ -29,6 +29,8 @@ Usage: fetchary <command> [arguments] [options]
 Commands:
   add <url>                   Add and immediately capture a URL
   list                        List monitored sources
+  vendors                     List vendors and their activation state
+  vendor <name> <enable|disable>  Enable or disable a vendor
   fetch [id...]               Fetch one, several, or all enabled sources
   status                      Show storage statistics
   show <id>                   Show source details
@@ -93,11 +95,18 @@ Export an archive:
 Run scheduled checks:
   fetchary schedules
   fetchary run
+
+Manage site integrations:
+  fetchary vendors
+  fetchary vendor instagram disable
+  fetchary vendor instagram enable
 `;
 
 const COMMAND_GUIDANCE = Object.freeze({
   add: { usage: 'fetchary add <url> [--name <name>] [--tag <tag>] [--every <interval>] [--mode <browser|http>] [--wait-after-load <duration>] [--ignore-selector <css> ...]', example: 'fetchary add https://github.com/owner/repo --mode browser --ignore-selector "relative-time"' },
   list: { usage: 'fetchary list [--tag <tag>] [--json]', example: 'fetchary list --tag research' },
+  vendors: { usage: 'fetchary vendors [--json]', example: 'fetchary vendors' },
+  vendor: { usage: 'fetchary vendor <name> <enable|disable> [--json]', example: 'fetchary vendor instagram disable' },
   status: { usage: 'fetchary status', example: 'fetchary status' },
   show: { usage: 'fetchary show <id>', example: 'fetchary show 1' },
   history: { usage: 'fetchary history <id>', example: 'fetchary history 1' },
@@ -515,6 +524,23 @@ async function execute(fetchary, parsed, write, format = {}) {
       ].join('\n');
       emitValue(value, human);
       return contentChanged ? 10 : 0;
+    }
+    case 'vendors': {
+      requireArgs(args, command, 0);
+      const vendors = await fetchary.vendors();
+      emitValue(vendors, vendors.length ? table(vendors, [
+        { label: 'VENDOR', value: row => row.name },
+        { label: 'ACTIVE', value: row => color(row.active ? 'yes' : 'no', row.active ? 'green' : 'yellow') },
+      ]) : 'No vendors registered.');
+      return 0;
+    }
+    case 'vendor': {
+      requireArgs(args, command, 2);
+      if (!['enable', 'disable'].includes(args[1])) throw usageError(command, 'vendor action must be "enable" or "disable"');
+      const active = args[1] === 'enable';
+      const vendor = await fetchary.setVendorActive(args[0], active);
+      emitValue(vendor, `${color(`✓ ${active ? 'Enabled' : 'Disabled'}`, active ? 'green' : 'yellow')} vendor ${color(vendor.name, 'blue')}`);
+      return 0;
     }
     case 'status': {
       requireArgs(args, command, 0);

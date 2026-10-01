@@ -1,5 +1,7 @@
 # 1.1.0
 
+- automatic vendor discovery and persisted activation flags in SQLite
+- vendor listing and activation controls in the CLI and library
 - support for youtube, instagram, twitch, tiktok
 
 # 1.0.0

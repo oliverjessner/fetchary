@@ -14,7 +14,7 @@ class CaptureManager {
     this.httpFetch = options.fetch;
     this.timeout = options.timeout;
     this.userAgent = options.userAgent;
-    this.browser = new BrowserCapture({ launch: options.launchBrowser });
+    this.browser = new BrowserCapture({ launch: options.launchBrowser, getVendors: options.getVendors });
   }
 
   async capture(source) {
