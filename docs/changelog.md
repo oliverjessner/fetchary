@@ -1,6 +1,8 @@
 # 1.2.0
 
-- repeatable `--include-selector` support for `add` and `edit` to compare only selected page sections
+- repeatable `--include-selector` support for `add`, `edit`, and `diff` to compare only selected page sections
+- one-off include selections for console, JSON, and HTML diffs, including `--element-content` and `--element-raw`, without changing source settings
+- `open --show-include-selector` prints the stored include selection as text or HTML, with archived version, raw-response, and JSON options
 - `--clear-include-selectors` and library `includeSelectors` support, with persisted configuration and backwards-compatible SQLite migration
 
 # 1.1.0

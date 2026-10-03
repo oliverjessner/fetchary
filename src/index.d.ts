@@ -152,7 +152,7 @@ export declare class Fetchary extends EventEmitter {
   version(sourceId: number, versionId?: number): Promise<Version>;
   read(sourceId: number, versionId?: number): Promise<string>;
   readRendered(sourceId: number, versionId?: number): Promise<string>;
-  diff(sourceId: number, options?: { from?: number; to?: number; mode?: 'text' | 'element-content' | 'element-raw' | 'raw' }): Promise<DiffResult>;
+  diff(sourceId: number, options?: { from?: number; to?: number; mode?: 'text' | 'element-content' | 'element-raw' | 'raw'; includeSelectors?: string[] }): Promise<DiffResult>;
   edit(id: number, changes: { url?: string; name?: string | null; tag?: string | null; ignoreSelectors?: string[]; includeSelectors?: string[]; mode?: CaptureMode; captureMode?: CaptureMode; waitAfterLoad?: string | number; waitAfterLoadMs?: string | number }): Promise<Source>;
   enable(id: number): Promise<Source>;
   disable(id: number): Promise<Source>;

@@ -490,7 +490,7 @@ Compare archived versions.
 By default, fetchary compares the latest version with the previous version.
 
 ```bash
-fetchary diff <id>
+fetchary diff <id> [from to] [--include-selector <css> ...] [--element-content|--element-raw|--raw] [--html]
 ```
 
 Example:
@@ -524,14 +524,31 @@ fetchary diff 12 --element-raw
 fetchary diff 12 --raw
 ```
 
+Limit console output to selected elements for this invocation:
+
+```bash
+fetchary diff 12 --include-selector "#main"
+fetchary diff 12 6 8 --include-selector "#main" --element-content
+fetchary diff 12 --include-selector "#main" --element-raw
+fetchary diff 12 --include-selector "main" --include-selector ".sidebar-news"
+```
+
+`--include-selector` is repeatable and replaces the source's stored include
+selection only for this diff. It applies to console, JSON, and HTML output and
+does not change monitoring settings. If neither version contains a match, no
+differences are shown.
+
 Normal diffs use `rendered.html` when available and gracefully fall back to the
 historical raw response. The default text diff selects elements matching the
 source's current include selectors, then removes elements matching its ignore
 selectors before applying normal text extraction. `--element-content` shows
 each changed text fragment together with its nearest useful HTML element and
-also applies both selector lists. `--element-raw` groups raw changes by HTML
-element, includes tag and attribute changes, and does not apply comparison
-selectors. `--raw` always compares exact HTTP responses and never applies selectors.
+also applies the include selection and stored ignore selectors. `--element-raw`
+groups raw changes by HTML element, includes tag and attribute changes, and
+ignores stored comparison selectors. An explicit `--include-selector` limits
+element-raw output to those elements, including their attributes and ignored
+descendants. `--raw` always compares exact HTTP responses and cannot be combined
+with `--include-selector`; use `--element-raw` to inspect selected HTML elements.
 
 `--html` may generate or open a rendered HTML diff.
 
@@ -543,12 +560,12 @@ with `--no-color` or the `NO_COLOR` environment variable.
 
 ### `fetchary open`
 
-Open an archived HTML version in the default browser.
+Open an archived HTML version in the default browser, or print selected content.
 
 Open the latest version:
 
 ```bash
-fetchary open <id> [version] [--html] [--raw]
+fetchary open <id> [version] [--show-include-selector] [--html] [--raw]
 ```
 
 Example:
@@ -570,6 +587,29 @@ HTTP response. Without `--html`, fetchary opens the selected artifact in the
 system's default application. With `--html`, it opens that artifact in the
 standard editor. Fetchary uses `$VISUAL`, then `$EDITOR`, followed by the
 platform editor fallback. No variant requests the live website again.
+
+Print only content matching the source's stored include selectors to the console:
+
+```bash
+fetchary open 16 --show-include-selector
+fetchary open 16 4 --show-include-selector
+fetchary open 16 --show-include-selector --html
+fetchary open 16 --show-include-selector --raw
+```
+
+`--show-include-selector` prints text by default. With `--html`, it prints the
+matching HTML elements and their descendants. Both variants write directly to
+the console. `--raw` selects the archived HTTP response; otherwise the rendered
+capture is used when available. The current include selectors apply even when
+viewing an older version. Multiple and overlapping matches follow the same
+selection rules as comparisons, but stored ignore selectors do not hide any
+content in this view.
+
+If no include selectors are configured, the command reports an error with an
+`edit --include-selector` example. If the selectors match nothing in the selected
+archive, the output is empty. `--json` returns `sourceId`, `version`,
+`includeSelectors`, and `content`. Viewing content does not change source settings
+or archived files.
 
 ---
 

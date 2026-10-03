@@ -10,7 +10,7 @@ const { openDatabase, transaction } = require('./storage/database');
 const { VendorRegistry } = require('./storage/vendors');
 const { CaptureManager } = require('./capture');
 const { parseInterval } = require('./intervals');
-const { comparisonText, comparisonHash, validateSelector, lineDiff, elementDiff } = require('./diff');
+const { comparisonHtml, comparisonText, comparisonHash, validateSelector, lineDiff, elementDiff } = require('./diff');
 const { acquireLock, releaseLock } = require('./scheduler');
 const {
   FetcharyError,
@@ -658,6 +658,11 @@ class Fetchary extends EventEmitter {
     if (!['text', 'element-content', 'element-raw', 'raw'].includes(mode)) {
       throw new FetcharyValidationError('diff mode must be "text", "element-content", "element-raw", or "raw"');
     }
+    const explicitIncludes = Object.hasOwn(options, 'includeSelectors');
+    const includeSelectors = explicitIncludes ? validateSelectors(options.includeSelectors, 'include') : source.includeSelectors;
+    if (mode === 'raw' && explicitIncludes && includeSelectors.length) {
+      throw new FetcharyValidationError('raw diffs compare exact HTTP responses; use element-raw with includeSelectors to compare selected elements');
+    }
     let from = options.from;
     let to = options.to;
     if (from == null || to == null) {
@@ -669,11 +674,13 @@ class Fetchary extends EventEmitter {
     const reader = mode === 'raw' ? this.read.bind(this) : this.readRendered.bind(this);
     const [beforeHtml, afterHtml] = await Promise.all([reader(id, from), reader(id, to)]);
     let changes;
-    const comparisonOptions = { includeSelectors: source.includeSelectors, ignoreSelectors: source.ignoreSelectors };
+    const comparisonOptions = { includeSelectors, ignoreSelectors: source.ignoreSelectors };
     if (mode === 'element-content') {
       changes = elementDiff(beforeHtml, afterHtml, { mode: 'content', ...comparisonOptions });
     } else if (mode === 'element-raw') {
-      changes = elementDiff(beforeHtml, afterHtml, { mode: 'raw' });
+      const selectedBefore = explicitIncludes ? comparisonHtml(beforeHtml, { includeSelectors }) : beforeHtml;
+      const selectedAfter = explicitIncludes ? comparisonHtml(afterHtml, { includeSelectors }) : afterHtml;
+      changes = elementDiff(selectedBefore, selectedAfter, { mode: 'raw' });
     } else {
       const before = mode === 'raw' ? beforeHtml : comparisonText(beforeHtml, comparisonOptions);
       const after = mode === 'raw' ? afterHtml : comparisonText(afterHtml, comparisonOptions);

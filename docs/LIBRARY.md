@@ -611,6 +611,22 @@ const diff = await fetchary.diff(12, {
 Text and element diffs use rendered HTML when available. `mode: 'raw'` always
 uses `response.html`.
 
+Override the include selection for one diff without editing the source:
+
+```js
+const selectedDiff = await fetchary.diff(12, {
+    includeSelectors: ['main'],
+    mode: 'element-content',
+});
+```
+
+The array is validated, trimmed, and deduplicated. It replaces stored include
+selectors for this call only; `[]` selects the whole page. Stored ignore
+selectors still apply to text and element-content output. With
+`mode: 'element-raw'`, an explicit include selection shows all HTML changes in
+those sections without applying stored ignore selectors. A non-empty selection
+cannot be combined with `mode: 'raw'`, which compares exact HTTP responses.
+
 Possible options:
 
 ```ts
@@ -618,14 +634,15 @@ type DiffOptions = {
     from?: number;
     to?: number;
     mode?: 'text' | 'element-content' | 'element-raw' | 'raw';
+    includeSelectors?: string[];
 };
 ```
 
 Text mode, which is the default, applies the source's current include and ignore selectors
 to both selected versions. Element-content mode returns content changes with
 their HTML elements and also applies both selector lists. Element-raw mode groups
-raw changes by HTML element and does not apply selectors. Raw mode compares the
-complete archived HTML and never applies selectors.
+raw changes by HTML element and applies only explicitly provided include
+selectors. Raw mode compares the complete archived HTML and never applies selectors.
 
 Example result:
 

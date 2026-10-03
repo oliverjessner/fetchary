@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const { spawn } = require('node:child_process');
 const pkg = require('../package.json');
-const { comparisonHash } = require('../src/diff');
+const { comparisonHash, comparisonHtml, comparisonText } = require('../src/diff');
 const {
   createFetchary,
   FetcharyFetchError,
@@ -69,10 +69,12 @@ Capture options for add and edit:
   --wait-after-load <time>    Browser wait after load, for example 500ms or 5s
 
 Diff and open options:
+  --include-selector <css>     Filter diff to matching elements (repeatable; diff only)
+  --show-include-selector      Print stored include-selector content (open only)
   --element-content           Show content changes with their HTML elements
   --element-raw               Show raw changes grouped by HTML element
   --raw                       Use the exact archived HTTP response
-  --html                      Render a diff or open archived HTML in an editor
+  --html                      Render a diff, open HTML in an editor, or print selected HTML
 
 Follower list options:
   --tag <tag>                 Only include sources with this tag
@@ -101,7 +103,10 @@ Read archived follower counts:
 Inspect and compare archived versions:
   fetchary history 1
   fetchary diff 1
+  fetchary diff 1 --include-selector "#main" --element-content
+  fetchary diff 1 --include-selector "#main" --element-raw
   fetchary open 1
+  fetchary open 1 --show-include-selector
 
 Export an archive:
   fetchary export 1 --output ./research
@@ -125,8 +130,8 @@ const COMMAND_GUIDANCE = Object.freeze({
   status: { usage: 'fetchary status', example: 'fetchary status' },
   show: { usage: 'fetchary show <id> [--json]', example: 'fetchary show 1' },
   history: { usage: 'fetchary history <id>', example: 'fetchary history 1' },
-  diff: { usage: 'fetchary diff <id> or fetchary diff <id> <version1> <version2>', example: 'fetchary diff 4 1 2' },
-  open: { usage: 'fetchary open <id> [version] [--html] [--raw]', example: 'fetchary open 1 2 --raw' },
+  diff: { usage: 'fetchary diff <id> [from to] [--include-selector <css> ...] [--element-content|--element-raw|--raw] [--html]', example: 'fetchary diff 4 1 2' },
+  open: { usage: 'fetchary open <id> [version] [--show-include-selector] [--html] [--raw]', example: 'fetchary open 1 2 --raw' },
   edit: { usage: 'fetchary edit <id> [--url <url>] [--name <name>] [--tag <tag>] [--mode <browser|http>] [--wait-after-load <duration>] [--include-selector <css> ... | --clear-include-selectors] [--ignore-selector <css> ... | --clear-ignore-selectors]', example: 'fetchary edit 1 --mode http' },
   enable: { usage: 'fetchary enable <id>', example: 'fetchary enable 1' },
   disable: { usage: 'fetchary disable <id>', example: 'fetchary disable 1' },
@@ -140,7 +145,7 @@ const COMMAND_GUIDANCE = Object.freeze({
 
 const VALUE_OPTIONS = new Set(['name', 'tag', 'url', 'output', 'data-dir', 'poll-interval', 'every', 'mode', 'wait-after-load']);
 const REPEATABLE_VALUE_OPTIONS = new Set(['ignore-selector', 'include-selector']);
-const FLAG_OPTIONS = new Set(['json', 'quiet', 'verbose', 'no-color', 'help', 'example', 'version', 'purge', 'raw', 'element-content', 'element-raw', 'html', 'now', 'clear-ignore-selectors', 'clear-include-selectors']);
+const FLAG_OPTIONS = new Set(['json', 'quiet', 'verbose', 'no-color', 'help', 'example', 'version', 'purge', 'raw', 'element-content', 'element-raw', 'html', 'now', 'clear-ignore-selectors', 'clear-include-selectors', 'show-include-selector']);
 const ANSI = Object.freeze({
   red: '\x1b[31m',
   green: '\x1b[32m',
@@ -411,6 +416,10 @@ async function execute(fetchary, parsed, write, format = {}) {
   const emit = value => { if (!options.quiet) write(value); };
   const emitValue = (value, human) => emit(options.json ? `${JSON.stringify(value, null, 2)}\n` : `${human}\n`);
 
+  if (options['show-include-selector'] && command !== 'open') {
+    throw usageError(command, '--show-include-selector can only be used with open');
+  }
+
   switch (command) {
     case 'add': {
       requireArgs(args, command, 1);
@@ -614,8 +623,12 @@ async function execute(fetchary, parsed, write, format = {}) {
       }
       const diffModes = ['raw', 'element-content', 'element-raw'].filter(option => options[option]);
       if (diffModes.length > 1) throw usageError(command, `--${diffModes.join(' and --')} cannot be used together`);
+      if (options.raw && options['include-selector']) {
+        throw usageError(command, '--raw and --include-selector cannot be used together; use --element-raw to compare selected elements');
+      }
       const result = await fetchary.diff(args[0], {
         ...(args.length === 3 ? { from: args[1], to: args[2] } : {}),
+        ...(options['include-selector'] ? { includeSelectors: options['include-selector'] } : {}),
         mode: options.raw ? 'raw' : options['element-content'] ? 'element-content' : options['element-raw'] ? 'element-raw' : 'text',
       });
       if (options.html && !options.json) {
@@ -633,6 +646,19 @@ async function execute(fetchary, parsed, write, format = {}) {
     case 'open': {
       requireArgs(args, command, 1, 2);
       const archived = await fetchary.version(args[0], args[1]);
+      if (options['show-include-selector']) {
+        const source = await fetchary.get(args[0], { includeRemoved: true });
+        if (!source.includeSelectors.length) {
+          throw usageError(command, `source ${source.id} has no include selectors; configure them with "fetchary edit ${source.id} --include-selector <css>"`);
+        }
+        const html = options.raw
+          ? await fetchary.read(source.id, archived.id)
+          : await fetchary.readRendered(source.id, archived.id);
+        const selection = { includeSelectors: source.includeSelectors };
+        const content = options.html ? comparisonHtml(html, selection) : comparisonText(html, selection);
+        emitValue({ sourceId: source.id, version: archived.id, includeSelectors: source.includeSelectors, content }, content);
+        return 0;
+      }
       const file = options.raw || !archived.renderedFile || !fs.existsSync(archived.renderedFile)
         ? archived.file
         : archived.renderedFile;

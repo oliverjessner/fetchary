@@ -286,6 +286,37 @@ test('include selector validation, edits, persistence, and clearing recompute th
   assert.equal((await fetchary.fetch(source.id)).changed, true);
 });
 
+test('diff include selectors override selection for one call and support raw element output', async t => {
+  let body = '<main><p class="old">Same</p><span class="clock">One</span></main><aside>Old</aside>';
+  const fetchary = await createFetchary({ dataDir: tempDir(t), fetch: async () => new Response(body) });
+  t.after(() => fetchary.close());
+  const source = await fetchary.add('https://example.com/diff-selection', {
+    mode: 'http', includeSelectors: ['aside'], ignoreSelectors: ['.clock'],
+  });
+  body = '<main><p class="new">Same</p><span class="clock">Two</span></main><aside>New</aside>';
+  await fetchary.fetch(source.id);
+  const stored = await fetchary.get(source.id);
+  const selectors = [' main ', 'main p', 'main'];
+  assert.equal((await fetchary.diff(source.id, { includeSelectors: selectors })).changed, false);
+  assert.deepEqual(selectors, [' main ', 'main p', 'main']);
+  assert.equal((await fetchary.diff(source.id, { includeSelectors: selectors, mode: 'element-content' })).changed, false);
+  assert.deepEqual((await fetchary.diff(source.id, { includeSelectors: ['main p'], mode: 'element-raw' })).diff, [
+    { type: 'removed', value: '<p class="old">Same</p>' },
+    { type: 'added', value: '<p class="new">Same</p>' },
+  ]);
+  assert.equal((await fetchary.diff(source.id, { includeSelectors: ['.clock'] })).changed, false, 'content diffs keep stored ignore selectors');
+  assert.equal((await fetchary.diff(source.id, { includeSelectors: ['.clock'], mode: 'element-raw' })).changed, true, 'raw element diffs do not apply stored ignore selectors');
+  assert.equal((await fetchary.diff(source.id, { includeSelectors: ['.missing'], mode: 'element-raw' })).changed, false);
+  assert.equal((await fetchary.diff(source.id, { includeSelectors: [], mode: 'element-raw' })).changed, true);
+  assert.deepEqual((await fetchary.diff(source.id)).diff.map(part => part.value), ['Old', 'New']);
+  assert.deepEqual(await fetchary.get(source.id), stored, 'diff overrides never update source state');
+  for (const includeSelectors of [['['], [' '], [null], 'main']) {
+    await assert.rejects(() => fetchary.diff(source.id, { includeSelectors }), FetcharyValidationError);
+  }
+  await assert.rejects(() => fetchary.diff(source.id, { includeSelectors: ['main'], mode: 'raw' }), FetcharyValidationError);
+  assert.equal((await fetchary.diff(source.id, { mode: 'raw' })).changed, true);
+});
+
 test('source lifecycle, filtering, pagination, export, and removal use the public API', async t => {
   const dataDir = tempDir(t);
   const output = tempDir(t);
