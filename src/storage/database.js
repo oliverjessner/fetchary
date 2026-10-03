@@ -64,10 +64,10 @@ function migrateVersionsRequiredColumns(db) {
   });
 }
 
-function migrateUrlsIgnoreSelectors(db) {
+function migrateUrlsSelectors(db) {
   const columns = new Set(db.prepare('PRAGMA table_info(urls)').all().map(column => column.name));
-  if (!columns.has('ignore_selectors')) {
-    db.exec("ALTER TABLE urls ADD COLUMN ignore_selectors TEXT NOT NULL DEFAULT '[]'");
+  for (const name of ['ignore_selectors', 'include_selectors']) {
+    if (!columns.has(name)) db.exec(`ALTER TABLE urls ADD COLUMN ${name} TEXT NOT NULL DEFAULT '[]'`);
   }
 }
 
@@ -123,6 +123,7 @@ function openDatabase(dataDir) {
         current_hash TEXT,
         current_version_id INTEGER,
         ignore_selectors TEXT NOT NULL DEFAULT '[]',
+        include_selectors TEXT NOT NULL DEFAULT '[]',
         capture_mode TEXT NOT NULL DEFAULT 'browser',
         wait_after_load_ms INTEGER NOT NULL DEFAULT 5000,
         current_raw_hash TEXT,
@@ -148,7 +149,7 @@ function openDatabase(dataDir) {
         active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1))
       );
     `);
-    migrateUrlsIgnoreSelectors(db);
+    migrateUrlsSelectors(db);
     migrateVersionsRequiredColumns(db);
     migrateCaptureColumns(db);
     db.exec('CREATE INDEX IF NOT EXISTS versions_url_id_idx ON versions(url_id, version_number DESC)');

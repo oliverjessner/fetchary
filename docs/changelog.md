@@ -1,5 +1,11 @@
+# 1.2.0
+
+- repeatable `--include-selector` support for `add` and `edit` to compare only selected page sections
+- `--clear-include-selectors` and library `includeSelectors` support, with persisted configuration and backwards-compatible SQLite migration
+
 # 1.1.0
 
+- include and ignore selectors apply to change detection, history classification, and content diffs; raw and rendered evidence stays complete
 - automatic vendor discovery and persisted activation flags in SQLite
 - vendor listing and activation controls in the CLI and library
 - support for youtube, instagram, twitch, tiktok, linkedin

@@ -38,7 +38,7 @@ Commands:
   history <id>                List archived versions
   diff <id> [from] [to]       Compare archived versions
   open <id> [version]         Open rendered HTML (use --raw for the response)
-  edit <id>                   Edit URL, name, tag, or ignore selectors
+  edit <id>                   Edit URL, name, tag, or comparison selectors
   enable <id>                 Enable a source
   disable <id>                Disable a source
   remove <id>                 Remove a source (use --purge for its archive)
@@ -59,6 +59,8 @@ Global options:
   --version                   Show version
 
 Comparison options for add and edit:
+  --include-selector <css>    Compare only matching elements (repeatable)
+  --clear-include-selectors   Compare the whole page again when editing
   --ignore-selector <css>     Ignore matching elements (repeatable)
   --clear-ignore-selectors    Remove all ignored selectors when editing
 
@@ -83,6 +85,9 @@ Add a page and check it every 15 minutes:
 
 Ignore a dynamic element during comparison:
   fetchary add https://github.com/owner/repo --ignore-selector "relative-time"
+
+Compare only a specific page section:
+  fetchary add https://example.com/news --include-selector "#main"
 
 List sources and fetch one of them:
   fetchary list
@@ -112,7 +117,7 @@ Manage site integrations:
 `;
 
 const COMMAND_GUIDANCE = Object.freeze({
-  add: { usage: 'fetchary add <url> [--name <name>] [--tag <tag>] [--every <interval>] [--mode <browser|http>] [--wait-after-load <duration>] [--ignore-selector <css> ...]', example: 'fetchary add https://github.com/owner/repo --mode browser --ignore-selector "relative-time"' },
+  add: { usage: 'fetchary add <url> [--name <name>] [--tag <tag>] [--every <interval>] [--mode <browser|http>] [--wait-after-load <duration>] [--include-selector <css> ...] [--ignore-selector <css> ...]', example: 'fetchary add https://github.com/owner/repo --mode browser --ignore-selector "relative-time"' },
   list: { usage: 'fetchary list [--tag <tag>] [--json]', example: 'fetchary list --tag research' },
   follower: { usage: 'fetchary follower [id] [--tag <tag>] [--json]', example: 'fetchary follower 3' },
   vendors: { usage: 'fetchary vendors [--json]', example: 'fetchary vendors' },
@@ -122,7 +127,7 @@ const COMMAND_GUIDANCE = Object.freeze({
   history: { usage: 'fetchary history <id>', example: 'fetchary history 1' },
   diff: { usage: 'fetchary diff <id> or fetchary diff <id> <version1> <version2>', example: 'fetchary diff 4 1 2' },
   open: { usage: 'fetchary open <id> [version] [--html] [--raw]', example: 'fetchary open 1 2 --raw' },
-  edit: { usage: 'fetchary edit <id> [--url <url>] [--name <name>] [--tag <tag>] [--mode <browser|http>] [--wait-after-load <duration>] [--ignore-selector <css> ... | --clear-ignore-selectors]', example: 'fetchary edit 1 --mode http' },
+  edit: { usage: 'fetchary edit <id> [--url <url>] [--name <name>] [--tag <tag>] [--mode <browser|http>] [--wait-after-load <duration>] [--include-selector <css> ... | --clear-include-selectors] [--ignore-selector <css> ... | --clear-ignore-selectors]', example: 'fetchary edit 1 --mode http' },
   enable: { usage: 'fetchary enable <id>', example: 'fetchary enable 1' },
   disable: { usage: 'fetchary disable <id>', example: 'fetchary disable 1' },
   remove: { usage: 'fetchary remove <id> [--purge]', example: 'fetchary remove 1' },
@@ -134,8 +139,8 @@ const COMMAND_GUIDANCE = Object.freeze({
 });
 
 const VALUE_OPTIONS = new Set(['name', 'tag', 'url', 'output', 'data-dir', 'poll-interval', 'every', 'mode', 'wait-after-load']);
-const REPEATABLE_VALUE_OPTIONS = new Set(['ignore-selector']);
-const FLAG_OPTIONS = new Set(['json', 'quiet', 'verbose', 'no-color', 'help', 'example', 'version', 'purge', 'raw', 'element-content', 'element-raw', 'html', 'now', 'clear-ignore-selectors']);
+const REPEATABLE_VALUE_OPTIONS = new Set(['ignore-selector', 'include-selector']);
+const FLAG_OPTIONS = new Set(['json', 'quiet', 'verbose', 'no-color', 'help', 'example', 'version', 'purge', 'raw', 'element-content', 'element-raw', 'html', 'now', 'clear-ignore-selectors', 'clear-include-selectors']);
 const ANSI = Object.freeze({
   red: '\x1b[31m',
   green: '\x1b[32m',
@@ -238,11 +243,11 @@ function table(rows, columns) {
   return [render(columns.map(column => column.label)), ...rows.map(row => render(columns.map(column => column.value(row))))].join('\n');
 }
 
-async function classifyVersions(versions, ignoreSelectors = []) {
+async function classifyVersions(versions, comparisonOptions = {}) {
   const byId = new Map(versions.map(version => [version.id, version]));
   const hashes = new Map(await Promise.all(versions.map(async version => [
     version.id,
-    comparisonHash(await fs.promises.readFile(version.renderedFile && fs.existsSync(version.renderedFile) ? version.renderedFile : version.file, 'utf8'), { ignoreSelectors }),
+    comparisonHash(await fs.promises.readFile(version.renderedFile && fs.existsSync(version.renderedFile) ? version.renderedFile : version.file, 'utf8'), comparisonOptions),
   ])));
   return versions.map(version => {
     if (version.id === 1) return { ...version, change: 'initial', rawChanged: false, renderedChanged: false, contentChanged: null };
@@ -410,6 +415,7 @@ async function execute(fetchary, parsed, write, format = {}) {
     case 'add': {
       requireArgs(args, command, 1);
       if (options['clear-ignore-selectors']) throw usageError(command, '--clear-ignore-selectors can only be used with edit');
+      if (options['clear-include-selectors']) throw usageError(command, '--clear-include-selectors can only be used with edit');
       const source = await fetchary.add(args[0], {
         name: options.name,
         tag: options.tag,
@@ -417,6 +423,7 @@ async function execute(fetchary, parsed, write, format = {}) {
         mode: options.mode,
         waitAfterLoad: options['wait-after-load'],
         ...(options['ignore-selector'] ? { ignoreSelectors: options['ignore-selector'] } : {}),
+        ...(options['include-selector'] ? { includeSelectors: options['include-selector'] } : {}),
       });
       emitValue(source, `${color('✓ Added', 'green')} ${color(`#${source.id}`, 'blue')} ${color(source.url, 'cyan')}\n${color('✓ Saved', 'green')} version ${color(String(source.version), 'blue')}`);
       return 0;
@@ -582,7 +589,7 @@ async function execute(fetchary, parsed, write, format = {}) {
     case 'show': {
       requireArgs(args, command, 1);
       const source = await fetchary.get(args[0]);
-      emitValue(source, `ID:               ${color(String(source.id), 'blue')}\nName:             ${source.name || '-'}\nTag:              ${color(source.tag || '-', 'blue')}\nURL:              ${link(color(source.url, 'cyan'), source.url)}\nEnabled:          ${color(source.enabled ? 'yes' : 'no', source.enabled ? 'green' : 'yellow')}\nCapture mode:     ${color(source.captureMode, 'blue')}\nWait after load:  ${color(duration(source.waitAfterLoadMs), 'blue')}\nIgnore selectors: ${source.ignoreSelectors.length ? source.ignoreSelectors.join(', ') : '-'}\nCreated:          ${color(localDate(source.createdAt), 'gray')}\nLast checked:     ${color(localDate(source.lastCheckedAt), 'gray')}\nLast changed:     ${color(localDate(source.lastChangedAt), 'gray')}\nVersions:         ${color(String(source.versions), 'blue')}\nRaw hash:         ${color(source.currentRawHash || '-', 'gray')}\nRendered hash:    ${color(source.currentRenderedHash || '-', 'gray')}\nComparison hash:  ${color(source.currentComparisonHash || '-', 'gray')}`);
+      emitValue(source, `ID:               ${color(String(source.id), 'blue')}\nName:             ${source.name || '-'}\nTag:              ${color(source.tag || '-', 'blue')}\nURL:              ${link(color(source.url, 'cyan'), source.url)}\nEnabled:          ${color(source.enabled ? 'yes' : 'no', source.enabled ? 'green' : 'yellow')}\nCapture mode:     ${color(source.captureMode, 'blue')}\nWait after load:  ${color(duration(source.waitAfterLoadMs), 'blue')}\nInclude selectors: ${source.includeSelectors.length ? source.includeSelectors.join(', ') : '-'}\nIgnore selectors: ${source.ignoreSelectors.length ? source.ignoreSelectors.join(', ') : '-'}\nCreated:          ${color(localDate(source.createdAt), 'gray')}\nLast checked:     ${color(localDate(source.lastCheckedAt), 'gray')}\nLast changed:     ${color(localDate(source.lastChangedAt), 'gray')}\nVersions:         ${color(String(source.versions), 'blue')}\nRaw hash:         ${color(source.currentRawHash || '-', 'gray')}\nRendered hash:    ${color(source.currentRenderedHash || '-', 'gray')}\nComparison hash:  ${color(source.currentComparisonHash || '-', 'gray')}`);
       return 0;
     }
     case 'history': {
@@ -591,7 +598,7 @@ async function execute(fetchary, parsed, write, format = {}) {
       }
       const versions = await fetchary.history(args[0]);
       const source = await fetchary.get(args[0], { includeRemoved: true });
-      const classified = await classifyVersions(versions, source.ignoreSelectors);
+      const classified = await classifyVersions(versions, { includeSelectors: source.includeSelectors, ignoreSelectors: source.ignoreSelectors });
       emitValue(classified, classified.length ? table(classified, [
         { label: 'VERSION', value: row => row.id },
         { label: 'CHANGE', value: row => row.change },
@@ -638,12 +645,17 @@ async function execute(fetchary, parsed, write, format = {}) {
       if (options['ignore-selector'] && options['clear-ignore-selectors']) {
         throw usageError(command, '--ignore-selector and --clear-ignore-selectors cannot be used together');
       }
+      if (options['include-selector'] && options['clear-include-selectors']) {
+        throw usageError(command, '--include-selector and --clear-include-selectors cannot be used together');
+      }
       const changes = {};
       for (const key of ['name', 'tag', 'url']) if (options[key] !== undefined) changes[key] = options[key];
       if (options.mode !== undefined) changes.captureMode = options.mode;
       if (options['wait-after-load'] !== undefined) changes.waitAfterLoadMs = options['wait-after-load'];
       if (options['ignore-selector']) changes.ignoreSelectors = options['ignore-selector'];
       if (options['clear-ignore-selectors']) changes.ignoreSelectors = [];
+      if (options['include-selector']) changes.includeSelectors = options['include-selector'];
+      if (options['clear-include-selectors']) changes.includeSelectors = [];
       const source = await fetchary.edit(args[0], changes);
       emitValue(source, `${color('✓ Updated', 'green')} ${color(`#${source.id}`, 'blue')}`);
       return 0;

@@ -10,7 +10,7 @@ The core workflow is intentionally simple:
 2. Fetch the page.
 3. Store the exact HTTP response bytes.
 4. In browser mode, wait for `load`, wait another five seconds by default, and store `page.content()` separately.
-5. Remove configured ignored elements from a temporary comparison DOM and report meaningful changes separately.
+5. Select configured comparison sections, remove ignored elements from a temporary comparison DOM, and report meaningful changes separately.
 
 fetchary is designed for research, journalism, investigations, documentation, and any workflow where it matters to know **what a web page looked like at a specific point in time**.
 
@@ -52,7 +52,7 @@ fetchary <command> [arguments] [options]
 Add a URL to fetchary.
 
 ```bash
-fetchary add <url> [--name <name>] [--tag <tag>] [--every <interval>] [--mode <browser|http>] [--wait-after-load <duration>] [--ignore-selector <css> ...]
+fetchary add <url> [--name <name>] [--tag <tag>] [--every <interval>] [--mode <browser|http>] [--wait-after-load <duration>] [--include-selector <css> ...] [--ignore-selector <css> ...]
 ```
 
 Example:
@@ -140,9 +140,25 @@ fetchary add https://github.com/owner/repo \
   --ignore-selector "[data-updated]"
 ```
 
-`--ignore-selector` is repeatable. Selectors are trimmed, deduplicated, and
+Compare only selected sections and optionally ignore elements within them:
+
+```bash
+fetchary add https://example.com/news \
+  --include-selector "#main" \
+  --include-selector ".sidebar-news" \
+  --ignore-selector ".timestamp"
+```
+
+`--include-selector` and `--ignore-selector` are repeatable. Selectors are trimmed, deduplicated, and
 validated immediately. A valid selector that currently matches no element is
 accepted.
+
+Include selectors match the original DOM and select every matching element and
+its descendants in page order. Overlapping matches are compared once. Ignore
+selectors then remove matching elements; an ignored selected element or ancestor
+also excludes that section. Without include selectors, the whole page is compared.
+If include selectors match nothing, the comparison is empty. A selected section
+appearing or disappearing therefore counts as a content change when its text changes.
 
 Example output:
 
@@ -160,6 +176,8 @@ Example output:
 --mode <mode>       browser (default) or http
 --wait-after-load <duration>
                     Browser post-load wait, for example 500ms, 5s, or 10s
+--include-selector <css>
+                    Compare only matching elements and their descendants; repeatable
 --ignore-selector <css>
                     Ignore matching elements during comparison; repeatable
 ```
@@ -354,6 +372,7 @@ Versions:       8
 Raw hash:       89fa21...
 Rendered hash:  71ab42...
 Comparison hash: 52b14c...
+Include selectors: main
 Ignore selectors: relative-time, .timestamp
 ```
 
@@ -453,7 +472,7 @@ VERSION   CHANGE    FETCHED               STATUS   SIZE
 The first archived response is marked `initial`. Later versions are classified
 as `content` when the comparison DOM changed, `raw only` when only the response
 changed, or `rendered only` when JavaScript changed the DOM without changing the
-response. Classification always uses the source's current ignore selectors,
+response. Classification always uses the source's current include and ignore selectors,
 including for older versions. In terminal output, HTTP status `200` is shown in green.
 
 Machine-readable output:
@@ -506,11 +525,12 @@ fetchary diff 12 --raw
 ```
 
 Normal diffs use `rendered.html` when available and gracefully fall back to the
-historical raw response. The default text diff removes elements matching the source's current ignore
+historical raw response. The default text diff selects elements matching the
+source's current include selectors, then removes elements matching its ignore
 selectors before applying normal text extraction. `--element-content` shows
 each changed text fragment together with its nearest useful HTML element and
-also applies ignore selectors. `--element-raw` groups raw changes by HTML
-element, includes tag and attribute changes, and does not apply ignore
+also applies both selector lists. `--element-raw` groups raw changes by HTML
+element, includes tag and attribute changes, and does not apply comparison
 selectors. `--raw` always compares exact HTTP responses and never applies selectors.
 
 `--html` may generate or open a rendered HTML diff.
@@ -582,6 +602,22 @@ fetchary edit 12 --mode http
 fetchary edit 12 --mode browser --wait-after-load 8s
 ```
 
+Replace all include selectors:
+
+```bash
+fetchary edit 12 --include-selector "main" --include-selector "article"
+```
+
+Clear all include selectors to compare the whole page again:
+
+```bash
+fetchary edit 12 --clear-include-selectors
+```
+
+Supplying `--include-selector` to `edit` replaces the complete list. It cannot be
+combined with `--clear-include-selectors`. Existing ignore selectors still apply
+after include selectors are cleared.
+
 Replace all ignore selectors:
 
 ```bash
@@ -600,7 +636,7 @@ Supplying `--ignore-selector` to `edit` replaces the complete list; it does not
 append to the stored list. It cannot be combined with
 `--clear-ignore-selectors`.
 
-Ignore selectors affect comparison only. Raw responses and rendered DOMs remain
+Include and ignore selectors affect comparison only. Raw responses and rendered DOMs remain
 unmodified and retain independent SHA-256 evidence hashes.
 
 ---
@@ -989,7 +1025,7 @@ expose it as `false` or `true`.
 ## Change detection
 
 fetchary keeps three hashes: the exact HTTP response, the exact rendered DOM,
-and the normalized comparison DOM after ignore selectors. A version is archived
+and the normalized comparison DOM after include and ignore selectors. A version is archived
 when the raw or rendered hash changes; `last_changed_at` changes only when the
 comparison hash changes.
 
@@ -1004,7 +1040,7 @@ URL
 ```
 
 The original HTTP response body is archived without DOM cleanup, normalization,
-or rendering. Ignore selectors never modify either archived artifact.
+or rendering. Comparison selectors never modify either archived artifact.
 
 This preserves the fetched source as closely as possible.
 

@@ -198,6 +198,94 @@ test('ignore selector validation, replacement, clearing, and persistence use the
   assert.deepEqual((await fetchary.edit(source.id, { ignoreSelectors: [] })).ignoreSelectors, []);
 });
 
+test('include selectors limit content changes and diffs while preserving complete evidence', async t => {
+  const dataDir = tempDir(t);
+  const output = tempDir(t);
+  let body = '<header>Outside one</header><main id="main"><p>Same</p><span class="clock">One</span></main><aside>Also same</aside>';
+  const fetchary = await createFetchary({ dataDir, fetch: async () => new Response(body) });
+  t.after(() => fetchary.close());
+  const events = { change: 0, version: 0 };
+  for (const name of Object.keys(events)) fetchary.on(name, () => events[name]++);
+  const selectors = [' #main ', 'main p', 'aside', '#main'];
+  const source = await fetchary.add('https://example.com/include', {
+    mode: 'http', includeSelectors: selectors, ignoreSelectors: ['.clock'],
+  });
+  assert.deepEqual(selectors, [' #main ', 'main p', 'aside', '#main']);
+  assert.deepEqual(source.includeSelectors, ['#main', 'main p', 'aside']);
+  const first = await fetchary.version(source.id, 1);
+  assert.equal(await fetchary.read(source.id, 1), body);
+  const lastChangedAt = source.lastChangedAt;
+
+  body = body.replace('Outside one', 'Outside two').replace('>One<', '>Two<');
+  const outsideOnly = await fetchary.fetch(source.id);
+  assert.equal(outsideOnly.rawChanged, true);
+  assert.equal(outsideOnly.changed, false);
+  assert.equal(outsideOnly.contentChanged, false);
+  assert.equal(outsideOnly.version, 2);
+  assert.equal((await fetchary.get(source.id)).lastChangedAt, lastChangedAt);
+  assert.equal((await fetchary.diff(source.id)).changed, false);
+  assert.equal((await fetchary.diff(source.id, { mode: 'element-content' })).changed, false);
+  assert.equal((await fetchary.diff(source.id, { mode: 'raw' })).changed, true);
+  assert.equal((await fetchary.diff(source.id, { mode: 'element-raw' })).changed, true);
+  assert.equal(await fetchary.read(source.id, 2), body);
+
+  body = body.replace('>Same<', '>Changed<');
+  const includedChange = await fetchary.fetch(source.id);
+  assert.equal(includedChange.changed, true);
+  assert.deepEqual((await fetchary.diff(source.id)).diff.map(part => part.value), ['Same', 'Changed']);
+  assert.deepEqual((await fetchary.diff(source.id, { mode: 'element-content' })).diff.map(part => part.value), ['<p>Same</p>', '<p>Changed</p>']);
+  assert.deepEqual(events, { change: 2, version: 3 });
+
+  const metadata = JSON.parse(fs.readFileSync(path.join(path.dirname(first.file), 'metadata.json')));
+  assert.deepEqual(metadata.comparison.includeSelectors, source.includeSelectors);
+  assert.deepEqual(metadata.comparison.ignoreSelectors, source.ignoreSelectors);
+  const exported = await fetchary.export(source.id, { output });
+  assert.equal(fs.readFileSync(path.join(exported.directory, 'versions', '002-response.html'), 'utf8'), await fetchary.read(source.id, 2));
+});
+
+test('include selector validation, edits, persistence, and clearing recompute the comparison baseline', async t => {
+  const dataDir = tempDir(t);
+  let body = '<main>Same</main><aside>Old</aside>';
+  let fetchCalls = 0;
+  let fetchary = await createFetchary({ dataDir, fetch: async () => { fetchCalls++; return new Response(body); } });
+  t.after(() => fetchary.close());
+  for (const value of [[':foo('], ['   '], [null], 'main']) {
+    await assert.rejects(() => fetchary.add('https://example.com/invalid', { includeSelectors: value, mode: 'http' }), FetcharyValidationError);
+  }
+  assert.equal(fetchCalls, 0);
+  const source = await fetchary.add('https://example.com/include-edit', { mode: 'http' });
+  assert.deepEqual(source.includeSelectors, []);
+
+  const selectors = [' main ', 'main'];
+  const edited = await fetchary.edit(source.id, { includeSelectors: selectors });
+  assert.deepEqual(selectors, [' main ', 'main']);
+  assert.deepEqual(edited.includeSelectors, ['main']);
+  await assert.rejects(() => fetchary.edit(source.id, { includeSelectors: ['['] }), FetcharyValidationError);
+  assert.deepEqual((await fetchary.get(source.id)).includeSelectors, ['main']);
+  body = '<main>Same</main><aside>New</aside>';
+  assert.equal((await fetchary.fetch(source.id)).contentChanged, false, 'the previous archive uses the new include selectors');
+
+  await fetchary.close();
+  fetchary = await createFetchary({ dataDir, fetch: async () => new Response(body) });
+  assert.deepEqual((await fetchary.get(source.id)).includeSelectors, ['main']);
+  assert.deepEqual((await fetchary.list())[0].includeSelectors, ['main']);
+  assert.deepEqual((await fetchary.edit(source.id, { includeSelectors: ['aside'] })).includeSelectors, ['aside']);
+  body = '<main>Outside change</main><aside>New</aside>';
+  assert.equal((await fetchary.fetch(source.id)).changed, false, 'replacement selectors reset the baseline');
+
+  assert.deepEqual((await fetchary.edit(source.id, { includeSelectors: [] })).includeSelectors, []);
+  body = '<main>Outside change</main><aside>Newest</aside>';
+  assert.equal((await fetchary.fetch(source.id)).changed, true, 'clearing restores full-page comparisons');
+
+  await fetchary.edit(source.id, { includeSelectors: ['.missing'] });
+  body = '<main>Another outside change</main>';
+  assert.equal((await fetchary.fetch(source.id)).changed, false, 'missing matches compare as empty');
+  body += '<div class="missing">Appeared</div>';
+  assert.equal((await fetchary.fetch(source.id)).changed, true);
+  body = '<main>Another outside change</main>';
+  assert.equal((await fetchary.fetch(source.id)).changed, true);
+});
+
 test('source lifecycle, filtering, pagination, export, and removal use the public API', async t => {
   const dataDir = tempDir(t);
   const output = tempDir(t);
@@ -372,6 +460,7 @@ test('storage migrates required version metadata while keeping content type null
 
   const fetchary = await createFetchary({ dataDir, fetch: async () => new Response('test') });
   assert.deepEqual((await fetchary.get(1)).ignoreSelectors, []);
+  assert.deepEqual((await fetchary.get(1)).includeSelectors, []);
   await fetchary.close();
 
   const migrated = new DatabaseSync(databasePath, { readOnly: true });
@@ -382,6 +471,9 @@ test('storage migrates required version metadata while keeping content type null
   assert.equal(Number(urlColumns.get('ignore_selectors').notnull), 1);
   assert.equal(urlColumns.get('ignore_selectors').dflt_value, "'[]'");
   assert.equal(migrated.prepare('SELECT ignore_selectors FROM urls WHERE id = 1').get().ignore_selectors, '[]');
+  assert.equal(Number(urlColumns.get('include_selectors').notnull), 1);
+  assert.equal(urlColumns.get('include_selectors').dflt_value, "'[]'");
+  assert.equal(migrated.prepare('SELECT include_selectors FROM urls WHERE id = 1').get().include_selectors, '[]');
   assert.equal(urlColumns.get('capture_mode').dflt_value, "'browser'");
   assert.equal(urlColumns.get('wait_after_load_ms').dflt_value, '5000');
   assert.equal(migrated.prepare('SELECT capture_mode FROM urls WHERE id = 1').get().capture_mode, 'browser');

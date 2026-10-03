@@ -27,34 +27,38 @@ function htmlToText(html) {
     .trim());
 }
 
-function validateIgnoreSelector(selector) {
+function validateSelector(selector) {
   parseHTML('<html><body></body></html>').document.querySelectorAll(selector);
 }
 
 function comparisonHtml(html, options = {}) {
+  const includeSelectors = options.includeSelectors || [];
   const ignoreSelectors = options.ignoreSelectors || [];
-  if (!ignoreSelectors.length) return String(html);
+  if (!includeSelectors.length && !ignoreSelectors.length) return String(html);
   const { document } = parseHTML(String(html));
+  const selected = new Set(includeSelectors.length ? document.querySelectorAll(includeSelectors.join(', ')) : []);
+  const roots = [...selected].filter(node => {
+    for (let parent = node.parentElement; parent; parent = parent.parentElement) {
+      if (selected.has(parent)) return false;
+    }
+    return true;
+  });
   for (const selector of ignoreSelectors) {
     for (const node of document.querySelectorAll(selector)) node.remove();
+  }
+  if (includeSelectors.length) {
+    return roots.filter(node => document.contains(node)).map(node => node.outerHTML).join('\n');
   }
   return document.toString();
 }
 
 function comparisonText(html, options = {}) {
-  const ignoreSelectors = options.ignoreSelectors || [];
-  if (!ignoreSelectors.length) return htmlToText(html);
-  return htmlToText(comparisonHtml(html, { ignoreSelectors }));
+  return htmlToText(comparisonHtml(html, options));
 }
 
 function comparisonElementRecords(html, options = {}) {
   const mode = options.mode ?? 'content';
-  const { document } = parseHTML(String(html));
-  if (mode === 'content') {
-    for (const selector of options.ignoreSelectors || []) {
-      for (const node of document.querySelectorAll(selector)) node.remove();
-    }
-  }
+  const { document } = parseHTML(mode === 'content' ? comparisonHtml(html, options) : String(html));
 
   const elements = [];
   const collect = element => {
@@ -169,7 +173,7 @@ function elementDiff(before, after, options = {}) {
 module.exports = {
   htmlToText,
   textHash,
-  validateIgnoreSelector,
+  validateSelector,
   comparisonHtml,
   comparisonText,
   comparisonHash,

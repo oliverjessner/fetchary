@@ -60,6 +60,7 @@ export type Source = {
   currentComparisonHash: string | null;
   currentVersionId: number | null;
   ignoreSelectors: string[];
+  includeSelectors: string[];
   captureMode: CaptureMode;
   waitAfterLoadMs: number;
   versions: number;
@@ -137,7 +138,7 @@ export declare class Fetchary extends EventEmitter {
   vendors(): Promise<Vendor[]>;
   syncVendors(): Promise<Vendor[]>;
   setVendorActive(name: string, active: boolean): Promise<Vendor>;
-  add(url: string, options?: { name?: string; tag?: string; every?: string; ignoreSelectors?: string[]; mode?: CaptureMode; captureMode?: CaptureMode; waitAfterLoad?: string | number; waitAfterLoadMs?: string | number }): Promise<Source & { version: number; changed: boolean; rawChanged: boolean; renderedChanged: boolean; contentChanged: boolean }>;
+  add(url: string, options?: { name?: string; tag?: string; every?: string; ignoreSelectors?: string[]; includeSelectors?: string[]; mode?: CaptureMode; captureMode?: CaptureMode; waitAfterLoad?: string | number; waitAfterLoadMs?: string | number }): Promise<Source & { version: number; changed: boolean; rawChanged: boolean; renderedChanged: boolean; contentChanged: boolean }>;
   list(options?: { tag?: string }): Promise<Source[]>;
   get(id: number): Promise<Source>;
   /** Follower count from the latest archived vendor profile (YouTube subscribers). */
@@ -152,7 +153,7 @@ export declare class Fetchary extends EventEmitter {
   read(sourceId: number, versionId?: number): Promise<string>;
   readRendered(sourceId: number, versionId?: number): Promise<string>;
   diff(sourceId: number, options?: { from?: number; to?: number; mode?: 'text' | 'element-content' | 'element-raw' | 'raw' }): Promise<DiffResult>;
-  edit(id: number, changes: { url?: string; name?: string | null; tag?: string | null; ignoreSelectors?: string[]; mode?: CaptureMode; captureMode?: CaptureMode; waitAfterLoad?: string | number; waitAfterLoadMs?: string | number }): Promise<Source>;
+  edit(id: number, changes: { url?: string; name?: string | null; tag?: string | null; ignoreSelectors?: string[]; includeSelectors?: string[]; mode?: CaptureMode; captureMode?: CaptureMode; waitAfterLoad?: string | number; waitAfterLoadMs?: string | number }): Promise<Source>;
   enable(id: number): Promise<Source>;
   disable(id: number): Promise<Source>;
   remove(id: number, options?: { purge?: boolean }): Promise<void>;

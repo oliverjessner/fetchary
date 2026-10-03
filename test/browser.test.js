@@ -130,6 +130,28 @@ test('browser capture archives raw and rendered evidence and detects rendered-on
   assert.match(hashes, new RegExp(`${first.renderedHash}  versions/001-rendered\\.html`));
 });
 
+test('include selectors compare rendered content while archiving changes outside the selected subtree', async t => {
+  const site = await localSite(t);
+  const fetchary = await createFetchary({ dataDir: tempDir(t), timeout: 5_000 });
+  t.after(() => fetchary.close());
+  const source = await fetchary.add(site.url, { waitAfterLoad: '100ms', includeSelectors: ['#content'] });
+  site.setIgnored('clock-two');
+  const outsideOnly = await fetchary.fetch(source.id);
+  assert.equal(outsideOnly.rawChanged, false);
+  assert.equal(outsideOnly.renderedChanged, true);
+  assert.equal(outsideOnly.contentChanged, false);
+  assert.equal((await fetchary.diff(source.id)).changed, false);
+  assert.equal((await fetchary.diff(source.id, { mode: 'element-content' })).changed, false);
+  assert.match(await fetchary.readRendered(source.id), /clock-two/);
+
+  site.setContent('rendered-two');
+  const includedChange = await fetchary.fetch(source.id);
+  assert.equal(includedChange.rawChanged, false);
+  assert.equal(includedChange.renderedChanged, true);
+  assert.equal(includedChange.contentChanged, true);
+  assert.deepEqual((await fetchary.diff(source.id)).diff.map(part => part.value), ['rendered-one', 'rendered-two']);
+});
+
 test('non-HTML browser sources use HTTP semantics without launching Chromium', async t => {
   const dataDir = tempDir(t);
   let launches = 0;

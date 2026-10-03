@@ -254,6 +254,21 @@ Selectors are trimmed, deduplicated, and validated before the initial fetch. A
 valid selector that matches no elements is allowed. The input array is not
 mutated.
 
+Compare only selected sections, optionally ignoring dynamic elements within them:
+
+```js
+const source = await fetchary.add('https://example.com/news', {
+    includeSelectors: ['main', '.sidebar-news'],
+    ignoreSelectors: ['.timestamp'],
+});
+```
+
+`includeSelectors` uses the same validation as `ignoreSelectors`. Every matching
+element and its descendants is compared in document order, with overlapping
+matches included once. An empty list compares the whole page. A non-empty list
+with no matches compares empty content, so a selected section appearing or
+disappearing is detected when its text changes.
+
 Options:
 
 ```ts
@@ -262,6 +277,7 @@ type AddOptions = {
     tag?: string;
     every?: string;
     ignoreSelectors?: string[];
+    includeSelectors?: string[];
     mode?: 'browser' | 'http';
     waitAfterLoad?: string | number;
 };
@@ -276,6 +292,7 @@ Example result:
   name: "Example News",
   tag: "research",
   ignoreSelectors: ["relative-time", ".timestamp"],
+  includeSelectors: [],
   captureMode: "browser",
   waitAfterLoadMs: 5000,
   enabled: true,
@@ -340,6 +357,7 @@ Example:
   url: "https://example.com/news",
   enabled: true,
   ignoreSelectors: ["relative-time", ".timestamp"],
+  includeSelectors: [],
   createdAt: "2026-08-30T12:22:00.000Z",
   lastCheckedAt: "2026-08-31T09:42:16.000Z",
   lastChangedAt: "2026-08-29T07:14:00.000Z",
@@ -431,10 +449,12 @@ is archived when either is true. A response can therefore have `rawChanged: true
 `contentChanged: false` when only a rotating token, nonce, or other HTML detail
 changed.
 
-If a source has `ignoreSelectors`, Fetchary parses the rendered HTML (or raw HTTP
-document in HTTP mode) into a temporary DOM, removes every matched element, and
-then applies text normalization. Raw and rendered SHA-256 hashing and archive
-writes always use the unmodified artifacts.
+If a source has `includeSelectors` or `ignoreSelectors`, Fetchary parses the
+rendered HTML (or raw HTTP document in HTTP mode) into a temporary DOM. Include
+selectors match the original DOM and choose sections before ignore selectors
+remove matching elements. Ignoring a selected element or its ancestor also
+excludes that section. Fetchary then applies text normalization. Raw and rendered
+SHA-256 hashing and archive writes always use the unmodified artifacts.
 
 If neither the raw bytes nor rendered DOM changed, no new version is created.
 
@@ -601,9 +621,9 @@ type DiffOptions = {
 };
 ```
 
-Text mode, which is the default, applies the source's current ignore selectors
+Text mode, which is the default, applies the source's current include and ignore selectors
 to both selected versions. Element-content mode returns content changes with
-their HTML elements and also applies ignore selectors. Element-raw mode groups
+their HTML elements and also applies both selector lists. Element-raw mode groups
 raw changes by HTML element and does not apply selectors. Raw mode compares the
 complete archived HTML and never applies selectors.
 
@@ -658,6 +678,26 @@ await fetchary.edit(12, {
 });
 ```
 
+Replace all include selectors:
+
+```js
+await fetchary.edit(12, {
+    includeSelectors: ['main', 'article'],
+});
+```
+
+Clear all include selectors to compare the whole page again:
+
+```js
+await fetchary.edit(12, {
+    includeSelectors: [],
+});
+```
+
+Existing ignore selectors still apply after clearing include selectors. Editing
+either selector list recomputes the previous archive's comparison baseline on
+the next fetch, using the new configuration.
+
 Replace all ignore selectors:
 
 ```js
@@ -691,6 +731,7 @@ type EditSourceInput = {
     name?: string | null;
     tag?: string | null;
     ignoreSelectors?: string[];
+    includeSelectors?: string[];
     captureMode?: 'browser' | 'http';
     waitAfterLoadMs?: string | number;
 };

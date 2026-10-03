@@ -10,7 +10,7 @@ const { openDatabase, transaction } = require('./storage/database');
 const { VendorRegistry } = require('./storage/vendors');
 const { CaptureManager } = require('./capture');
 const { parseInterval } = require('./intervals');
-const { comparisonText, comparisonHash, validateIgnoreSelector, lineDiff, elementDiff } = require('./diff');
+const { comparisonText, comparisonHash, validateSelector, lineDiff, elementDiff } = require('./diff');
 const { acquireLock, releaseLock } = require('./scheduler');
 const {
   FetcharyError,
@@ -53,14 +53,15 @@ function parseWaitAfterLoad(value) {
   return milliseconds;
 }
 
-function ignoreSelectorsFromRow(row) {
-  if (row.ignore_selectors == null) return [];
+function selectorsFromRow(row, kind) {
+  const value = row[`${kind}_selectors`];
+  if (value == null) return [];
   try {
-    const selectors = JSON.parse(row.ignore_selectors);
+    const selectors = JSON.parse(value);
     if (!Array.isArray(selectors) || selectors.some(selector => typeof selector !== 'string')) throw new TypeError('expected an array of strings');
     return [...selectors];
   } catch (cause) {
-    throw new FetcharyStorageError(`source ${row.id} has invalid stored ignore selectors`, { cause, sourceId: Number(row.id) });
+    throw new FetcharyStorageError(`source ${row.id} has invalid stored ${kind} selectors`, { cause, sourceId: Number(row.id) });
   }
 }
 
@@ -80,7 +81,8 @@ function sourceFromRow(row) {
     currentRenderedHash: row.current_rendered_hash,
     currentComparisonHash: row.current_comparison_hash,
     currentVersionId: row.current_version_id == null ? null : Number(row.current_version_id),
-    ignoreSelectors: ignoreSelectorsFromRow(row),
+    ignoreSelectors: selectorsFromRow(row, 'ignore'),
+    includeSelectors: selectorsFromRow(row, 'include'),
     captureMode: row.capture_mode || DEFAULT_CAPTURE_MODE,
     waitAfterLoadMs: row.wait_after_load_ms == null ? DEFAULT_WAIT_AFTER_LOAD_MS : Number(row.wait_after_load_ms),
     versions: Number(row.versions || 0),
@@ -148,17 +150,17 @@ function validateUrl(value) {
   return parsed.href;
 }
 
-function validateIgnoreSelectors(value) {
-  if (!Array.isArray(value)) throw new FetcharyValidationError('ignoreSelectors must be an array of CSS selectors');
+function validateSelectors(value, kind) {
+  if (!Array.isArray(value)) throw new FetcharyValidationError(`${kind}Selectors must be an array of CSS selectors`);
   const selectors = [];
   const seen = new Set();
   for (const rawSelector of value) {
     const selector = typeof rawSelector === 'string' ? rawSelector.trim() : '';
     if (!selector) {
-      throw new FetcharyValidationError(`invalid ignore selector ${JSON.stringify(typeof rawSelector === 'string' ? rawSelector : String(rawSelector))}`, { selector: rawSelector });
+      throw new FetcharyValidationError(`invalid ${kind} selector ${JSON.stringify(typeof rawSelector === 'string' ? rawSelector : String(rawSelector))}`, { selector: rawSelector });
     }
-    try { validateIgnoreSelector(selector); } catch (cause) {
-      throw new FetcharyValidationError(`invalid ignore selector ${JSON.stringify(selector)}`, { cause, selector });
+    try { validateSelector(selector); } catch (cause) {
+      throw new FetcharyValidationError(`invalid ${kind} selector ${JSON.stringify(selector)}`, { cause, selector });
     }
     if (!seen.has(selector)) {
       seen.add(selector);
@@ -257,7 +259,8 @@ class Fetchary extends EventEmitter {
   async add(url, options = {}) {
     this._assertOpen();
     const normalizedUrl = validateUrl(url);
-    const ignoreSelectors = Object.hasOwn(options, 'ignoreSelectors') ? validateIgnoreSelectors(options.ignoreSelectors) : [];
+    const ignoreSelectors = Object.hasOwn(options, 'ignoreSelectors') ? validateSelectors(options.ignoreSelectors, 'ignore') : [];
+    const includeSelectors = Object.hasOwn(options, 'includeSelectors') ? validateSelectors(options.includeSelectors, 'include') : [];
     const captureMode = validateCaptureMode(options.mode ?? options.captureMode);
     const waitAfterLoadMs = parseWaitAfterLoad(options.waitAfterLoad ?? options.waitAfterLoadMs);
     if (options.every != null) parseInterval(options.every);
@@ -266,12 +269,12 @@ class Fetchary extends EventEmitter {
     try {
       const result = this.db.prepare(`
         INSERT INTO urls (
-          url, name, tag, enabled, created_at, ignore_selectors,
+          url, name, tag, enabled, created_at, ignore_selectors, include_selectors,
           capture_mode, wait_after_load_ms
-        ) VALUES (?, ?, ?, 1, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?)
       `).run(
         normalizedUrl, options.name ?? null, options.tag ?? null, now,
-        JSON.stringify(ignoreSelectors), captureMode, waitAfterLoadMs,
+        JSON.stringify(ignoreSelectors), JSON.stringify(includeSelectors), captureMode, waitAfterLoadMs,
       );
       sourceId = Number(result.lastInsertRowid);
     } catch (cause) {
@@ -431,7 +434,8 @@ class Fetchary extends EventEmitter {
     const rawHash = sha256(rawBody);
     const renderedHash = renderedBody == null ? null : sha256(renderedBody);
     const comparisonInput = renderedBody == null ? rawBody.toString('utf8') : captured.renderedHtml;
-    const comparisonSha256 = comparisonHash(comparisonInput, { ignoreSelectors: source.ignoreSelectors });
+    const comparisonOptions = { includeSelectors: source.includeSelectors, ignoreSelectors: source.ignoreSelectors };
+    const comparisonSha256 = comparisonHash(comparisonInput, comparisonOptions);
     let outcome;
     let createdVersionDir;
 
@@ -458,7 +462,7 @@ class Fetchary extends EventEmitter {
             const comparisonFile = previous.rendered_file && fs.existsSync(previous.rendered_file)
               ? previous.rendered_file
               : previous.file;
-            previousComparisonHash = comparisonHash(fs.readFileSync(comparisonFile, 'utf8'), { ignoreSelectors: source.ignoreSelectors });
+            previousComparisonHash = comparisonHash(fs.readFileSync(comparisonFile, 'utf8'), comparisonOptions);
           }
         }
         const contentChanged = current.current_version_id == null || previousComparisonHash !== comparisonSha256;
@@ -514,7 +518,7 @@ class Fetchary extends EventEmitter {
           comparisonSha256,
           sha256: rawHash,
           textSha256: comparisonSha256,
-          comparison: { ignoreSelectors: [...source.ignoreSelectors] },
+          comparison: { includeSelectors: [...source.includeSelectors], ignoreSelectors: [...source.ignoreSelectors] },
           etag: captured.etag,
           lastModified: captured.lastModified,
         };
@@ -665,13 +669,14 @@ class Fetchary extends EventEmitter {
     const reader = mode === 'raw' ? this.read.bind(this) : this.readRendered.bind(this);
     const [beforeHtml, afterHtml] = await Promise.all([reader(id, from), reader(id, to)]);
     let changes;
+    const comparisonOptions = { includeSelectors: source.includeSelectors, ignoreSelectors: source.ignoreSelectors };
     if (mode === 'element-content') {
-      changes = elementDiff(beforeHtml, afterHtml, { mode: 'content', ignoreSelectors: source.ignoreSelectors });
+      changes = elementDiff(beforeHtml, afterHtml, { mode: 'content', ...comparisonOptions });
     } else if (mode === 'element-raw') {
       changes = elementDiff(beforeHtml, afterHtml, { mode: 'raw' });
     } else {
-      const before = mode === 'raw' ? beforeHtml : comparisonText(beforeHtml, { ignoreSelectors: source.ignoreSelectors });
-      const after = mode === 'raw' ? afterHtml : comparisonText(afterHtml, { ignoreSelectors: source.ignoreSelectors });
+      const before = mode === 'raw' ? beforeHtml : comparisonText(beforeHtml, comparisonOptions);
+      const after = mode === 'raw' ? afterHtml : comparisonText(afterHtml, comparisonOptions);
       changes = lineDiff(before, after);
     }
     return { sourceId: id, from: Number(from), to: Number(to), mode, changed: changes.length > 0, diff: changes };
@@ -687,18 +692,19 @@ class Fetchary extends EventEmitter {
     if (Object.hasOwn(normalizedChanges, 'waitAfterLoad') && !Object.hasOwn(normalizedChanges, 'waitAfterLoadMs')) {
       normalizedChanges.waitAfterLoadMs = normalizedChanges.waitAfterLoad;
     }
-    const allowed = ['url', 'name', 'tag', 'ignoreSelectors', 'captureMode', 'waitAfterLoadMs'];
+    const allowed = ['url', 'name', 'tag', 'ignoreSelectors', 'includeSelectors', 'captureMode', 'waitAfterLoadMs'];
     const entries = Object.entries(normalizedChanges).filter(([key]) => allowed.includes(key));
-    if (!entries.length) throw new FetcharyValidationError('provide at least one of url, name, tag, ignoreSelectors, captureMode, or waitAfterLoadMs');
+    if (!entries.length) throw new FetcharyValidationError('provide at least one of url, name, tag, ignoreSelectors, includeSelectors, captureMode, or waitAfterLoadMs');
     const assignments = [];
     const values = [];
     for (const [key, value] of entries) {
       if (key === 'url') {
         assignments.push('url = ?');
         values.push(validateUrl(value));
-      } else if (key === 'ignoreSelectors') {
-        assignments.push('ignore_selectors = ?', 'current_comparison_hash = NULL');
-        values.push(JSON.stringify(validateIgnoreSelectors(value)));
+      } else if (key === 'ignoreSelectors' || key === 'includeSelectors') {
+        const kind = key === 'ignoreSelectors' ? 'ignore' : 'include';
+        assignments.push(`${kind}_selectors = ?`, 'current_comparison_hash = NULL');
+        values.push(JSON.stringify(validateSelectors(value, kind)));
       } else if (key === 'captureMode') {
         assignments.push('capture_mode = ?');
         values.push(validateCaptureMode(value));

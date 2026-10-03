@@ -368,7 +368,7 @@ test('invalid argument counts include command usage and an example', async t => 
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fetchary-cli-usage-'));
   t.after(() => fs.rmSync(dataDir, { recursive: true, force: true }));
   const cases = [
-    { args: ['add'], usage: 'fetchary add <url> [--name <name>] [--tag <tag>] [--every <interval>] [--mode <browser|http>] [--wait-after-load <duration>] [--ignore-selector <css> ...]', example: 'fetchary add https://github.com/owner/repo --mode browser --ignore-selector "relative-time"' },
+    { args: ['add'], usage: 'fetchary add <url> [--name <name>] [--tag <tag>] [--every <interval>] [--mode <browser|http>] [--wait-after-load <duration>] [--include-selector <css> ...] [--ignore-selector <css> ...]', example: 'fetchary add https://github.com/owner/repo --mode browser --ignore-selector "relative-time"' },
     { args: ['list', 'extra'], usage: 'fetchary list [--tag <tag>] [--json]', example: 'fetchary list --tag research' },
     { args: ['vendors', 'extra'], usage: 'fetchary vendors [--json]', example: 'fetchary vendors' },
     { args: ['vendor', 'instagram'], usage: 'fetchary vendor <name> <enable|disable> [--json]', example: 'fetchary vendor instagram disable' },
@@ -378,7 +378,7 @@ test('invalid argument counts include command usage and an example', async t => 
     { args: ['history'], usage: 'fetchary history <id>', example: 'fetchary history 1' },
     { args: ['diff'], usage: 'fetchary diff <id> or fetchary diff <id> <version1> <version2>', example: 'fetchary diff 4 1 2' },
     { args: ['open'], usage: 'fetchary open <id> [version] [--html] [--raw]', example: 'fetchary open 1 2 --raw' },
-    { args: ['edit'], usage: 'fetchary edit <id> [--url <url>] [--name <name>] [--tag <tag>] [--mode <browser|http>] [--wait-after-load <duration>] [--ignore-selector <css> ... | --clear-ignore-selectors]', example: 'fetchary edit 1 --mode http' },
+    { args: ['edit'], usage: 'fetchary edit <id> [--url <url>] [--name <name>] [--tag <tag>] [--mode <browser|http>] [--wait-after-load <duration>] [--include-selector <css> ... | --clear-include-selectors] [--ignore-selector <css> ... | --clear-ignore-selectors]', example: 'fetchary edit 1 --mode http' },
     { args: ['enable'], usage: 'fetchary enable <id>', example: 'fetchary enable 1' },
     { args: ['disable'], usage: 'fetchary disable <id>', example: 'fetchary disable 1' },
     { args: ['remove'], usage: 'fetchary remove <id> [--purge]', example: 'fetchary remove 1' },
@@ -573,4 +573,75 @@ test('CLI configures repeatable ignore selectors and applies current rules every
   const invalid = await runCli(['add', 'https:\/\/example.test\/invalid', '--ignore-selector', ':foo(', ...base]);
   assert.equal(invalid.code, 2);
   assert.match(invalid.stderr, /invalid ignore selector/);
+});
+
+test('CLI configures, replaces, and clears include selectors across fetch, history, and diff', async t => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fetchary-cli-include-'));
+  t.after(() => fs.rmSync(dataDir, { recursive: true, force: true }));
+  let body = '<main id="main"><p>Same</p><span class="clock">One</span></main><aside>Also same</aside><footer>Old</footer>';
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(body, { headers: { 'content-type': 'text/html' } });
+  t.after(() => { globalThis.fetch = originalFetch; });
+  const base = ['--data-dir', dataDir];
+
+  const added = await runCli([
+    'add', 'https://example.test/include', '--mode', 'http',
+    '--include-selector', ' #main ', '--include-selector=aside', '--include-selector', '#main',
+    '--ignore-selector', '.clock', '--json', ...base,
+  ]);
+  assert.equal(added.code, 0, added.stderr);
+  assert.deepEqual(JSON.parse(added.stdout).includeSelectors, ['#main', 'aside']);
+  assert.deepEqual(JSON.parse(added.stdout).ignoreSelectors, ['.clock']);
+  assert.match((await runCli(['show', '1', ...base])).stdout, /^Include selectors: #main, aside$/m);
+
+  body = body.replace('>One<', '>Two<').replace('>Old<', '>New<');
+  const outsideOnly = await runCli(['fetch', '1', '--json', ...base]);
+  assert.equal(outsideOnly.code, 0, outsideOnly.stderr);
+  assert.equal(JSON.parse(outsideOnly.stdout).rawChanged, true);
+  assert.equal(JSON.parse(outsideOnly.stdout).contentChanged, false);
+  assert.equal(JSON.parse((await runCli(['history', '1', '--json', ...base])).stdout)[0].change, 'raw only');
+  assert.equal((await runCli(['diff', '1', ...base])).stdout, 'No differences.\n');
+  assert.equal((await runCli(['diff', '1', '--element-content', ...base])).stdout, 'No differences.\n');
+  assert.match((await runCli(['diff', '1', '--raw', ...base])).stdout, /<footer>Old<\/footer>/);
+  assert.match((await runCli(['diff', '1', '--element-raw', ...base])).stdout, /<footer>New<\/footer>/);
+
+  body = body.replace('>Same<', '>Changed<');
+  const includedChange = await runCli(['fetch', '1', '--json', ...base]);
+  assert.equal(includedChange.code, 10, includedChange.stderr);
+  assert.equal(JSON.parse((await runCli(['history', '1', '--json', ...base])).stdout)[0].change, 'content');
+  assert.equal((await runCli(['diff', '1', ...base])).stdout, '- Same\n+ Changed\n');
+
+  const replaced = await runCli(['edit', '1', '--include-selector', 'footer', '--json', ...base]);
+  assert.equal(replaced.code, 0, replaced.stderr);
+  assert.deepEqual(JSON.parse(replaced.stdout).includeSelectors, ['footer']);
+  const history = JSON.parse((await runCli(['history', '1', '--json', ...base])).stdout);
+  assert.equal(history[0].change, 'raw only');
+  assert.equal(history[1].change, 'content', 'historical versions use current include selectors');
+  assert.equal((await runCli(['diff', '1', ...base])).stdout, 'No differences.\n');
+  body = body.replace('>Changed<', '>Another outside change<');
+  assert.equal((await runCli(['fetch', '1', ...base])).code, 0, 'selector edits recompute the baseline');
+
+  const cleared = await runCli(['edit', '1', '--clear-include-selectors', '--clear-ignore-selectors', '--json', ...base]);
+  assert.equal(cleared.code, 0, cleared.stderr);
+  assert.deepEqual(JSON.parse(cleared.stdout).includeSelectors, []);
+  assert.deepEqual(JSON.parse(cleared.stdout).ignoreSelectors, []);
+  body = body.replace('>New<', '>Newest<');
+  assert.equal((await runCli(['fetch', '1', ...base])).code, 10);
+
+  const conflicting = await runCli(['edit', '1', '--include-selector', 'main', '--clear-include-selectors', ...base]);
+  assert.equal(conflicting.code, 2);
+  assert.match(conflicting.stderr, /--include-selector and --clear-include-selectors cannot be used together/);
+  const invalid = await runCli(['add', 'https://example.test/invalid', '--include-selector', ':foo(', ...base]);
+  assert.equal(invalid.code, 2);
+  assert.match(invalid.stderr, /invalid include selector/);
+  const invalidClear = await runCli(['add', 'https://example.test/invalid', '--clear-include-selectors', ...base]);
+  assert.equal(invalidClear.code, 2);
+  assert.match(invalidClear.stderr, /--clear-include-selectors can only be used with edit/);
+  const missingValue = await runCli(['edit', '1', '--include-selector', ...base]);
+  assert.equal(missingValue.code, 2);
+  assert.match(missingValue.stderr, /--include-selector requires a value/);
+  const help = await runCli(['--help']);
+  assert.match(help.stdout, /--include-selector <css>/);
+  assert.match(help.stdout, /--clear-include-selectors/);
+  assert.match((await runCli(['--example'])).stdout, /--include-selector "#main"/);
 });

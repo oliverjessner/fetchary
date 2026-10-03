@@ -125,8 +125,9 @@ A new version is created when either the exact response body or the rendered DOM
 
 Repeated identical responses update the source's last-check time without duplicating the archived content.
 
-Per-source CSS ignore selectors can remove timestamps, counters, and other noisy
-elements from a temporary comparison DOM. Raw responses, rendered archives,
+Per-source CSS include selectors can limit comparisons to specific page sections.
+Ignore selectors can remove timestamps, counters, and other noisy elements from
+the temporary comparison DOM. Raw responses, rendered archives,
 their hashes, and raw diffs are never filtered.
 
 ### Independently verifiable
@@ -187,6 +188,25 @@ Ignore dynamic elements when deciding whether visible content changed:
 fetchary add https://github.com/owner/repo \
   --ignore-selector "relative-time" \
   --ignore-selector ".timestamp"
+```
+
+Compare only a specific section, optionally excluding dynamic elements within it:
+
+```bash
+fetchary add https://example.com/news \
+  --include-selector "#main" \
+  --ignore-selector ".timestamp"
+```
+
+`--include-selector` is repeatable and compares all matching elements and their
+descendants in page order. Overlapping matches are included once. If no elements
+match, the comparison is empty; it does not fall back to the whole page.
+
+Replace the selection on an existing source, or return to full-page comparison:
+
+```bash
+fetchary edit 1 --include-selector "article"
+fetchary edit 1 --clear-include-selectors
 ```
 
 New sources default to browser mode for HTML. Use HTTP-only capture for APIs,
@@ -267,7 +287,7 @@ Only one Fetchary runner may manage a data directory at a time. Fetch failures a
 ## CLI
 
 ```text
-fetchary add <url> [--name <name>] [--tag <tag>] [--every <interval>] [--mode <browser|http>] [--wait-after-load <duration>] [--ignore-selector <css> ...]
+fetchary add <url> [--name <name>] [--tag <tag>] [--every <interval>] [--mode <browser|http>] [--wait-after-load <duration>] [--include-selector <css> ...] [--ignore-selector <css> ...]
 fetchary list [--tag <tag>] [--json]
 fetchary vendors [--json]
 fetchary vendor <name> <enable|disable> [--json]
@@ -277,7 +297,7 @@ fetchary show <id>
 fetchary history <id> [--json]
 fetchary diff <id> [from to] [--element-content|--element-raw|--raw] [--html]
 fetchary open <id> [version] [--html] [--raw]
-fetchary edit <id> [--url <url>] [--name <name>] [--tag <tag>] [--mode <browser|http>] [--wait-after-load <duration>] [--ignore-selector <css> ... | --clear-ignore-selectors]
+fetchary edit <id> [--url <url>] [--name <name>] [--tag <tag>] [--mode <browser|http>] [--wait-after-load <duration>] [--include-selector <css> ... | --clear-include-selectors] [--ignore-selector <css> ... | --clear-ignore-selectors]
 fetchary enable <id>
 fetchary disable <id>
 fetchary remove <id> [--purge]
@@ -350,6 +370,7 @@ const source = await fetchary.add('https://example.com/news', {
     every: '30m',
     mode: 'browser',
     waitAfterLoad: '5s',
+    includeSelectors: ['main'],
     ignoreSelectors: ['relative-time', '.timestamp'],
 });
 
@@ -578,7 +599,10 @@ non-HTML resources do not create a rendered file.
 
 Change detection tracks raw, rendered, and comparison hashes independently. The
 comparison DOM is built from rendered HTML when available, otherwise from the
-HTTP document. Ignore selectors are removed only from this temporary DOM.
+HTTP document. Include selectors select the comparison sections, then ignore
+selectors remove matching elements. These filters affect change detection,
+history classification, and text and element-content diffs. Raw and element-raw
+diffs compare the complete archived artifacts.
 
 ## Evidence exports
 
