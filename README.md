@@ -175,6 +175,12 @@ See which other websites an archived page links to:
 fetchary open 1 --show-external
 ```
 
+Find social media pages linked from the archive:
+
+```bash
+fetchary open 1 --show-social-media
+```
+
 ### Keep evidence
 
 Export everything Fetchary has stored for a source:

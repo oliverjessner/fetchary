@@ -73,6 +73,7 @@ Diff and open options:
   --include-selector <css>     Filter diff to first match per selector (repeatable; diff only)
   --show-include-selector      Print stored include-selector content (open only)
   --show-external              Print external link URLs (open only)
+  --show-social-media          Check social platforms and print their links (open only)
   --element-content           Show content changes with their HTML elements
   --element-raw               Show raw changes grouped by HTML element
   --raw                       Use the exact archived HTTP response
@@ -114,6 +115,7 @@ Inspect and compare archived versions:
   fetchary open 1
   fetchary open 1 --show-include-selector
   fetchary open 1 --show-external
+  fetchary open 1 --show-social-media
 
 Export an archive:
   fetchary export 1 --output ./research
@@ -138,7 +140,7 @@ const COMMAND_GUIDANCE = Object.freeze({
   show: { usage: 'fetchary show <id> [--json]', example: 'fetchary show 1' },
   history: { usage: 'fetchary history <id> [--content-change] [--json]', example: 'fetchary history 1' },
   diff: { usage: 'fetchary diff <id> [from to] [--include-selector <css> ...] [--element-content|--element-raw|--raw] [--html]', example: 'fetchary diff 4 1 2' },
-  open: { usage: 'fetchary open <id> [version] [--show-include-selector|--show-external] [--html] [--raw]', example: 'fetchary open 1 2 --raw' },
+  open: { usage: 'fetchary open <id> [version] [--show-include-selector|--show-external|--show-social-media] [--html] [--raw]', example: 'fetchary open 1 2 --raw' },
   edit: { usage: 'fetchary edit <id> [--url <url>] [--name <name>] [--tag <tag>] [--mode <browser|http>] [--wait-after-load <duration>] [--include-selector <css> ... | --clear-include-selectors] [--ignore-selector <css> ... | --clear-ignore-selectors]', example: 'fetchary edit 1 --mode http' },
   enable: { usage: 'fetchary enable <id>', example: 'fetchary enable 1' },
   disable: { usage: 'fetchary disable <id>', example: 'fetchary disable 1' },
@@ -152,7 +154,17 @@ const COMMAND_GUIDANCE = Object.freeze({
 
 const VALUE_OPTIONS = new Set(['name', 'tag', 'url', 'output', 'data-dir', 'poll-interval', 'every', 'mode', 'wait-after-load']);
 const REPEATABLE_VALUE_OPTIONS = new Set(['ignore-selector', 'include-selector']);
-const FLAG_OPTIONS = new Set(['json', 'quiet', 'verbose', 'no-color', 'help', 'example', 'version', 'purge', 'raw', 'element-content', 'element-raw', 'html', 'now', 'clear-ignore-selectors', 'clear-include-selectors', 'show-include-selector', 'show-external', 'content-change']);
+const FLAG_OPTIONS = new Set(['json', 'quiet', 'verbose', 'no-color', 'help', 'example', 'version', 'purge', 'raw', 'element-content', 'element-raw', 'html', 'now', 'clear-ignore-selectors', 'clear-include-selectors', 'show-include-selector', 'show-external', 'show-social-media', 'content-change']);
+const SOCIAL_MEDIA_PLATFORMS = Object.freeze([
+  { platform: 'facebook', domains: ['facebook.com'] },
+  { platform: 'x', domains: ['x.com', 'twitter.com'] },
+  { platform: 'youtube', domains: ['youtube.com', 'youtu.be'] },
+  { platform: 'instagram', domains: ['instagram.com'] },
+  { platform: 'vimeo', domains: ['vimeo.com'] },
+  { platform: 'tiktok', domains: ['tiktok.com'] },
+  { platform: 'reddit', domains: ['reddit.com'] },
+  { platform: 'linkedin', domains: ['linkedin.com'] },
+]);
 const ANSI = Object.freeze({
   red: '\x1b[31m',
   green: '\x1b[32m',
@@ -264,6 +276,15 @@ function externalLinkUrls(html, pageUrl) {
     }
   }
   return [...urls];
+}
+
+function socialMediaLinks(urls) {
+  const links = urls.map(url => ({ url, hostname: new URL(url).hostname.replace(/\.$/, '') }));
+  return SOCIAL_MEDIA_PLATFORMS.map(({ platform, domains }) => {
+    const matches = links.filter(({ hostname }) => domains.some(domain => hostname === domain || hostname.endsWith(`.${domain}`)))
+      .map(({ url }) => url);
+    return { platform, found: matches.length > 0, urls: matches };
+  });
 }
 
 function table(rows, columns) {
@@ -449,6 +470,9 @@ async function execute(fetchary, parsed, write, format = {}) {
   }
   if (options['show-external'] && command !== 'open') {
     throw usageError(command, '--show-external can only be used with open');
+  }
+  if (options['show-social-media'] && command !== 'open') {
+    throw usageError(command, '--show-social-media can only be used with open');
   }
   if (options['content-change'] && command !== 'history') {
     throw usageError(command, '--content-change can only be used with history');
@@ -680,23 +704,36 @@ async function execute(fetchary, parsed, write, format = {}) {
     }
     case 'open': {
       requireArgs(args, command, 1, 2);
-      if (options['show-external'] && options['show-include-selector']) {
-        throw usageError(command, '--show-external and --show-include-selector cannot be used together');
+      const views = ['show-include-selector', 'show-external', 'show-social-media'].filter(name => options[name]);
+      if (views.length > 1) {
+        throw usageError(command, `${views.map(name => `--${name}`).join(' and ')} cannot be used together`);
       }
-      if (options['show-external'] && options.html) {
-        throw usageError(command, '--show-external prints URLs; --html cannot be used with it');
+      const showLinks = options['show-external'] || options['show-social-media'];
+      if (showLinks && options.html) {
+        throw usageError(command, `--${views[0]} prints links; --html cannot be used with it`);
       }
       const archived = await fetchary.version(args[0], args[1]);
       const file = options.raw || !archived.renderedFile || !fs.existsSync(archived.renderedFile)
         ? archived.file
         : archived.renderedFile;
-      if (options['show-external']) {
+      if (showLinks) {
         const html = options.raw
           ? await fetchary.read(archived.sourceId, archived.id)
           : await fetchary.readRendered(archived.sourceId, archived.id);
         const pageUrl = (file === archived.renderedFile && archived.browserFinalUrl) || archived.finalUrl || archived.requestedUrl;
         const urls = externalLinkUrls(html, pageUrl);
-        emitValue({ sourceId: archived.sourceId, version: archived.id, urls }, urls.join('\n'));
+        if (options['show-social-media']) {
+          const socialMedia = socialMediaLinks(urls);
+          const rows = socialMedia.flatMap(result => (result.urls.length ? result.urls : ['-'])
+            .map(url => ({ platform: result.platform, found: result.found, url })));
+          emitValue({ sourceId: archived.sourceId, version: archived.id, socialMedia }, table(rows, [
+            { label: 'PLATFORM', value: row => row.platform },
+            { label: 'FOUND', value: row => color(row.found ? 'yes' : 'no', row.found ? 'green' : 'gray') },
+            { label: 'URL', value: row => row.url === '-' ? '-' : link(row.url) },
+          ]));
+        } else {
+          emitValue({ sourceId: archived.sourceId, version: archived.id, urls }, urls.join('\n'));
+        }
         return 0;
       }
       if (options['show-include-selector']) {

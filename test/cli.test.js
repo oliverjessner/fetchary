@@ -377,7 +377,7 @@ test('invalid argument counts include command usage and an example', async t => 
     { args: ['show'], usage: 'fetchary show <id> [--json]', example: 'fetchary show 1' },
     { args: ['history'], usage: 'fetchary history <id> [--content-change] [--json]', example: 'fetchary history 1' },
     { args: ['diff'], usage: 'fetchary diff <id> [from to] [--include-selector <css> ...] [--element-content|--element-raw|--raw] [--html]', example: 'fetchary diff 4 1 2' },
-    { args: ['open'], usage: 'fetchary open <id> [version] [--show-include-selector|--show-external] [--html] [--raw]', example: 'fetchary open 1 2 --raw' },
+    { args: ['open'], usage: 'fetchary open <id> [version] [--show-include-selector|--show-external|--show-social-media] [--html] [--raw]', example: 'fetchary open 1 2 --raw' },
     { args: ['edit'], usage: 'fetchary edit <id> [--url <url>] [--name <name>] [--tag <tag>] [--mode <browser|http>] [--wait-after-load <duration>] [--include-selector <css> ... | --clear-include-selectors] [--ignore-selector <css> ... | --clear-ignore-selectors]', example: 'fetchary edit 1 --mode http' },
     { args: ['enable'], usage: 'fetchary enable <id>', example: 'fetchary enable 1' },
     { args: ['disable'], usage: 'fetchary disable <id>', example: 'fetchary disable 1' },
@@ -658,24 +658,95 @@ test('open resolves external links using the first base href and falls back when
   assert.equal(latest.stdout, 'https://outside.test/page\n');
 });
 
-test('open lists rendered or raw links using the corresponding capture URL, including raw fallback', async t => {
+test('open checks all eight social platforms, aliases, missing platforms, and misleading URL text from the selected archive', async t => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fetchary-cli-social-'));
+  t.after(() => fs.rmSync(dataDir, { recursive: true, force: true }));
+  const expected = [
+    { platform: 'facebook', found: true, urls: ['https://www.facebook.com/example', 'https://m.facebook.com/other'] },
+    { platform: 'x', found: true, urls: ['https://x.com/example', 'https://twitter.com/other'] },
+    { platform: 'youtube', found: true, urls: ['https://www.youtube.com/@example', 'https://youtu.be/video'] },
+    { platform: 'instagram', found: true, urls: ['https://www.instagram.com/example/'] },
+    { platform: 'vimeo', found: true, urls: ['https://player.vimeo.com/video/123'] },
+    { platform: 'tiktok', found: true, urls: ['https://vm.tiktok.com/video/'] },
+    { platform: 'reddit', found: true, urls: ['https://old.reddit.com/r/example/'] },
+    { platform: 'linkedin', found: true, urls: ['https://www.linkedin.com/company/example/'] },
+  ];
+  const firstBody = `<main><h1>First</h1></main>${expected.flatMap(result => result.urls).map(url => `<a href="${url}">Link</a>`).join('')}
+    <a href="https://X.COM:443/example">Duplicate</a><a href="https://unrelated.test/">Other site</a>`;
+  let body = firstBody;
+  const fetchary = await createFetchary({ dataDir, fetch: async () => new Response(body, { headers: { 'content-type': 'text/html' } }) });
+  t.after(() => fetchary.close());
+  const source = await fetchary.add('https://example.test/archive', { mode: 'http', includeSelectors: ['main'], ignoreSelectors: ['a'] });
+  body = `<main><h1>Second</h1></main>
+    <a href="https://notfacebook.com/">Facebook</a><a href="https://x.com.example.test/">X</a>
+    <a href="https://youtube.com@unrelated.test/">YouTube</a><a href="https://youtu.be.example.test/">Video</a>
+    <a href="https://example.test/instagram.com">Instagram</a><a href="https://notvimeo.com/">Vimeo</a>
+    <a href="https://tiktok.com.example.test/">TikTok</a><a href="https://example.test/?url=reddit.com">Reddit</a>
+    <a href="https://notlinkedin.com/">LinkedIn</a><a href="javascript:alert('facebook.com')">Script</a>`;
+  await fetchary.fetch(source.id);
+  const archived = await fetchary.version(source.id, 1);
+  await fetchary.close();
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => { throw new Error('checking social links must not fetch websites'); };
+  t.after(() => { globalThis.fetch = originalFetch; });
+  const consoleOnly = {
+    openFile: async () => { throw new Error('checking social links must not launch an app'); },
+    openEditor: async () => { throw new Error('checking social links must not launch an editor'); },
+  };
+  const base = ['--data-dir', dataDir];
+  const storedSource = (await runCli(['show', '1', '--json', ...base])).stdout;
+  const historical = await runCli(['open', '1', '1', '--show-social-media', ...base], consoleOnly);
+  assert.equal(historical.code, 0, historical.stderr);
+  assert.match(historical.stdout, /^PLATFORM\s+FOUND\s+URL\n/);
+  for (const result of expected) {
+    assert.match(historical.stdout, new RegExp(`^${result.platform}\\s+yes\\s+`, 'm'));
+    for (const url of result.urls) assert.ok(historical.stdout.includes(url), url);
+  }
+  assert.equal(historical.stdout.includes('unrelated.test'), false);
+  assert.equal(historical.stdout.split('https://x.com/example').length - 1, 1);
+  const json = await runCli(['open', '1', '1', '--show-social-media', '--json', ...base], consoleOnly);
+  assert.equal(json.code, 0, json.stderr);
+  assert.deepEqual(JSON.parse(json.stdout), { sourceId: 1, version: 1, socialMedia: expected });
+  const latest = await runCli(['open', '1', '--show-social-media', ...base], consoleOnly);
+  assert.equal(latest.code, 0, latest.stderr);
+  for (const result of expected) assert.match(latest.stdout, new RegExp(`^${result.platform}\\s+no\\s+-\\s*$`, 'm'));
+  const latestJson = await runCli(['open', '1', '--show-social-media', '--json', ...base], consoleOnly);
+  assert.deepEqual(JSON.parse(latestJson.stdout), {
+    sourceId: 1, version: 2, socialMedia: expected.map(result => ({ platform: result.platform, found: false, urls: [] })),
+  });
+  assert.equal((await runCli(['open', '1', '1', '--show-social-media', '--quiet', ...base], consoleOnly)).stdout, '');
+  assert.equal((await runCli(['show', '1', '--json', ...base])).stdout, storedSource);
+  assert.equal(fs.readFileSync(archived.file, 'utf8'), firstBody);
+  const wrongCommand = await runCli(['diff', '1', '--show-social-media', ...base]);
+  assert.equal(wrongCommand.code, 2);
+  assert.match(wrongCommand.stderr, /--show-social-media can only be used with open/);
+  for (const incompatible of ['--html', '--show-include-selector', '--show-external']) {
+    const invalid = await runCli(['open', '1', '--show-social-media', incompatible, ...base], consoleOnly);
+    assert.equal(invalid.code, 2);
+    assert.match(invalid.stderr, /cannot be used/);
+  }
+  assert.match((await runCli(['--help'])).stdout, /--show-social-media\s+Check social platforms/);
+  assert.match((await runCli(['--example'])).stdout, /fetchary open 1 --show-social-media/);
+});
+
+test('open lists rendered or raw external and social links using the corresponding capture URL, including raw fallback', async t => {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fetchary-cli-external-rendered-'));
   t.after(() => fs.rmSync(dataDir, { recursive: true, force: true }));
   const fetchary = await createFetchary({
     dataDir,
     fetch: async () => {
-      const response = new Response('<a href="https://rendered.test/from-raw">External in raw</a><a href="https://http.test/own">Internal in raw</a>', {
+      const response = new Response('<a href="https://instagram.com/from-raw">External in raw</a><a href="https://youtube.com/own">Internal in raw</a>', {
         headers: { 'content-type': 'text/html' },
       });
-      Object.defineProperty(response, 'url', { value: 'https://http.test/page' });
+      Object.defineProperty(response, 'url', { value: 'https://youtube.com/page' });
       return response;
     },
     launchBrowser: async () => ({
       async newPage() {
         return {
           async goto() {},
-          async content() { return '<a href="https://http.test/from-rendered">External in rendered</a><a href="https://rendered.test/own">Internal in rendered</a>'; },
-          url() { return 'https://rendered.test/page'; },
+          async content() { return '<a href="https://youtube.com/from-rendered">External in rendered</a><a href="https://instagram.com/own">Internal in rendered</a>'; },
+          url() { return 'https://instagram.com/page'; },
           async close() {},
         };
       },
@@ -690,14 +761,29 @@ test('open lists rendered or raw links using the corresponding capture URL, incl
   const consoleOnly = { openFile: async () => { throw new Error('listing links must not launch an app'); } };
   const rendered = await runCli(['open', '1', ...base], consoleOnly);
   assert.equal(rendered.code, 0, rendered.stderr);
-  assert.equal(rendered.stdout, 'https://http.test/from-rendered\n');
+  assert.equal(rendered.stdout, 'https://youtube.com/from-rendered\n');
   const raw = await runCli(['open', '1', '--raw', ...base], consoleOnly);
   assert.equal(raw.code, 0, raw.stderr);
-  assert.equal(raw.stdout, 'https://rendered.test/from-raw\n');
+  assert.equal(raw.stdout, 'https://instagram.com/from-raw\n');
+  const socialBase = ['--show-social-media', '--json', '--data-dir', dataDir];
+  const socialRendered = await runCli(['open', '1', ...socialBase], consoleOnly);
+  assert.equal(socialRendered.code, 0, socialRendered.stderr);
+  const renderedPlatforms = JSON.parse(socialRendered.stdout).socialMedia;
+  assert.deepEqual(renderedPlatforms.filter(platform => platform.found), [
+    { platform: 'youtube', found: true, urls: ['https://youtube.com/from-rendered'] },
+  ]);
+  const socialRaw = await runCli(['open', '1', '--raw', ...socialBase], consoleOnly);
+  assert.equal(socialRaw.code, 0, socialRaw.stderr);
+  assert.deepEqual(JSON.parse(socialRaw.stdout).socialMedia.filter(platform => platform.found), [
+    { platform: 'instagram', found: true, urls: ['https://instagram.com/from-raw'] },
+  ]);
   fs.unlinkSync(archived.renderedFile);
   const fallback = await runCli(['open', '1', ...base], consoleOnly);
   assert.equal(fallback.code, 0, fallback.stderr);
   assert.equal(fallback.stdout, raw.stdout);
+  const socialFallback = await runCli(['open', '1', ...socialBase], consoleOnly);
+  assert.equal(socialFallback.code, 0, socialFallback.stderr);
+  assert.equal(socialFallback.stdout, socialRaw.stdout);
 });
 
 test('CLI distinguishes raw-only changes from visible content changes', async t => {

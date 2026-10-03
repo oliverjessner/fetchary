@@ -1,7 +1,7 @@
 # 1.2.0
 
+- `open --show-social-media` checks archived external links for Facebook, X, YouTube, Instagram, Vimeo, TikTok, Reddit, and LinkedIn, with per-platform presence, unique URLs, and JSON output
 - `open --show-external` lists unique external HTTP(S) link URLs from archived pages, with URL resolution, version selection, rendered/raw capture support, and JSON output
-- `npm run publish` creates a GitHub release with a version tag and changelog notes after npm and Homebrew publication, with release previews, preflight checks, and `--skip-github` support
 - `history --content-change` filters console and JSON history to versions with content changes using the source's current comparison selectors
 - include selectors use `querySelector` to select only the first match per selector across monitoring, diffs, and console views
 - repeatable `--include-selector` support for `add`, `edit`, and `diff` to compare only selected page sections

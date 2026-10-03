@@ -577,12 +577,12 @@ with `--no-color` or the `NO_COLOR` environment variable.
 ### `fetchary open`
 
 Open an archived HTML version in the default browser, or print selected content
-or external link URLs.
+or inspect external and social media links.
 
 Open the latest version:
 
 ```bash
-fetchary open <id> [version] [--show-include-selector|--show-external] [--html] [--raw]
+fetchary open <id> [version] [--show-include-selector|--show-external|--show-social-media] [--html] [--raw]
 ```
 
 Example:
@@ -654,7 +654,46 @@ capture. No browser or editor is launched, and no live website is requested.
 When there are no external links, the console output is empty. `--json` returns
 `sourceId`, `version`, and a `urls` array, which is empty when no links qualify.
 `--quiet` suppresses normal output. `--show-external` cannot be combined with
-`--show-include-selector` or `--html`.
+`--show-include-selector`, `--show-social-media`, or `--html`.
+
+Check for links to social media platforms:
+
+```bash
+fetchary open 16 --show-social-media
+fetchary open 16 4 --show-social-media
+fetchary open 16 --show-social-media --raw
+fetchary open 16 --show-social-media --json
+```
+
+The output checks all eight platforms, in the following order, and lists the
+matching external link URLs:
+
+| Platform | Recognized domains, including subdomains |
+| --- | --- |
+| Facebook | `facebook.com` |
+| X | `x.com`, `twitter.com` |
+| YouTube | `youtube.com`, `youtu.be` |
+| Instagram | `instagram.com` |
+| Vimeo | `vimeo.com` |
+| TikTok | `tiktok.com` |
+| Reddit | `reddit.com` |
+| LinkedIn | `linkedin.com` |
+
+Console output has `PLATFORM`, `FOUND`, and `URL` columns. A platform with links
+shows `yes` and one row per unique URL. A platform without matching links shows
+`no` and `-`, so all eight checks remain visible even when no social links are
+found. Hostnames are matched exactly or as subdomains; platform names in link
+text, URL paths, or unrelated hostnames do not count.
+
+This view uses the same archived external hyperlinks, URL resolution, rendered
+capture selection, and `--raw` fallback as `--show-external`. Stored comparison
+selectors do not limit the checks. Internal links on the selected capture's own
+host are excluded. It does not fetch the live page or open another application.
+
+`--json` returns `sourceId`, `version`, and a `socialMedia` array. Each entry has
+`platform`, `found`, and `urls`; missing platforms have `found: false` and an
+empty `urls` array. `--quiet` suppresses normal output. `--show-social-media`
+cannot be combined with `--show-external`, `--show-include-selector`, or `--html`.
 
 ---
 
