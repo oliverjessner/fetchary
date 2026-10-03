@@ -263,9 +263,10 @@ const source = await fetchary.add('https://example.com/news', {
 });
 ```
 
-`includeSelectors` uses the same validation as `ignoreSelectors`. Every matching
-element and its descendants is compared in document order, with overlapping
-matches included once. An empty list compares the whole page. A non-empty list
+`includeSelectors` uses the same validation as `ignoreSelectors`. Each selector
+uses `querySelector` to select only its first matching element and that element's
+descendants. Selected sections are compared in document order, with overlapping
+selections included once. An empty list compares the whole page. A non-empty list
 with no matches compares empty content, so a selected section appearing or
 disappearing is detected when its text changes.
 
@@ -621,8 +622,9 @@ const selectedDiff = await fetchary.diff(12, {
 ```
 
 The array is validated, trimmed, and deduplicated. It replaces stored include
-selectors for this call only; `[]` selects the whole page. Stored ignore
-selectors still apply to text and element-content output. With
+selectors for this call only; each selector selects only its first match, and
+`[]` selects the whole page. Stored ignore selectors still apply to text and
+element-content output. With
 `mode: 'element-raw'`, an explicit include selection shows all HTML changes in
 those sections without applying stored ignore selectors. A non-empty selection
 cannot be combined with `mode: 'raw'`, which compares exact HTTP responses.

@@ -243,6 +243,31 @@ test('include selectors limit content changes and diffs while preserving complet
   assert.equal(fs.readFileSync(path.join(exported.directory, 'versions', '002-response.html'), 'utf8'), await fetchary.read(source.id, 2));
 });
 
+test('include selectors compare only their first match and recompute hashes saved with previous selection semantics', async t => {
+  let body = '<p class="price">10</p><p class="price">20</p>';
+  const fetchary = await createFetchary({ dataDir: tempDir(t), fetch: async () => new Response(body) });
+  t.after(() => fetchary.close());
+  const source = await fetchary.add('https://example.com/first-match', { mode: 'http', includeSelectors: ['.price'] });
+  const legacyHash = crypto.createHash('sha256').update('10\n\n20').digest('hex');
+  assert.notEqual(source.currentComparisonHash, legacyHash);
+  fetchary.db.prepare('UPDATE urls SET current_comparison_hash = ? WHERE id = ?').run(legacyHash, source.id);
+
+  body = '<p class="price">10</p><p class="price">21</p>';
+  const laterMatchChanged = await fetchary.fetch(source.id);
+  assert.equal(laterMatchChanged.rawChanged, true);
+  assert.equal(laterMatchChanged.contentChanged, false);
+  assert.equal((await fetchary.get(source.id)).currentComparisonHash, source.currentComparisonHash);
+  assert.equal((await fetchary.get(source.id)).lastChangedAt, source.lastChangedAt);
+  assert.equal((await fetchary.diff(source.id)).changed, false);
+  assert.equal((await fetchary.diff(source.id, { mode: 'element-content' })).changed, false);
+  assert.equal((await fetchary.diff(source.id, { mode: 'element-raw', includeSelectors: ['.price'] })).changed, false);
+
+  body = '<p class="price">11</p><p class="price">21</p>';
+  assert.equal((await fetchary.fetch(source.id)).changed, true);
+  assert.deepEqual((await fetchary.diff(source.id)).diff.map(part => part.value), ['10', '11']);
+  assert.deepEqual((await fetchary.diff(source.id, { mode: 'element-raw', includeSelectors: ['.price'] })).diff.map(part => part.value), ['<p class="price">10</p>', '<p class="price">11</p>']);
+});
+
 test('include selector validation, edits, persistence, and clearing recompute the comparison baseline', async t => {
   const dataDir = tempDir(t);
   let body = '<main>Same</main><aside>Old</aside>';

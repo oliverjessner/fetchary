@@ -453,7 +453,9 @@ class Fetchary extends EventEmitter {
         const archiveNeeded = rawChanged || renderedChanged;
 
         let previousComparisonHash = current.current_comparison_hash;
-        if (previousComparisonHash == null && current.current_version_id != null) {
+        // Re-read scoped baselines so hashes saved with older selector semantics
+        // cannot report a content change solely because selection behavior changed.
+        if ((previousComparisonHash == null || source.includeSelectors.length > 0) && current.current_version_id != null) {
           const previous = this.db.prepare(`
             SELECT file, rendered_file FROM versions
             WHERE url_id = ? AND version_number = ?

@@ -25,11 +25,12 @@ test('element content and raw diffs distinguish content, attributes, and ignored
   ]);
 });
 
-test('include selectors keep every matching subtree once in document order', () => {
+test('include selectors keep only the first matching subtree per selector in document order', () => {
   const html = '<header>Outside</header><main><p>First</p><span class="clock">Old</span></main><aside>Second</aside><footer>Outside</footer>';
   const options = { includeSelectors: ['aside', 'main p', 'main', 'main'], ignoreSelectors: ['.clock'] };
   assert.equal(comparisonHtml(html, options), '<main><p>First</p></main>\n<aside>Second</aside>');
   assert.equal(comparisonText(html, options), 'First\n\nSecond');
+  assert.equal(comparisonText(html, { includeSelectors: ['aside', 'main p'] }), 'First\n\nSecond');
   assert.equal(comparisonHash(html, options), comparisonHash(html.replaceAll('Outside', 'Updated').replace('Old', 'New'), options));
   assert.deepEqual(elementDiff(html, html.replace('First', 'Changed'), { mode: 'content', ...options }), [
     { type: 'removed', value: '<p>First</p>' },
@@ -37,7 +38,15 @@ test('include selectors keep every matching subtree once in document order', () 
   ]);
 
   const repeated = '<div class="item">One</div><div>Outside</div><div class="item">Two</div>';
-  assert.equal(comparisonText(repeated, { includeSelectors: ['.item'] }), 'One\n\nTwo');
+  const firstMatch = { includeSelectors: ['.item'] };
+  assert.equal(comparisonText(repeated, firstMatch), 'One');
+  assert.equal(comparisonHtml(repeated, firstMatch), '<div class="item">One</div>');
+  assert.equal(comparisonText(repeated, { includeSelectors: ['.item, div'] }), 'One');
+  assert.equal(comparisonText(repeated, { includeSelectors: ['.item:last-child', '.item'] }), 'One\n\nTwo');
+  assert.equal(comparisonHash(repeated, firstMatch), comparisonHash(repeated.replace('Two', 'Changed later match'), firstMatch));
+  assert.notEqual(comparisonHash(repeated, firstMatch), comparisonHash(repeated.replace('One', 'Changed first match'), firstMatch));
+  assert.deepEqual(elementDiff(repeated, repeated.replace('Two', 'Changed later match'), { mode: 'content', ...firstMatch }), []);
+  assert.equal(comparisonText(repeated, { ...firstMatch, ignoreSelectors: ['.item:first-child'] }), '', 'ignoring the first match does not select a later match');
 });
 
 test('include selectors match the original DOM and ignored roots and ancestors take precedence', () => {

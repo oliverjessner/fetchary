@@ -137,6 +137,12 @@ Check the archived versions:
 fetchary history 1
 ```
 
+Just want to see when the content changed?
+
+```bash
+fetchary history 1 --content-change
+```
+
 Compare the latest two versions:
 
 ```bash
@@ -161,6 +167,12 @@ Or open a specific archived version:
 
 ```bash
 fetchary open 1 4
+```
+
+See which other websites an archived page links to:
+
+```bash
+fetchary open 1 --show-external
 ```
 
 ### Keep evidence
@@ -230,6 +242,8 @@ fetchary run
 For the complete command reference: [docs/CLI.md](docs/CLI.md) \*\*
 
 For using Fetchary as a Node.js library: [docs/LIBRARY.md](docs/LIBRARY.md)
+
+For publishing a new version: [docs/PUBLISHING.md](docs/PUBLISHING.md)
 
 ## What Fetchary is not
 

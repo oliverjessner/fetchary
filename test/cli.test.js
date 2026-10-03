@@ -101,7 +101,7 @@ test('CLI wraps add/list/fetch/show/history/diff and uses documented exit codes'
   assert.equal(JSON.parse(history.stdout).length, 2);
   const invalidHistory = await runCli(['history', ...base]);
   assert.equal(invalidHistory.code, 2);
-  assert.equal(invalidHistory.stderr, 'Error: invalid number of arguments\n\nUsage:   fetchary history <id>\nExample: fetchary history 1\n');
+  assert.equal(invalidHistory.stderr, 'Error: invalid number of arguments\n\nUsage:   fetchary history <id> [--content-change] [--json]\nExample: fetchary history 1\n');
   const humanHistory = await runCli(['history', '1', ...base]);
   assert.match(humanHistory.stdout, /^VERSION\s+CHANGE\s+FETCHED\s+STATUS\s+SIZE/m);
   assert.match(humanHistory.stdout, /^2\s+content\s+/m);
@@ -375,9 +375,9 @@ test('invalid argument counts include command usage and an example', async t => 
     { args: ['status', 'extra'], usage: 'fetchary status', example: 'fetchary status' },
     { args: ['follower', '1', '2'], usage: 'fetchary follower [id] [--tag <tag>] [--json]', example: 'fetchary follower 3' },
     { args: ['show'], usage: 'fetchary show <id> [--json]', example: 'fetchary show 1' },
-    { args: ['history'], usage: 'fetchary history <id>', example: 'fetchary history 1' },
+    { args: ['history'], usage: 'fetchary history <id> [--content-change] [--json]', example: 'fetchary history 1' },
     { args: ['diff'], usage: 'fetchary diff <id> [from to] [--include-selector <css> ...] [--element-content|--element-raw|--raw] [--html]', example: 'fetchary diff 4 1 2' },
-    { args: ['open'], usage: 'fetchary open <id> [version] [--show-include-selector] [--html] [--raw]', example: 'fetchary open 1 2 --raw' },
+    { args: ['open'], usage: 'fetchary open <id> [version] [--show-include-selector|--show-external] [--html] [--raw]', example: 'fetchary open 1 2 --raw' },
     { args: ['edit'], usage: 'fetchary edit <id> [--url <url>] [--name <name>] [--tag <tag>] [--mode <browser|http>] [--wait-after-load <duration>] [--include-selector <css> ... | --clear-include-selectors] [--ignore-selector <css> ... | --clear-ignore-selectors]', example: 'fetchary edit 1 --mode http' },
     { args: ['enable'], usage: 'fetchary enable <id>', example: 'fetchary enable 1' },
     { args: ['disable'], usage: 'fetchary disable <id>', example: 'fetchary disable 1' },
@@ -500,10 +500,10 @@ test('open prefers rendered browser captures and supports explicit raw evidence'
   assert.equal(historical.stdout, 'server response\n');
 });
 
-test('open prints only stored include-selector content with version selection and no source mutations', async t => {
+test('open prints only the first match of each stored include selector with version selection and no source mutations', async t => {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fetchary-cli-show-include-'));
   t.after(() => fs.rmSync(dataDir, { recursive: true, force: true }));
-  const firstBody = '<header>Outside</header><main><p>First</p><p class="clock">Clock one</p></main><aside>Also included</aside><footer>Outside</footer>';
+  const firstBody = '<header>Outside</header><main><p>First</p><p class="clock">Clock one</p></main><aside>Also included</aside><aside>Later match</aside><footer>Outside</footer>';
   let body = firstBody;
   let fetchCalls = 0;
   const originalFetch = globalThis.fetch;
@@ -558,6 +558,148 @@ test('open prints only stored include-selector content with version selection an
   assert.match((await runCli(['--example'])).stdout, /fetchary open 1 --show-include-selector/);
 });
 
+test('open lists unique external link URLs from the chosen archive without fetching, opening apps, or applying comparison selectors', async t => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fetchary-cli-external-'));
+  t.after(() => fs.rmSync(dataDir, { recursive: true, force: true }));
+  const firstBody = `<main><h1>First</h1>
+    <a href="/local">Relative</a><a href="?query=1">Query</a><a href="#section">Section</a>
+    <a href="https://archive.test/own">Internal</a><a href="http://ARCHIVE.test:8080/own">Same host</a>
+    <a href="https://external.test/article?x=1&amp;y=2">External</a>
+    <a href="https://EXTERNAL.test:443/article?x=1&amp;y=2">Repeated URL</a>
+    <a href="//second.test/path">Protocol-relative</a>
+    <a href="mailto:hello@example.test">Email</a><a href="tel:+431234">Phone</a>
+    <a href="javascript:void(0)">Script</a><a href="data:text/plain,hello">Data</a>
+    <a href="ftp://files.test/file">FTP</a><a href="http://[">Invalid</a><a href="">Empty</a>
+    <script>const example = '<a href="https://script.test/">Not a link</a>';</script>
+    <link rel="stylesheet" href="https://assets.test/style.css"><img src="https://assets.test/image.png">
+    https://text.test/ is plain text.
+  </main>
+  <a href="https://requested.test/return">Original host before redirect</a>
+  <a href="https://sub.archive.test/page">Another host</a>
+  <map><area href="https://maps.test/place"></map>`;
+  let body = firstBody;
+  const fetchary = await createFetchary({
+    dataDir,
+    fetch: async () => {
+      const response = new Response(body, { headers: { 'content-type': 'text/html' } });
+      Object.defineProperty(response, 'url', { value: 'https://archive.test/folder/page' });
+      return response;
+    },
+  });
+  t.after(() => fetchary.close());
+  const source = await fetchary.add('https://requested.test/page', {
+    mode: 'http', includeSelectors: ['main'], ignoreSelectors: ['a', 'area'],
+  });
+  body = '<main><h1>Second</h1><a href="/internal">Internal</a></main>';
+  await fetchary.fetch(source.id);
+  await fetchary.edit(source.id, { url: 'https://edited.test/new-source-url' });
+  const archived = await fetchary.version(source.id, 1);
+  await fetchary.close();
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => { throw new Error('listing archived links must not fetch a website'); };
+  t.after(() => { globalThis.fetch = originalFetch; });
+  const consoleOnly = {
+    openFile: async () => { throw new Error('listing links must not launch an app'); },
+    openEditor: async () => { throw new Error('listing links must not launch an editor'); },
+  };
+  const base = ['--data-dir', dataDir];
+  const storedSource = (await runCli(['show', '1', '--json', ...base])).stdout;
+  const urls = [
+    'https://external.test/article?x=1&y=2', 'https://second.test/path',
+    'https://requested.test/return', 'https://sub.archive.test/page', 'https://maps.test/place',
+  ];
+  const historical = await runCli(['open', '1', '1', '--show-external', ...base], consoleOnly);
+  assert.equal(historical.code, 0, historical.stderr);
+  assert.equal(historical.stdout, `${urls.join('\n')}\n`);
+  const json = await runCli(['open', '1', '1', '--show-external', '--json', ...base], consoleOnly);
+  assert.deepEqual(JSON.parse(json.stdout), { sourceId: 1, version: 1, urls });
+  const latest = await runCli(['open', '1', '--show-external', ...base], consoleOnly);
+  assert.equal(latest.code, 0, latest.stderr);
+  assert.equal(latest.stdout, '\n');
+  assert.deepEqual(JSON.parse((await runCli(['open', '1', '--show-external', '--json', ...base], consoleOnly)).stdout), {
+    sourceId: 1, version: 2, urls: [],
+  });
+  assert.equal((await runCli(['open', '1', '1', '--show-external', '--quiet', ...base], consoleOnly)).stdout, '');
+  assert.equal((await runCli(['show', '1', '--json', ...base])).stdout, storedSource);
+  assert.equal(fs.readFileSync(archived.file, 'utf8'), firstBody);
+  const wrongCommand = await runCli(['diff', '1', '--show-external', ...base]);
+  assert.equal(wrongCommand.code, 2);
+  assert.match(wrongCommand.stderr, /--show-external can only be used with open/);
+  for (const incompatible of ['--html', '--show-include-selector']) {
+    const invalid = await runCli(['open', '1', '--show-external', incompatible, ...base], consoleOnly);
+    assert.equal(invalid.code, 2);
+    assert.match(invalid.stderr, /cannot be used/);
+  }
+  assert.match((await runCli(['--help'])).stdout, /--show-external\s+Print external link URLs/);
+  assert.match((await runCli(['--example'])).stdout, /fetchary open 1 --show-external/);
+});
+
+test('open resolves external links using the first base href and falls back when it is invalid', async t => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fetchary-cli-external-base-'));
+  t.after(() => fs.rmSync(dataDir, { recursive: true, force: true }));
+  let body = `<html><head><base href="https://cdn.test/folder/"><base href="https://unused.test/"></head><body>
+    <a href="article">Relative</a><a href="/guide">Root-relative</a>
+    <a href="../news?x=1&amp;y=2">Parent</a><a href="#part">Base fragment</a>
+    <a href="https://page.test/local">Internal page host</a>
+  </body></html>`;
+  const fetchary = await createFetchary({ dataDir, fetch: async () => new Response(body, { headers: { 'content-type': 'text/html' } }) });
+  t.after(() => fetchary.close());
+  const source = await fetchary.add('https://page.test/archive', { mode: 'http' });
+  body = '<base href="http://["><base href="https://unused.test/"><a href="/local">Internal</a><a href="//outside.test/page">External</a>';
+  await fetchary.fetch(source.id);
+  await fetchary.close();
+  const consoleOnly = { openFile: async () => { throw new Error('listing links must not launch an app'); } };
+  const base = ['--show-external', '--data-dir', dataDir];
+  const historical = await runCli(['open', '1', '1', ...base], consoleOnly);
+  assert.equal(historical.code, 0, historical.stderr);
+  assert.equal(historical.stdout, 'https://cdn.test/folder/article\nhttps://cdn.test/guide\nhttps://cdn.test/news?x=1&y=2\nhttps://cdn.test/folder/#part\n');
+  const latest = await runCli(['open', '1', ...base], consoleOnly);
+  assert.equal(latest.code, 0, latest.stderr);
+  assert.equal(latest.stdout, 'https://outside.test/page\n');
+});
+
+test('open lists rendered or raw links using the corresponding capture URL, including raw fallback', async t => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fetchary-cli-external-rendered-'));
+  t.after(() => fs.rmSync(dataDir, { recursive: true, force: true }));
+  const fetchary = await createFetchary({
+    dataDir,
+    fetch: async () => {
+      const response = new Response('<a href="https://rendered.test/from-raw">External in raw</a><a href="https://http.test/own">Internal in raw</a>', {
+        headers: { 'content-type': 'text/html' },
+      });
+      Object.defineProperty(response, 'url', { value: 'https://http.test/page' });
+      return response;
+    },
+    launchBrowser: async () => ({
+      async newPage() {
+        return {
+          async goto() {},
+          async content() { return '<a href="https://http.test/from-rendered">External in rendered</a><a href="https://rendered.test/own">Internal in rendered</a>'; },
+          url() { return 'https://rendered.test/page'; },
+          async close() {},
+        };
+      },
+      async close() {},
+    }),
+  });
+  t.after(() => fetchary.close());
+  const source = await fetchary.add('https://requested.test/page', { waitAfterLoad: 0 });
+  const archived = await fetchary.version(source.id);
+  await fetchary.close();
+  const base = ['--show-external', '--data-dir', dataDir];
+  const consoleOnly = { openFile: async () => { throw new Error('listing links must not launch an app'); } };
+  const rendered = await runCli(['open', '1', ...base], consoleOnly);
+  assert.equal(rendered.code, 0, rendered.stderr);
+  assert.equal(rendered.stdout, 'https://http.test/from-rendered\n');
+  const raw = await runCli(['open', '1', '--raw', ...base], consoleOnly);
+  assert.equal(raw.code, 0, raw.stderr);
+  assert.equal(raw.stdout, 'https://rendered.test/from-raw\n');
+  fs.unlinkSync(archived.renderedFile);
+  const fallback = await runCli(['open', '1', ...base], consoleOnly);
+  assert.equal(fallback.code, 0, fallback.stderr);
+  assert.equal(fallback.stdout, raw.stdout);
+});
+
 test('CLI distinguishes raw-only changes from visible content changes', async t => {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fetchary-cli-changes-'));
   t.after(() => fs.rmSync(dataDir, { recursive: true, force: true }));
@@ -586,6 +728,60 @@ test('CLI distinguishes raw-only changes from visible content changes', async t 
   history = JSON.parse((await runCli(['history', '1', '--json', ...base])).stdout);
   assert.equal(history[0].change, 'content');
   assert.equal(history[0].contentChanged, true);
+});
+
+test('history content-change filters after comparison and follows current include and ignore selectors', async t => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fetchary-cli-history-content-'));
+  t.after(() => fs.rmSync(dataDir, { recursive: true, force: true }));
+  let body = '<main><p class="price">10<span class="timestamp">One</span></p><p class="price">20</p></main><footer>Old</footer>';
+  let fetchCalls = 0;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => { fetchCalls++; return new Response(body, { headers: { 'content-type': 'text/html' } }); };
+  t.after(() => { globalThis.fetch = originalFetch; });
+  const base = ['--data-dir', dataDir];
+  const added = await runCli(['add', 'https://example.test/history-content', '--mode', 'http', '--include-selector', '.price', '--ignore-selector', '.timestamp', ...base]);
+  assert.equal(added.code, 0, added.stderr);
+  const initialOnly = await runCli(['history', '1', '--content-change', ...base]);
+  assert.equal(initialOnly.code, 0, initialOnly.stderr);
+  assert.equal(initialOnly.stdout, 'No content changes.\n');
+
+  body = body.replace('Old', 'New').replace('>20<', '>21<').replace('One', 'Two');
+  assert.equal((await runCli(['fetch', '1', ...base])).code, 0);
+  body = body.replace('>10<', '>11<');
+  assert.equal((await runCli(['fetch', '1', ...base])).code, 10);
+  body = body.replace('<main>', '<main data-revision="new">');
+  assert.equal((await runCli(['fetch', '1', ...base])).code, 0);
+  body = body.replace('>11<', '>10<');
+  assert.equal((await runCli(['fetch', '1', ...base])).code, 10);
+  const requestsBeforeHistory = fetchCalls;
+  const sourceBeforeHistory = (await runCli(['show', '1', '--json', ...base])).stdout;
+
+  const filtered = await runCli(['history', '1', '--content-change', '--json', ...base]);
+  assert.equal(filtered.code, 0, filtered.stderr);
+  const rows = JSON.parse(filtered.stdout);
+  assert.deepEqual(rows.map(row => row.id), [5, 3]);
+  assert.equal(rows.every(row => row.contentChanged === true && row.change === 'content'), true);
+  const human = await runCli(['history', '1', '--content-change', ...base]);
+  assert.match(human.stdout, /^VERSION\s+CHANGE\s+FETCHED\s+STATUS\s+SIZE/m);
+  assert.match(human.stdout, /^5\s+content\s+/m);
+  assert.match(human.stdout, /^3\s+content\s+/m);
+  assert.doesNotMatch(human.stdout, /^(1|2|4)\s+/m);
+  assert.equal((await runCli(['history', '1', '--content-change', '--quiet', ...base])).stdout, '');
+  assert.deepEqual(JSON.parse((await runCli(['history', '1', '--json', ...base])).stdout).map(row => row.id), [5, 4, 3, 2, 1]);
+  assert.equal(fetchCalls, requestsBeforeHistory);
+  assert.equal((await runCli(['show', '1', '--json', ...base])).stdout, sourceBeforeHistory);
+
+  await runCli(['edit', '1', '--include-selector', 'footer', ...base]);
+  const reclassified = JSON.parse((await runCli(['history', '1', '--content-change', '--json', ...base])).stdout);
+  assert.deepEqual(reclassified.map(row => row.id), [2]);
+  await runCli(['edit', '1', '--include-selector', '.missing', ...base]);
+  assert.equal((await runCli(['history', '1', '--content-change', ...base])).stdout, 'No content changes.\n');
+  assert.deepEqual(JSON.parse((await runCli(['history', '1', '--content-change', '--json', ...base])).stdout), []);
+  const wrongCommand = await runCli(['diff', '1', '--content-change', ...base]);
+  assert.equal(wrongCommand.code, 2);
+  assert.match(wrongCommand.stderr, /--content-change can only be used with history/);
+  assert.match((await runCli(['--help'])).stdout, /--content-change\s+Show only versions with content changes/);
+  assert.match((await runCli(['--example'])).stdout, /fetchary history 1 --content-change/);
 });
 
 test('CLI configures repeatable ignore selectors and applies current rules everywhere', async t => {

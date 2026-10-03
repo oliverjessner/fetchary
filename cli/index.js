@@ -5,6 +5,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
 const { spawn } = require('node:child_process');
+const { parseHTML } = require('linkedom');
 const pkg = require('../package.json');
 const { comparisonHash, comparisonHtml, comparisonText } = require('../src/diff');
 const {
@@ -59,7 +60,7 @@ Global options:
   --version                   Show version
 
 Comparison options for add and edit:
-  --include-selector <css>    Compare only matching elements (repeatable)
+  --include-selector <css>    Compare the first match per selector (repeatable)
   --clear-include-selectors   Compare the whole page again when editing
   --ignore-selector <css>     Ignore matching elements (repeatable)
   --clear-ignore-selectors    Remove all ignored selectors when editing
@@ -69,12 +70,16 @@ Capture options for add and edit:
   --wait-after-load <time>    Browser wait after load, for example 500ms or 5s
 
 Diff and open options:
-  --include-selector <css>     Filter diff to matching elements (repeatable; diff only)
+  --include-selector <css>     Filter diff to first match per selector (repeatable; diff only)
   --show-include-selector      Print stored include-selector content (open only)
+  --show-external              Print external link URLs (open only)
   --element-content           Show content changes with their HTML elements
   --element-raw               Show raw changes grouped by HTML element
   --raw                       Use the exact archived HTTP response
   --html                      Render a diff, open HTML in an editor, or print selected HTML
+
+History options:
+  --content-change            Show only versions with content changes
 
 Follower list options:
   --tag <tag>                 Only include sources with this tag
@@ -102,11 +107,13 @@ Read archived follower counts:
 
 Inspect and compare archived versions:
   fetchary history 1
+  fetchary history 1 --content-change
   fetchary diff 1
   fetchary diff 1 --include-selector "#main" --element-content
   fetchary diff 1 --include-selector "#main" --element-raw
   fetchary open 1
   fetchary open 1 --show-include-selector
+  fetchary open 1 --show-external
 
 Export an archive:
   fetchary export 1 --output ./research
@@ -129,9 +136,9 @@ const COMMAND_GUIDANCE = Object.freeze({
   vendor: { usage: 'fetchary vendor <name> <enable|disable> [--json]', example: 'fetchary vendor instagram disable' },
   status: { usage: 'fetchary status', example: 'fetchary status' },
   show: { usage: 'fetchary show <id> [--json]', example: 'fetchary show 1' },
-  history: { usage: 'fetchary history <id>', example: 'fetchary history 1' },
+  history: { usage: 'fetchary history <id> [--content-change] [--json]', example: 'fetchary history 1' },
   diff: { usage: 'fetchary diff <id> [from to] [--include-selector <css> ...] [--element-content|--element-raw|--raw] [--html]', example: 'fetchary diff 4 1 2' },
-  open: { usage: 'fetchary open <id> [version] [--show-include-selector] [--html] [--raw]', example: 'fetchary open 1 2 --raw' },
+  open: { usage: 'fetchary open <id> [version] [--show-include-selector|--show-external] [--html] [--raw]', example: 'fetchary open 1 2 --raw' },
   edit: { usage: 'fetchary edit <id> [--url <url>] [--name <name>] [--tag <tag>] [--mode <browser|http>] [--wait-after-load <duration>] [--include-selector <css> ... | --clear-include-selectors] [--ignore-selector <css> ... | --clear-ignore-selectors]', example: 'fetchary edit 1 --mode http' },
   enable: { usage: 'fetchary enable <id>', example: 'fetchary enable 1' },
   disable: { usage: 'fetchary disable <id>', example: 'fetchary disable 1' },
@@ -145,7 +152,7 @@ const COMMAND_GUIDANCE = Object.freeze({
 
 const VALUE_OPTIONS = new Set(['name', 'tag', 'url', 'output', 'data-dir', 'poll-interval', 'every', 'mode', 'wait-after-load']);
 const REPEATABLE_VALUE_OPTIONS = new Set(['ignore-selector', 'include-selector']);
-const FLAG_OPTIONS = new Set(['json', 'quiet', 'verbose', 'no-color', 'help', 'example', 'version', 'purge', 'raw', 'element-content', 'element-raw', 'html', 'now', 'clear-ignore-selectors', 'clear-include-selectors', 'show-include-selector']);
+const FLAG_OPTIONS = new Set(['json', 'quiet', 'verbose', 'no-color', 'help', 'example', 'version', 'purge', 'raw', 'element-content', 'element-raw', 'html', 'now', 'clear-ignore-selectors', 'clear-include-selectors', 'show-include-selector', 'show-external', 'content-change']);
 const ANSI = Object.freeze({
   red: '\x1b[31m',
   green: '\x1b[32m',
@@ -236,6 +243,27 @@ function size(value) {
 
 function duration(milliseconds) {
   return milliseconds % 1_000 === 0 ? `${milliseconds / 1_000}s` : `${milliseconds}ms`;
+}
+
+function externalLinkUrls(html, pageUrl) {
+  const page = new URL(pageUrl);
+  const { document } = parseHTML(html);
+  let base = page;
+  const baseHref = document.querySelector('base[href]')?.getAttribute('href');
+  if (baseHref != null) {
+    try { base = new URL(baseHref, page); } catch {}
+  }
+  const urls = new Set();
+  for (const element of document.querySelectorAll('a[href], area[href]')) {
+    const href = element.getAttribute('href').trim();
+    if (!href) continue;
+    let url;
+    try { url = new URL(href, base); } catch { continue; }
+    if (['http:', 'https:'].includes(url.protocol) && url.hostname !== page.hostname) {
+      urls.add(url.href);
+    }
+  }
+  return [...urls];
 }
 
 function table(rows, columns) {
@@ -418,6 +446,12 @@ async function execute(fetchary, parsed, write, format = {}) {
 
   if (options['show-include-selector'] && command !== 'open') {
     throw usageError(command, '--show-include-selector can only be used with open');
+  }
+  if (options['show-external'] && command !== 'open') {
+    throw usageError(command, '--show-external can only be used with open');
+  }
+  if (options['content-change'] && command !== 'history') {
+    throw usageError(command, '--content-change can only be used with history');
   }
 
   switch (command) {
@@ -608,13 +642,14 @@ async function execute(fetchary, parsed, write, format = {}) {
       const versions = await fetchary.history(args[0]);
       const source = await fetchary.get(args[0], { includeRemoved: true });
       const classified = await classifyVersions(versions, { includeSelectors: source.includeSelectors, ignoreSelectors: source.ignoreSelectors });
-      emitValue(classified, classified.length ? table(classified, [
+      const visible = options['content-change'] ? classified.filter(version => version.contentChanged === true) : classified;
+      emitValue(visible, visible.length ? table(visible, [
         { label: 'VERSION', value: row => row.id },
         { label: 'CHANGE', value: row => row.change },
         { label: 'FETCHED', value: row => localDate(row.fetchedAt) },
         { label: 'STATUS', value: row => row.status === 200 ? color(String(row.status), 'green') : row.status },
         { label: 'SIZE', value: row => size(row.contentLength) },
-      ]) : 'No archived versions.');
+      ]) : options['content-change'] ? 'No content changes.' : 'No archived versions.');
       return 0;
     }
     case 'diff': {
@@ -645,7 +680,25 @@ async function execute(fetchary, parsed, write, format = {}) {
     }
     case 'open': {
       requireArgs(args, command, 1, 2);
+      if (options['show-external'] && options['show-include-selector']) {
+        throw usageError(command, '--show-external and --show-include-selector cannot be used together');
+      }
+      if (options['show-external'] && options.html) {
+        throw usageError(command, '--show-external prints URLs; --html cannot be used with it');
+      }
       const archived = await fetchary.version(args[0], args[1]);
+      const file = options.raw || !archived.renderedFile || !fs.existsSync(archived.renderedFile)
+        ? archived.file
+        : archived.renderedFile;
+      if (options['show-external']) {
+        const html = options.raw
+          ? await fetchary.read(archived.sourceId, archived.id)
+          : await fetchary.readRendered(archived.sourceId, archived.id);
+        const pageUrl = (file === archived.renderedFile && archived.browserFinalUrl) || archived.finalUrl || archived.requestedUrl;
+        const urls = externalLinkUrls(html, pageUrl);
+        emitValue({ sourceId: archived.sourceId, version: archived.id, urls }, urls.join('\n'));
+        return 0;
+      }
       if (options['show-include-selector']) {
         const source = await fetchary.get(args[0], { includeRemoved: true });
         if (!source.includeSelectors.length) {
@@ -659,9 +712,6 @@ async function execute(fetchary, parsed, write, format = {}) {
         emitValue({ sourceId: source.id, version: archived.id, includeSelectors: source.includeSelectors, content }, content);
         return 0;
       }
-      const file = options.raw || !archived.renderedFile || !fs.existsSync(archived.renderedFile)
-        ? archived.file
-        : archived.renderedFile;
       await (options.html ? edit(file) : open(file));
       emitValue({ ...archived, openedFile: file }, `${color('✓ Opened', 'green')} ${color(file, 'cyan')}`);
       return 0;

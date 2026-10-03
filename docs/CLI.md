@@ -153,9 +153,11 @@ fetchary add https://example.com/news \
 validated immediately. A valid selector that currently matches no element is
 accepted.
 
-Include selectors match the original DOM and select every matching element and
-its descendants in page order. Overlapping matches are compared once. Ignore
-selectors then remove matching elements; an ignored selected element or ancestor
+Each include selector uses `querySelector` on the original DOM to select only
+its first matching element and that element's descendants. With multiple include
+selectors, selected sections are compared in page order. Overlapping selections
+are compared once. Ignore selectors then remove matching elements; an ignored
+selected element or ancestor
 also excludes that section. Without include selectors, the whole page is compared.
 If include selectors match nothing, the comparison is empty. A selected section
 appearing or disappearing therefore counts as a content change when its text changes.
@@ -177,7 +179,7 @@ Example output:
 --wait-after-load <duration>
                     Browser post-load wait, for example 500ms, 5s, or 10s
 --include-selector <css>
-                    Compare only matching elements and their descendants; repeatable
+                    Compare the first matching element and its descendants; repeatable
 --ignore-selector <css>
                     Ignore matching elements during comparison; repeatable
 ```
@@ -450,7 +452,7 @@ its total.
 Show all archived versions of a URL.
 
 ```bash
-fetchary history <id>
+fetchary history <id> [--content-change] [--json]
 ```
 
 Example:
@@ -480,6 +482,19 @@ Machine-readable output:
 ```bash
 fetchary history 12 --json
 ```
+
+Show only versions whose comparison content changed from the immediately
+preceding archived version:
+
+```bash
+fetchary history 4 --content-change
+fetchary history 4 --content-change --json
+```
+
+The filter uses the source's current include and ignore selectors. It excludes
+the initial capture and changes confined to raw HTML or rendered markup. Versions
+keep their original numbers and appear newest first. With no matching versions,
+the console prints `No content changes.` and JSON output is `[]`.
 
 ---
 
@@ -534,8 +549,9 @@ fetchary diff 12 --include-selector "main" --include-selector ".sidebar-news"
 ```
 
 `--include-selector` is repeatable and replaces the source's stored include
-selection only for this diff. It applies to console, JSON, and HTML output and
-does not change monitoring settings. If neither version contains a match, no
+selection only for this diff. Each selector selects only its first match. It
+applies to console, JSON, and HTML output and does not change monitoring settings.
+If neither version contains a match, no
 differences are shown.
 
 Normal diffs use `rendered.html` when available and gracefully fall back to the
@@ -560,12 +576,13 @@ with `--no-color` or the `NO_COLOR` environment variable.
 
 ### `fetchary open`
 
-Open an archived HTML version in the default browser, or print selected content.
+Open an archived HTML version in the default browser, or print selected content
+or external link URLs.
 
 Open the latest version:
 
 ```bash
-fetchary open <id> [version] [--show-include-selector] [--html] [--raw]
+fetchary open <id> [version] [--show-include-selector|--show-external] [--html] [--raw]
 ```
 
 Example:
@@ -601,15 +618,43 @@ fetchary open 16 --show-include-selector --raw
 matching HTML elements and their descendants. Both variants write directly to
 the console. `--raw` selects the archived HTTP response; otherwise the rendered
 capture is used when available. The current include selectors apply even when
-viewing an older version. Multiple and overlapping matches follow the same
-selection rules as comparisons, but stored ignore selectors do not hide any
-content in this view.
+viewing an older version. Each selector selects only its first matching element.
+Selected sections are shown in page order, with overlapping selections included
+once. Stored ignore selectors do not hide any content in this view.
 
 If no include selectors are configured, the command reports an error with an
 `edit --include-selector` example. If the selectors match nothing in the selected
 archive, the output is empty. `--json` returns `sourceId`, `version`,
 `includeSelectors`, and `content`. Viewing content does not change source settings
 or archived files.
+
+Print external link URLs from an archived page:
+
+```bash
+fetchary open 16 --show-external
+fetchary open 16 4 --show-external
+fetchary open 16 --show-external --raw
+fetchary open 16 --show-external --json
+```
+
+`--show-external` lists HTTP(S) URLs from links (`a[href]` and `area[href]`) whose
+hostname differs from the archived page's hostname. Subdomains count as different
+hosts; changes to the protocol or port alone do not. Relative and protocol-relative
+links are resolved using the selected capture's final URL and the first
+`<base href>`, when valid. The captured URL is used even if the source URL has
+since been edited. Email, telephone, JavaScript, and other non-HTTP(S) links are
+excluded, along with invalid or empty URLs.
+
+Each URL is printed once, in page order, one per line. The whole archive is read;
+stored include and ignore selectors do not limit this list. The command uses
+rendered HTML when available; `--raw` reads the archived HTTP response. If a
+rendered file is unavailable, both the HTML and its URL fall back to the raw
+capture. No browser or editor is launched, and no live website is requested.
+
+When there are no external links, the console output is empty. `--json` returns
+`sourceId`, `version`, and a `urls` array, which is empty when no links qualify.
+`--quiet` suppresses normal output. `--show-external` cannot be combined with
+`--show-include-selector` or `--html`.
 
 ---
 

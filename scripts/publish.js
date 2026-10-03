@@ -22,6 +22,9 @@ async function main() {
 
   const tapPath = path.resolve(options.tapPath || process.env.HOMEBREW_TAP_PATH || defaultTapPath);
   const formulaPath = path.join(tapPath, 'Formula', 'fetchary.rb');
+  const release = options.skipGithub ? null : prepareGitHubRelease();
+
+  if (release && !options.dryRun) assertGitHubIsReady(release);
 
   if (!options.skipBrew && !options.dryRun) {
     assertTapIsReady(tapPath);
@@ -43,6 +46,9 @@ async function main() {
 
     if (options.dryRun) {
       process.stdout.write(`\n==> Homebrew formula (${formulaPath})\n${formula}`);
+      if (release) {
+        process.stdout.write(`\n==> GitHub release preview\nRepository: ${release.repository}\nTag: ${release.tag}\nCommit: ${release.commit}\nTitle: ${release.title}\n\n${release.notes}\n`);
+      }
       process.stdout.write('\nDry run complete. Nothing was published or changed.\n');
       return;
     }
@@ -76,12 +82,21 @@ async function main() {
       if (!options.noPush) runStep('Push Homebrew tap', 'git', ['push'], tapPath);
     }
 
-    const brewResult = options.skipBrew
-      ? 'npm only'
-      : options.noPush
-        ? `npm and local Homebrew commit in ${tapPath}`
-        : 'npm and Homebrew tap';
-    process.stdout.write(`\nPublished fetchary ${packageJson.version} to ${brewResult}.\n`);
+    if (release) {
+      const notesFile = path.join(temporaryDirectory, 'release-notes.md');
+      await fsp.writeFile(notesFile, `${release.notes}\n`);
+      try {
+        publishGitHubRelease(release, notesFile, options.tag);
+      } catch (error) {
+        throw new Error(`${error.message}\nRetry the GitHub release with: npm run publish -- --skip-npm --skip-brew`, { cause: error });
+      }
+    }
+
+    const destinations = [];
+    if (!options.skipNpm) destinations.push('npm');
+    if (!options.skipBrew) destinations.push(options.noPush ? `local Homebrew commit in ${tapPath}` : 'Homebrew tap');
+    if (release) destinations.push('GitHub release');
+    process.stdout.write(`\nPublish complete for fetchary ${packageJson.version}: ${destinations.join(', ') || 'all destinations skipped'}.\n`);
   } finally {
     await fsp.rm(temporaryDirectory, { recursive: true, force: true });
   }
@@ -94,6 +109,7 @@ function parseArgs(args) {
     noPush: false,
     otp: undefined,
     skipBrew: false,
+    skipGithub: false,
     skipNpm: false,
     skipTests: false,
     tag: 'latest',
@@ -106,6 +122,7 @@ function parseArgs(args) {
     else if (argument === '--help' || argument === '-h') options.help = true;
     else if (argument === '--no-push') options.noPush = true;
     else if (argument === '--skip-brew') options.skipBrew = true;
+    else if (argument === '--skip-github') options.skipGithub = true;
     else if (argument === '--skip-npm') options.skipNpm = true;
     else if (argument === '--skip-tests') options.skipTests = true;
     else if (argument === '--otp') options.otp = readValue(args, ++index, '--otp');
@@ -149,6 +166,100 @@ function assertNpmAuthentication() {
   }
 
   process.stdout.write(`\nAuthenticated with npm as ${result.stdout.trim()}\n`);
+}
+
+function releaseNotes(changelog, version) {
+  const escapedVersion = version.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const heading = new RegExp(`^#{1,2}\\s+(?:\\[v?${escapedVersion}\\]|v?${escapedVersion})(?:\\s.*)?$`);
+  const lines = changelog.replace(/\r\n?/g, '\n').split('\n');
+  const start = lines.findIndex(line => heading.test(line));
+  if (start === -1) throw new Error(`docs/changelog.md has no section for ${version}.`);
+  const level = lines[start].match(/^#+/)[0].length;
+  const nextHeading = new RegExp(`^#{1,${level}}\\s+`);
+  const remaining = lines.slice(start + 1);
+  const end = remaining.findIndex(line => nextHeading.test(line));
+  const notes = remaining.slice(0, end === -1 ? undefined : end).join('\n').trim();
+  if (!notes) throw new Error(`docs/changelog.md has no release notes for ${version}.`);
+  return notes;
+}
+
+function prepareGitHubRelease() {
+  const repositoryUrl = new URL(packageJson.repository.url.replace(/^git\+/, ''));
+  const repository = repositoryUrl.pathname.replace(/^\//, '').replace(/\.git$/, '');
+  if (repositoryUrl.hostname !== 'github.com' || !/^[\w.-]+\/[\w.-]+$/.test(repository)) {
+    throw new Error('package.json must point to a GitHub repository to publish a release.');
+  }
+  return {
+    repository,
+    tag: `v${packageJson.version}`,
+    title: `Fetchary ${packageJson.version}`,
+    commit: capture('git', ['rev-parse', 'HEAD'], repoRoot),
+    notes: releaseNotes(fs.readFileSync(path.join(repoRoot, 'docs', 'changelog.md'), 'utf8'), packageJson.version),
+    prerelease: packageJson.version.split('+')[0].includes('-'),
+  };
+}
+
+function assertGitHubIsReady(release) {
+  const changes = capture('git', ['status', '--porcelain', '--untracked-files=all'], repoRoot);
+  if (changes) {
+    throw new Error(`The Fetchary checkout has uncommitted changes:\n${changes}\nCommit and push the release changes before publishing so the GitHub tag matches the package.`);
+  }
+  const authenticated = spawnSync('gh', ['auth', 'status', '--hostname', 'github.com'], {
+    cwd: repoRoot, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  if (authenticated.error?.code === 'ENOENT') {
+    throw new Error('GitHub CLI is required to publish a release. Install `gh`, then run `gh auth login`.');
+  }
+  if (authenticated.error) throw authenticated.error;
+  if (authenticated.status !== 0) {
+    throw new Error('GitHub authentication is required. Run `gh auth login`, then retry `npm run publish`.');
+  }
+  const permission = capture('gh', ['repo', 'view', release.repository, '--json', 'viewerPermission', '--jq', '.viewerPermission'], repoRoot);
+  if (!['ADMIN', 'MAINTAIN', 'WRITE'].includes(permission)) {
+    throw new Error(`GitHub write access to ${release.repository} is required to publish a release.`);
+  }
+  const commit = spawnSync('gh', ['api', `repos/${release.repository}/commits/${release.commit}`, '--jq', '.sha'], {
+    cwd: repoRoot, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  if (commit.error) throw commit.error;
+  if (commit.status !== 0 || commit.stdout.trim() !== release.commit) {
+    throw new Error(`Could not verify commit ${release.commit} on GitHub. Push it to ${release.repository} before publishing.\n${commit.stderr.trim()}`);
+  }
+  const tagRef = `refs/tags/${release.tag}`;
+  const remoteTags = capture('git', ['ls-remote', '--tags', `https://github.com/${release.repository}.git`, tagRef, `${tagRef}^{}`], repoRoot);
+  const refs = new Map(remoteTags.split('\n').filter(Boolean).map(line => {
+    const [sha, ref] = line.split(/\s+/);
+    return [ref, sha];
+  }));
+  const taggedCommit = refs.get(`${tagRef}^{}`) || refs.get(tagRef);
+  if (taggedCommit && taggedCommit !== release.commit) {
+    throw new Error(`GitHub tag ${release.tag} points to ${taggedCommit}, not the release commit ${release.commit}. Use a new package version.`);
+  }
+  release.existing = findGitHubRelease(release);
+}
+
+function findGitHubRelease(release) {
+  const result = spawnSync('gh', ['api', `repos/${release.repository}/releases/tags/${encodeURIComponent(release.tag)}`], {
+    cwd: repoRoot, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  if (result.error) throw result.error;
+  if (result.status === 0) return JSON.parse(result.stdout);
+  if (/HTTP 404\b/.test(result.stderr)) return null;
+  throw new Error(`Could not check GitHub release ${release.tag}: ${result.stderr.trim()}`);
+}
+
+function publishGitHubRelease(release, notesFile, npmTag) {
+  if (release.existing && !release.existing.draft) {
+    process.stdout.write(`\nGitHub release ${release.tag} already exists: ${release.existing.html_url}\n`);
+    return;
+  }
+  const args = ['release', release.existing ? 'edit' : 'create', release.tag,
+    '--repo', release.repository, '--target', release.commit,
+    '--title', release.title, '--notes-file', notesFile];
+  if (release.existing) args.push('--draft=false', `--prerelease=${release.prerelease}`);
+  else if (release.prerelease) args.push('--prerelease');
+  if (release.prerelease || npmTag !== 'latest') args.push('--latest=false');
+  runStep('Publish GitHub release', 'gh', args);
 }
 
 function assertVersionIsNotPublished() {
@@ -273,21 +384,22 @@ function capture(command, args, cwd) {
 }
 
 function printHelp() {
-  process.stdout.write(`Publish Fetchary to npm and Homebrew.
+  process.stdout.write(`Publish Fetchary to npm, Homebrew, and GitHub Releases.
 
 Usage:
   npm run publish
   npm run publish -- --dry-run
 
 Options:
-  --dry-run          Run tests, build the package, and print the formula only.
+  --dry-run          Run tests, build the package, and preview the formula and release.
   --tap-path <path>  Homebrew tap checkout (default: ../homebrew-tap).
   --tag <tag>        npm dist-tag (default: latest).
   --otp <code>       npm one-time password.
   --no-push          Commit the formula without pushing the tap.
   --skip-tests       Skip the test suite.
-  --skip-npm         Only update the Homebrew formula.
-  --skip-brew        Only publish to npm.
+  --skip-npm         Skip npm publication (for resuming a partial publish).
+  --skip-brew        Skip the Homebrew formula update.
+  --skip-github      Skip the GitHub release.
   --help             Show this help.
 `);
 }
@@ -299,4 +411,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { waitForPublishedTarball };
+module.exports = { waitForPublishedTarball, releaseNotes };
