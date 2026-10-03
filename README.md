@@ -225,21 +225,7 @@ fetchary add https://example.com/api/status --mode http
 
 ## Common commands
 
-```bash
-fetchary add <url>
-fetchary list
-fetchary fetch
-fetchary show <id>
-fetchary history <id>
-fetchary diff <id>
-fetchary open <id>
-fetchary follower
-fetchary export <id>
-fetchary schedule <id> <interval>
-fetchary run
-```
-
-For the complete command reference: [docs/CLI.md](docs/CLI.md) \*\*
+For the complete command reference: [docs/CLI.md](docs/CLI.md)
 
 For using Fetchary as a Node.js library: [docs/LIBRARY.md](docs/LIBRARY.md)
 
