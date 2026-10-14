@@ -1,3 +1,7 @@
+# Unreleased
+
+- `fetch` displays results in an aligned `ID`, `NAME`, and `CHANGE` table
+
 # 1.3.0
 
 - `extract <url>` prints current HTML or text without opening SQLite or creating an archive, with browser/HTTP modes and include/ignore selectors

@@ -443,12 +443,16 @@ Fetching now
 
 Results
 
-#12 unchanged
-#14 content changed → version 7
-#18 raw changed, content unchanged → version 4
+ID  NAME           CHANGE
+12  Example News   unchanged
+14  Press Release  content changed → version 7
+18  Company Page   raw changed, content unchanged → version 4
 
 1 content changed, 1 raw only, 1 unchanged
 ```
+
+The results table shows `ID`, `NAME`, and `CHANGE`. Sources without a name use
+`-` in the `NAME` column.
 
 In an interactive terminal Fetchary renders this as an in-place progress bar,
 including the current page and completed/total count. Redirected output uses the

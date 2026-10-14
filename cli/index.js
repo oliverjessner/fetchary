@@ -582,6 +582,7 @@ async function execute(fetchary, parsed, write, format = {}) {
       let animation;
       let frame = 0;
       const active = new Map();
+      const names = new Map();
       const showProgress = !options.json && !options.quiet;
       const renderProgressBar = () => {
         const width = 24;
@@ -600,6 +601,7 @@ async function execute(fetchary, parsed, write, format = {}) {
         emit(`\r\x1b[2K  ${bar}  ${completed}/${total}${page}`);
       };
       const onFetchStart = event => {
+        names.set(event.sourceId, event.name);
         if (!showProgress) return;
         current = event;
         active.set(event.sourceId, event);
@@ -656,15 +658,19 @@ async function execute(fetchary, parsed, write, format = {}) {
       const human = [
         started ? '\nResults' : `Fetching ${results.length} source${results.length === 1 ? '' : 's'}...`,
         '',
-        ...results.map(result => `${color(`#${result.id}`, 'blue')} ${result.contentChanged
-          ? `${color('content changed', 'yellow')} → version ${color(String(result.version), 'blue')}`
-          : result.rawChanged && result.renderedChanged
-            ? `${color('raw and rendered changed', 'yellow')}, ${color('content unchanged', 'gray')} → version ${color(String(result.version), 'blue')}`
-            : result.rawChanged
-            ? `${color('raw changed', 'yellow')}, ${color('content unchanged', 'gray')} → version ${color(String(result.version), 'blue')}`
-            : result.renderedChanged
-              ? `${color('rendered changed', 'yellow')}, ${color('content unchanged', 'gray')} → version ${color(String(result.version), 'blue')}`
-            : color('unchanged', 'gray')}`),
+        table(results, [
+          { label: 'ID', value: result => color(String(result.id), 'blue') },
+          { label: 'NAME', value: result => names.get(result.id) || '-' },
+          { label: 'CHANGE', value: result => result.contentChanged
+            ? `${color('content changed', 'yellow')} → version ${color(String(result.version), 'blue')}`
+            : result.rawChanged && result.renderedChanged
+              ? `${color('raw and rendered changed', 'yellow')}, ${color('content unchanged', 'gray')} → version ${color(String(result.version), 'blue')}`
+              : result.rawChanged
+                ? `${color('raw changed', 'yellow')}, ${color('content unchanged', 'gray')} → version ${color(String(result.version), 'blue')}`
+                : result.renderedChanged
+                  ? `${color('rendered changed', 'yellow')}, ${color('content unchanged', 'gray')} → version ${color(String(result.version), 'blue')}`
+                  : color('unchanged', 'gray') },
+        ]),
         '',
         summary,
       ].join('\n');
