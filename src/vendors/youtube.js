@@ -1,6 +1,7 @@
 'use strict';
 
 const { elementCount, labeledCount } = require('../metrics/followers');
+const { profilePictures } = require('../metrics/profile-pictures');
 
 const COOKIE_CONSENT = 'youtube-cookie-consent';
 
@@ -73,4 +74,15 @@ function followerCount(document, url) {
   return null;
 }
 
-module.exports = { name: 'youtube', matches, overlays, followerCount };
+function profilePicture(document, url) {
+  return profilePictures(document, url, {
+    matches, canonicalAlias: true,
+    pattern: /^\/(\@[^/]+|(?:channel|c|user)\/[^/]+)(?:\/(?:about|videos|shorts|streams|featured|playlists|community))?\/?$/,
+    selectors: 'ytd-c4-tabbed-header-renderer #avatar img, ytd-channel-header-renderer #avatar img, yt-page-header-renderer yt-avatar-shape img, yt-page-header-view-model .ytAvatarShapeImage, yt-page-header-view-model yt-avatar-shape img',
+    metadata: true,
+    json: object => [object.c4TabbedHeaderRenderer?.avatar?.thumbnails,
+      object.pageHeaderRenderer?.content?.pageHeaderViewModel?.image?.decoratedAvatarViewModel?.avatar?.avatarViewModel?.image?.sources],
+  });
+}
+
+module.exports = { name: 'youtube', matches, overlays, followerCount, profilePicture };

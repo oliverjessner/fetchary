@@ -1,4 +1,5 @@
 'use strict';
+const { profilePictures } = require('../metrics/profile-pictures');
 
 const { parseCount, linkCount, descriptionCount, jsonObjects, profileName } = require('../metrics/followers');
 
@@ -96,4 +97,14 @@ function followerCount(document, url) {
   return linkCount(document, url, target => target.pathname.replace(/\/$/, '').toLowerCase() === `/${username}/followers`) ?? descriptionCount(document);
 }
 
-module.exports = { name: 'instagram', matches, overlays, followerCount };
+function profilePicture(document, url) {
+  return profilePictures(document, url, {
+    pattern: /^\/([\w.]+)\/?$/,
+    reserved: ['accounts', 'explore', 'reels', 'p', 'direct', 'stories', 'about'],
+    alt: true, metadata: true,
+    json: (object, username) => String(object.username || '').toLowerCase() === username
+      ? [object.profile_pic_url_hd, object.hd_profile_pic_url_info, object.hd_profile_pic_versions, object.profile_pic_url] : null,
+  });
+}
+
+module.exports = { name: 'instagram', matches, overlays, followerCount, profilePicture };

@@ -1,4 +1,5 @@
 'use strict';
+const { profilePictures } = require('../metrics/profile-pictures');
 
 const { parseCount, elementCount, labeledCount, jsonObjects } = require('../metrics/followers');
 
@@ -143,4 +144,17 @@ function followerCountFromRaw(document, rawUrl, renderedUrl) {
   return followerCount(document, rawUrl);
 }
 
-module.exports = { name: 'linkedin', matches, overlays, followerCount, followerCountFromRaw };
+function profilePicture(document, url) {
+  return profilePictures(document, url, {
+    matches,
+    pattern: /^\/((?:in|company|school|showcase)\/[^/]+)(?:\/(?:about|life|people|posts|recent-activity))?\/?$/,
+    selectors: '.top-card-layout__entity-image, .pv-top-card-profile-picture__image, .org-top-card-primary-content__logo',
+    json: (object, profile) => {
+      if (profileKey(object.url || object['@id'], url) !== `/${profile}`) return null;
+      if (![object['@type']].flat().some(type => ['Person', 'Organization', 'Corporation', 'EducationalOrganization', 'CollegeOrUniversity'].includes(type))) return null;
+      return [object.image, object.logo];
+    },
+  });
+}
+
+module.exports = { name: 'linkedin', matches, overlays, followerCount, followerCountFromRaw, profilePicture };

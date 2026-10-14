@@ -1,4 +1,5 @@
 'use strict';
+const { profilePictures } = require('../metrics/profile-pictures');
 
 const { parseCount, elementCount, jsonObjects, profileName } = require('../metrics/followers');
 
@@ -91,4 +92,12 @@ function followerCount(document, url) {
   return elementCount(document.querySelector('[data-e2e="followers-count"]'));
 }
 
-module.exports = { name: 'tiktok', matches, overlays, followerCount };
+function profilePicture(document, url) {
+  return profilePictures(document, url, {
+    pattern: /^\/@([^/]+)\/?$/, selectors: '[data-e2e="user-avatar"] img', metadata: true,
+    json: (object, username) => String(object.uniqueId || '').toLowerCase() === username
+      ? [object.avatarLarger, object.avatarMedium, object.avatarThumb] : null,
+  });
+}
+
+module.exports = { name: 'tiktok', matches, overlays, followerCount, profilePicture };

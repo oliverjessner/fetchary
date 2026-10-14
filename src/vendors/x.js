@@ -1,6 +1,7 @@
 'use strict';
 
 const { linkCount, profileName } = require('../metrics/followers');
+const { profilePictures } = require('../metrics/profile-pictures');
 
 const COOKIE_CONSENT = 'x-cookie-consent';
 const LOGIN_DIALOG = 'x-login-dialog';
@@ -69,4 +70,19 @@ function followerCount(document, url) {
   return linkCount(document, url, target => [`/${username}/followers`, `/${username}/verified_followers`].includes(target.pathname.replace(/\/$/, '').toLowerCase()));
 }
 
-module.exports = { name: 'x', matches, prepare, overlays, followerCount };
+function profilePicture(document, url) {
+  return profilePictures(document, url, {
+    pattern: /^\/([\w]+)\/?$/,
+    reserved: ['home', 'explore', 'search', 'notifications', 'messages', 'i', 'login', 'signup', 'settings', 'intent', 'tos', 'privacy'],
+    selectors: '[data-testid^="UserAvatar-Container-"] img, a[href$="/photo"] img',
+    acceptImage: (image, username, pageUrl) => {
+      const href = image.closest('a[href]')?.getAttribute('href');
+      if (!href) return false;
+      try { return new URL(href, pageUrl).pathname.toLowerCase().replace(/\/$/, '') === `/${username}/photo`; } catch { return false; }
+    },
+    json: (object, username) => String(object.screen_name || '').toLowerCase() === username
+      ? [object.profile_image_url_https, object.profile_image_url] : null,
+  });
+}
+
+module.exports = { name: 'x', matches, prepare, overlays, followerCount, profilePicture };

@@ -17,6 +17,51 @@ export type FetcharyOptions = {
 
 export type CaptureMode = 'browser' | 'http';
 
+/** Standalone extraction never initializes Fetchary storage. */
+export type ExtractionOptions = {
+  mode?: CaptureMode;
+  waitAfterLoad?: string | number;
+  timeout?: number;
+  userAgent?: string;
+  fetch?: typeof globalThis.fetch;
+};
+
+export type ExtractOptions = ExtractionOptions & {
+  format?: 'html' | 'text';
+  includeSelectors?: string[];
+  ignoreSelectors?: string[];
+};
+
+export type ExtractionMetadata = {
+  requestedUrl: string;
+  finalUrl: string;
+  rawFinalUrl: string;
+  capturedAt: string;
+  status: number;
+  contentType: string | null;
+  captureMode: CaptureMode;
+  dismissedOverlays: string[];
+};
+
+export type ExtractResult = ExtractionMetadata & {
+  format: 'html' | 'text';
+  content: string;
+};
+
+export type ExtractedImage = {
+  url: string;
+  width: number | null;
+  height: number | null;
+  scalable: boolean;
+  /** Dimensions or SVG scalability were read from the image bytes. */
+  resolutionVerified: boolean;
+  contentType: string | null;
+  source: string;
+};
+
+export type FaviconResult = ExtractionMetadata & { image: ExtractedImage };
+export type ProfilePictureResult = FaviconResult & { vendor: string };
+
 export type Vendor = {
   name: string;
   active: boolean;
@@ -167,6 +212,9 @@ export declare class Fetchary extends EventEmitter {
 }
 
 export declare function createFetchary(options?: FetcharyOptions): Promise<Fetchary>;
+export declare function extract(url: string, options?: ExtractOptions): Promise<ExtractResult>;
+export declare function extractFavicon(url: string, options?: ExtractionOptions): Promise<FaviconResult>;
+export declare function extractProfilePicture(url: string, options?: ExtractionOptions): Promise<ProfilePictureResult>;
 export declare function parseInterval(every: string): { every: string; intervalSeconds: number };
 
 export declare class FetcharyError extends Error {}

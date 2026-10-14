@@ -1,6 +1,7 @@
 'use strict';
 
 const { parseCount, descriptionCount, jsonObjects, profileName } = require('../metrics/followers');
+const { profilePictures } = require('../metrics/profile-pictures');
 
 const COOKIE_CONSENT = 'threads-cookie-consent';
 
@@ -44,4 +45,12 @@ function followerCount(document, url) {
   return descriptionCount(document);
 }
 
-module.exports = { name: 'threads', matches, overlays, followerCount };
+function profilePicture(document, url) {
+  return profilePictures(document, url, {
+    pattern: /^\/@([^/]+)\/?$/, alt: true, metadata: true,
+    json: (object, username) => String(object.username || '').toLowerCase() === username
+      ? [object.profile_pic_url_hd, object.hd_profile_pic_url_info, object.profile_pic_url] : null,
+  });
+}
+
+module.exports = { name: 'threads', matches, overlays, followerCount, profilePicture };

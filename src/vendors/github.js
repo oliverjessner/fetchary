@@ -1,6 +1,7 @@
 'use strict';
 
 const { linkCount, profileName } = require('../metrics/followers');
+const { profilePictures } = require('../metrics/profile-pictures');
 
 function matches(url) {
   try {
@@ -17,4 +18,13 @@ function followerCount(document, url) {
   return linkCount(document, url, target => target.pathname.replace(/\/$/, '').toLowerCase() === `/${username}` && target.searchParams.get('tab') === 'followers');
 }
 
-module.exports = { name: 'github', matches, overlays: [], followerCount };
+function profilePicture(document, url) {
+  return profilePictures(document, url, {
+    pattern: /^\/([\w-]+)\/?$/,
+    reserved: ['login', 'signup', 'explore', 'settings', 'features', 'marketplace', 'pricing', 'orgs', 'organizations', 'topics', 'collections', 'trending', 'about'],
+    selectors: '.h-card img.avatar-user, .js-profile-editable-area img.avatar-user, img.avatar-user[itemprop="image"]',
+    json: (object, username) => String(object.login || '').toLowerCase() === username ? object.avatar_url : null,
+  });
+}
+
+module.exports = { name: 'github', matches, overlays: [], followerCount, profilePicture };

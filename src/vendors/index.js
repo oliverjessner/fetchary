@@ -19,6 +19,7 @@ function discoverVendors(directory = __dirname) {
         typeof vendor.matches !== 'function' || !Array.isArray(vendor.overlays) ||
         (vendor.prepare !== undefined && typeof vendor.prepare !== 'function') ||
         (vendor.followerCount !== undefined && typeof vendor.followerCount !== 'function') ||
+        (vendor.profilePicture !== undefined && typeof vendor.profilePicture !== 'function') ||
         (vendor.followerCountFromRaw !== undefined && typeof vendor.followerCountFromRaw !== 'function')) {
       throw new FetcharyValidationError(`invalid vendor module "${file}"`);
     }

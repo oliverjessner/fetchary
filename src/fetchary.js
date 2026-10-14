@@ -929,4 +929,4 @@ class Fetchary extends EventEmitter {
   }
 }
 
-module.exports = { Fetchary, validateId, validateUrl, validateCaptureMode, parseWaitAfterLoad };
+module.exports = { Fetchary, validateId, validateUrl, validateCaptureMode, parseWaitAfterLoad, validateSelectors };

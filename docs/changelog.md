@@ -1,3 +1,22 @@
+# 1.3.0
+
+- `extract <url>` prints current HTML or text without opening SQLite or creating an archive, with browser/HTTP modes and include/ignore selectors
+- `favicon <url>` finds the highest-resolution accessible icon from page links, Apple touch icons, manifest icons, and `/favicon.ico`, checking image dimensions and scalable SVGs
+- `profile-picture <url>` extracts public profile image URLs for GitHub, Instagram, Threads, X, TikTok, Twitch, LinkedIn, and YouTube through account-specific vendor hooks
+- standalone `extract`, `extractFavicon`, and `extractProfilePicture` library exports with TypeScript results, JSON CLI output, and bounded in-memory image requests
+
+get a favicon
+
+```bash
+fetchary favicon https://oliverjessner.at
+```
+
+get a profile picture
+
+```bash
+fetchary profile-picture https://www.instagram.com/instagram/
+```
+
 # 1.2.0
 
 - `open --show-social-media` checks archived external links for Facebook, X, YouTube, Instagram, Vimeo, TikTok, Reddit, and LinkedIn, with per-platform presence, unique URLs, and JSON output

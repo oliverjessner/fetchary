@@ -1,4 +1,5 @@
 'use strict';
+const { profilePictures } = require('../metrics/profile-pictures');
 
 const { parseCount, elementCount, labeledCount, jsonObjects, profileName } = require('../metrics/followers');
 
@@ -79,4 +80,13 @@ function followerCount(document, url) {
   return null;
 }
 
-module.exports = { name: 'twitch', matches, overlays, followerCount };
+function profilePicture(document, url) {
+  return profilePictures(document, url, {
+    pattern: /^\/([\w]+)(?:\/about)?\/?$/,
+    reserved: ['directory', 'downloads', 'settings', 'login', 'signup', 'videos', 'search'],
+    selectors: '[data-a-target="channel-header"] img.tw-image-avatar, img[data-a-target="profile-image"]',
+    json: (object, username) => String(object.login || '').toLowerCase() === username ? object.profileImageURL : null,
+  });
+}
+
+module.exports = { name: 'twitch', matches, overlays, followerCount, profilePicture };

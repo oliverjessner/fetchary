@@ -155,6 +155,23 @@ Or compare two specific versions:
 fetchary diff 1 3 7
 ```
 
+### Extract something once
+
+Need the current page content without starting a monitor or keeping an archive?
+
+```bash
+fetchary extract https://example.com --text
+```
+
+You can also get a website's largest available icon or a public profile's image URL:
+
+```bash
+fetchary favicon https://github.com
+fetchary profile-picture https://github.com/oliverjessner --mode http
+```
+
+These commands print the result without adding a source or saving it locally.
+
 ### Open an old version
 
 Want to see what the page looked like before it changed?
@@ -241,8 +258,8 @@ For publishing a new version: [docs/PUBLISHING.md](docs/PUBLISHING.md)
 
 Fetchary isn't a crawler or a general browser automation framework.
 
-It doesn't try to crawl entire websites, log into accounts, click through applications, or run scraping workflows.
+It doesn't try to crawl entire websites, log into accounts, or click through applications.
 
-It does one thing:
+Use it to watch a page over time or extract what you need once.
 
 **Watch changes. Keep the proof.**

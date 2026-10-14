@@ -132,6 +132,135 @@ By default, fetchary uses the same local storage as the CLI:
 
 This means the CLI and library can work with the same sources and archived versions.
 
+## One-time extraction without storage
+
+Use the standalone exports when you only need the current content or an image
+URL. They do not require `createFetchary()`, open a database, register a source,
+write an archive, or emit monitoring events and hooks. Each call closes its own
+Chromium instance before it resolves or rejects.
+
+```js
+import { extract, extractFavicon, extractProfilePicture } from 'fetchary';
+
+const page = await extract('https://example.com', {
+    format: 'text',
+    includeSelectors: ['main'],
+    ignoreSelectors: ['time'],
+});
+console.log(page.content);
+
+const favicon = await extractFavicon('https://github.com');
+console.log(favicon.image.url, favicon.image.width);
+
+const profile = await extractProfilePicture('https://github.com/oliverjessner', {
+    mode: 'http',
+});
+console.log(profile.vendor, profile.image.url);
+```
+
+### `extract(url, options?)`
+
+Returns `Promise<ExtractResult>`. Browser mode is the default. `content` contains
+the rendered HTML, or the HTTP body decoded as UTF-8 in HTTP mode. HTML can be
+converted to text or filtered using the same include/ignore behavior as archived
+comparisons. Non-HTML content automatically skips Chromium and is returned as
+UTF-8 text without selector filtering or markup conversion.
+
+```ts
+type ExtractionOptions = {
+    mode?: 'browser' | 'http';
+    waitAfterLoad?: string | number; // Duration string or milliseconds; default 5000
+    timeout?: number;               // Positive milliseconds per request; default 30000
+    userAgent?: string;             // HTTP requests; default 'fetchary/0.1'
+    fetch?: typeof globalThis.fetch;
+};
+
+type ExtractOptions = ExtractionOptions & {
+    format?: 'html' | 'text';       // Default 'html'
+    includeSelectors?: string[];
+    ignoreSelectors?: string[];
+};
+
+type ExtractionMetadata = {
+    requestedUrl: string;
+    finalUrl: string;
+    rawFinalUrl: string;
+    capturedAt: string;
+    status: number;
+    contentType: string | null;
+    captureMode: 'browser' | 'http';
+    dismissedOverlays: string[];
+};
+
+type ExtractResult = ExtractionMetadata & {
+    format: 'html' | 'text';
+    content: string;
+};
+```
+
+`finalUrl` and `capturedAt` refer to the rendered capture when present; `status`
+and `contentType` refer to the original HTTP response. `fetch` injection applies
+to the HTTP page, manifests, and image requests. Chromium makes its own requests.
+The standalone functions use all built-in vendor helpers and do not load any
+persisted vendor activation flags. They have no `dataDir` option.
+
+### `extractFavicon(url, options?)`
+
+Returns `Promise<FaviconResult>`. HTTP mode is the default; use `mode: 'browser'`
+for dynamically inserted icons. It discovers icon and Apple touch links,
+manifest icons, and the final origin's `/favicon.ico`, resolves relative URLs,
+and checks accessible candidates in memory.
+
+PNG, JPEG, GIF, WebP, and ICO dimensions are read from image headers; the largest
+ICO entry is used. Verified SVG images are considered scalable and preferred.
+Raster images are ranked by pixel area, and measured dimensions override HTML
+`sizes`. Unsupported image formats may fall back to advertised sizes or unknown
+dimensions, with `resolutionVerified: false`. No URL size parameters are rewritten.
+
+Up to eight manifests (1 MiB each) and 64 unique images (16 MiB each, four
+concurrent requests) are checked. Broken resources and HTML error responses are
+skipped. Image bytes are not returned or saved, and header inspection does not
+guarantee that every image decodes successfully.
+
+```ts
+type ExtractedImage = {
+    url: string;
+    width: number | null;
+    height: number | null;
+    scalable: boolean;
+    resolutionVerified: boolean;
+    contentType: string | null;
+    source: string;
+};
+
+type FaviconResult = ExtractionMetadata & { image: ExtractedImage };
+```
+
+### `extractProfilePicture(url, options?)`
+
+Returns `Promise<ProfilePictureResult>`, which is `FaviconResult & { vendor: string }`.
+Browser mode is the default. Supported vendors are GitHub, Instagram, Threads,
+X/Twitter, TikTok, Twitch, LinkedIn, and YouTube. See the [CLI profile URL table](CLI.md#fetchary-profile-picture)
+for accepted profile paths and extraction sources.
+
+The vendor's optional `profilePicture(document, url)` hook returns
+`{ profile: string, candidates: Array<{ url: string, source: string, priority?: number, square?: boolean }> }`
+or `null` for a non-profile page. Account-matched JSON and profile header images
+take priority over metadata. Metadata fallback is limited to verified square
+images; larger preview cards are excluded. The largest candidate in the preferred
+group is selected using the favicon image checks.
+
+The same capture's public HTTP profile may be used when the browser reaches a
+same-platform login wall, but never when it reaches a different profile or an
+external site. Public access requirements still apply. No credentials or private
+API calls are used.
+
+Invalid URLs, modes, durations, formats, selectors, and unsupported profile
+platforms throw `FetcharyValidationError`. Page HTTP failures throw
+`FetcharyFetchError`, browser failures throw `FetcharyBrowserError`, and missing
+or inaccessible image candidates throw `FetcharyNotFoundError`. A failed image
+or manifest request is skipped when another candidate can be used.
+
 ## Creating an instance
 
 ```js

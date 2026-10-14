@@ -47,6 +47,153 @@ fetchary <command> [arguments] [options]
 
 ## Commands
 
+### One-time extraction
+
+These commands fetch a URL directly without registering a source, opening SQLite,
+writing an archive, or changing schedules and vendor settings. `--data-dir` and
+`FETCHARY_DATA_DIR` are ignored. Browser extraction uses the built-in vendor
+helpers; persisted vendor activation flags are not loaded.
+
+#### `fetchary extract`
+
+```bash
+fetchary extract <url> [--text] [--mode <browser|http>] [--wait-after-load <duration>] [--include-selector <css> ...] [--ignore-selector <css> ...] [--json]
+```
+
+Print the captured page content to stdout. Browser mode is the default, with
+the same `load` event and five-second post-load wait as `add`. `--mode http`
+returns the UTF-8-decoded HTTP response without Chromium. Non-HTML responses
+automatically use HTTP capture and are returned as UTF-8 text unchanged by
+selectors or `--text`; this command is not a binary downloader.
+
+```bash
+fetchary extract https://example.com --text
+fetchary extract https://example.com/news --include-selector main --ignore-selector time
+fetchary extract https://example.com/api/status --mode http
+```
+
+HTML is printed by default. `--text` strips markup, scripts, styles, and comments
+using Fetchary's existing text conversion. Include and ignore selectors have the
+same first-match, page-order, and overlap behavior as comparison selectors.
+Unmatched include selectors return empty content. Plain output contains exactly
+the extracted string, without a status message or an added newline.
+
+With `--json`, stdout contains one object:
+
+```ts
+{
+  requestedUrl: string;
+  finalUrl: string;       // Browser final URL when rendered, HTTP final URL otherwise
+  rawFinalUrl: string;
+  capturedAt: string;    // ISO timestamp for the chosen capture
+  status: number;        // HTTP response status
+  contentType: string | null;
+  captureMode: 'browser' | 'http';
+  dismissedOverlays: string[];
+  format: 'html' | 'text';
+  content: string;
+}
+```
+
+#### `fetchary favicon`
+
+```bash
+fetchary favicon <url> [--mode <http|browser>] [--wait-after-load <duration>] [--json]
+```
+
+Print the URL of the highest-resolution accessible icon found on the page.
+HTTP mode is the default. Use `--mode browser` for icons inserted by JavaScript.
+
+```bash
+fetchary favicon https://github.com
+fetchary favicon https://example.com --mode browser --json
+```
+
+Candidates include HTML `rel="icon"` links (including `shortcut icon`),
+Apple touch icons, Web App Manifest icons, and `/favicon.ico` on the final
+page's origin. Relative links use the document's first base URL when it is valid HTTP(S);
+manifest icon URLs use the manifest's final URL after redirects. Only HTTP(S)
+image URLs are requested; inline data URLs are excluded.
+
+Fetchary reads image headers for PNG, JPEG, GIF, WebP, and ICO dimensions. For
+ICO, the largest embedded size is used. SVG is considered scalable and preferred
+over raster images. Raster candidates are ranked by pixel area, with discovery
+order breaking ties. Measured dimensions override declared `sizes`, so a
+16-pixel icon claiming `512x512` does not outrank an actual 512-pixel image.
+Other image MIME types can use declared dimensions, or have unknown dimensions;
+`resolutionVerified` is false for those candidates. This is header inspection,
+not a full image decode or a quality measurement.
+
+Broken resources and HTML error pages are skipped. Up to eight manifests
+(1 MiB each) and 64 unique image URLs (16 MiB each, four concurrent requests)
+are checked. Each request has a 30-second timeout. No image file is saved.
+The result describes candidates exposed by this capture; it does not search
+unlinked assets or invent larger CDN URLs.
+
+#### `fetchary profile-picture`
+
+```bash
+fetchary profile-picture <url> [--mode <browser|http>] [--wait-after-load <duration>] [--json]
+```
+
+Print a public profile's image URL. Browser mode and a five-second post-load wait
+are the defaults. `--mode http` can read avatars already exposed in server HTML.
+
+```bash
+fetchary profile-picture https://github.com/oliverjessner --mode http
+fetchary profile-picture https://www.instagram.com/instagram/ --json
+```
+
+Supported profile pages:
+
+| Vendor | Profile URL paths | Avatar sources |
+| --- | --- | --- |
+| GitHub | `/<username>` | Profile avatar elements, matching account JSON |
+| Instagram | `/<username>` | Matching profile JSON, named profile images, square metadata fallback |
+| Threads | `/@<username>` | Matching profile JSON, named profile images, square metadata fallback |
+| X / Twitter | `/<username>` | Profile photo links, matching account JSON |
+| TikTok | `/@<username>` | Matching account JSON, profile avatar, square metadata fallback |
+| Twitch | `/<username>`, `/<username>/about` | Matching account JSON, channel profile avatar |
+| LinkedIn | `/in/`, `/company/`, `/school/`, `/showcase/` profiles and their supported tabs | Profile header images, matching Person/Organization JSON |
+| YouTube | `/@<handle>`, `/channel/<id>`, `/c/<name>`, `/user/<name>` and channel tabs | Channel header avatars, embedded header JSON, square metadata fallback |
+
+Profile-specific DOM and account JSON take priority over metadata. Within that
+group the highest available image resolution is selected using the same checks
+as `favicon`. Recommendations, non-profile pages, and rectangular preview cards
+are excluded. A public profile from this capture's HTTP response can supply the
+avatar when the browser reaches a same-platform login wall. A different rendered
+profile or an external redirect does not use that raw fallback. Existing login
+and access requirements still apply; no authentication is performed.
+
+Both image commands print a plain URL followed by a newline. With `--json`,
+they return the extraction metadata above (without `format` or `content`) plus:
+
+```ts
+{
+  vendor?: string;       // Present only for profile-picture
+  image: {
+    url: string;        // Final image URL after redirects
+    width: number | null;
+    height: number | null;
+    scalable: boolean;
+    resolutionVerified: boolean;
+    contentType: string | null;
+    source: string;     // e.g. icon, manifest, fallback, profile-json, profile-image
+  };
+}
+```
+
+All three commands support `--json`, `--quiet`, `--verbose`, and `--no-color`.
+`--quiet` suppresses successful output while errors remain on stderr. `--verbose`
+reports that storage is disabled. Archiving and scheduling options such as
+`--every`, `--output`, or `--name` are rejected. They exit with 0 on success,
+2 for invalid arguments or unsupported profile platforms, 3 for a failed page
+HTTP request, and 1 when no accessible image is found or Chromium fails.
+JSON errors use the usual `{ "error": "...", "message": "..." }` shape on stderr.
+
+Icon discovery follows the [HTML icon link convention](https://html.spec.whatwg.org/multipage/links.html#rel-icon)
+and [Web App Manifest icons](https://www.w3.org/TR/appmanifest/#icons-member).
+
 ### `fetchary add`
 
 Add a URL to fetchary.

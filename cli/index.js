@@ -10,6 +10,9 @@ const pkg = require('../package.json');
 const { comparisonHash, comparisonHtml, comparisonText } = require('../src/diff');
 const {
   createFetchary,
+  extract,
+  extractFavicon,
+  extractProfilePicture,
   FetcharyFetchError,
   FetcharyValidationError,
   FetcharyIntervalError,
@@ -28,6 +31,9 @@ const HELP = `Fetchary 👁️ — ${pkg.version}
 Usage: fetchary <command> [arguments] [options]
 
 Commands:
+  extract <url>               Print page content without storing it
+  favicon <url>               Print the highest-resolution accessible icon URL
+  profile-picture <url>       Print a public social profile's image URL
   add <url>                   Add and immediately capture a URL
   list                        List monitored sources
   follower [id]               Show a follower count or list all counts with a sum
@@ -65,9 +71,11 @@ Comparison options for add and edit:
   --ignore-selector <css>     Ignore matching elements (repeatable)
   --clear-ignore-selectors    Remove all ignored selectors when editing
 
-Capture options for add and edit:
+Capture options for add, edit, and extraction:
   --mode <browser|http>       Capture rendered HTML or HTTP only (default: browser)
   --wait-after-load <time>    Browser wait after load, for example 500ms or 5s
+  --text                      Print text instead of HTML (extract only)
+                             favicon defaults to HTTP mode
 
 Diff and open options:
   --include-selector <css>     Filter diff to first match per selector (repeatable; diff only)
@@ -87,6 +95,11 @@ Follower list options:
 `;
 
 const EXAMPLES = `Fetchary examples
+
+Extract without creating an archive:
+  fetchary extract https://example.com --text
+  fetchary favicon https://example.com
+  fetchary profile-picture https://www.instagram.com/instagram/
 
 Add a page and check it every 15 minutes:
   fetchary add https://example.com/news --name "Example News" --tag news --every 15m
@@ -131,6 +144,9 @@ Manage site integrations:
 `;
 
 const COMMAND_GUIDANCE = Object.freeze({
+  extract: { usage: 'fetchary extract <url> [--text] [--mode <browser|http>] [--wait-after-load <duration>] [--include-selector <css> ...] [--ignore-selector <css> ...] [--json]', example: 'fetchary extract https://example.com --text' },
+  favicon: { usage: 'fetchary favicon <url> [--mode <http|browser>] [--wait-after-load <duration>] [--json]', example: 'fetchary favicon https://example.com' },
+  'profile-picture': { usage: 'fetchary profile-picture <url> [--mode <browser|http>] [--wait-after-load <duration>] [--json]', example: 'fetchary profile-picture https://www.instagram.com/instagram/' },
   add: { usage: 'fetchary add <url> [--name <name>] [--tag <tag>] [--every <interval>] [--mode <browser|http>] [--wait-after-load <duration>] [--include-selector <css> ...] [--ignore-selector <css> ...]', example: 'fetchary add https://github.com/owner/repo --mode browser --ignore-selector "relative-time"' },
   list: { usage: 'fetchary list [--tag <tag>] [--json]', example: 'fetchary list --tag research' },
   follower: { usage: 'fetchary follower [id] [--tag <tag>] [--json]', example: 'fetchary follower 3' },
@@ -154,7 +170,8 @@ const COMMAND_GUIDANCE = Object.freeze({
 
 const VALUE_OPTIONS = new Set(['name', 'tag', 'url', 'output', 'data-dir', 'poll-interval', 'every', 'mode', 'wait-after-load']);
 const REPEATABLE_VALUE_OPTIONS = new Set(['ignore-selector', 'include-selector']);
-const FLAG_OPTIONS = new Set(['json', 'quiet', 'verbose', 'no-color', 'help', 'example', 'version', 'purge', 'raw', 'element-content', 'element-raw', 'html', 'now', 'clear-ignore-selectors', 'clear-include-selectors', 'show-include-selector', 'show-external', 'show-social-media', 'content-change']);
+const FLAG_OPTIONS = new Set(['json', 'quiet', 'verbose', 'no-color', 'help', 'example', 'version', 'purge', 'raw', 'element-content', 'element-raw', 'html', 'text', 'now', 'clear-ignore-selectors', 'clear-include-selectors', 'show-include-selector', 'show-external', 'show-social-media', 'content-change']);
+const EXTRACTION_COMMANDS = new Set(['extract', 'favicon', 'profile-picture']);
 const SOCIAL_MEDIA_PLATFORMS = Object.freeze([
   { platform: 'facebook', domains: ['facebook.com'] },
   { platform: 'x', domains: ['x.com', 'twitter.com'] },
@@ -477,8 +494,32 @@ async function execute(fetchary, parsed, write, format = {}) {
   if (options['content-change'] && command !== 'history') {
     throw usageError(command, '--content-change can only be used with history');
   }
+  if (options.text && command !== 'extract') throw usageError(command, '--text can only be used with extract');
 
   switch (command) {
+    case 'extract':
+    case 'favicon':
+    case 'profile-picture': {
+      requireArgs(args, command, 1);
+      const allowed = new Set(['json', 'quiet', 'verbose', 'no-color', 'data-dir', 'mode', 'wait-after-load']);
+      if (command === 'extract') for (const option of ['text', 'include-selector', 'ignore-selector']) allowed.add(option);
+      for (const option of Object.keys(options)) {
+        if (!allowed.has(option)) throw usageError(command, `--${option} cannot be used with ${command}`);
+      }
+      const settings = { mode: options.mode, waitAfterLoad: options['wait-after-load'] };
+      let result;
+      if (command === 'extract') {
+        result = await extract(args[0], {
+          ...settings, format: options.text ? 'text' : 'html',
+          includeSelectors: options['include-selector'], ignoreSelectors: options['ignore-selector'],
+        });
+        emit(options.json ? `${JSON.stringify(result, null, 2)}\n` : result.content);
+      } else {
+        result = await (command === 'favicon' ? extractFavicon : extractProfilePicture)(args[0], settings);
+        emitValue(result, result.image.url);
+      }
+      return 0;
+    }
     case 'add': {
       requireArgs(args, command, 1);
       if (options['clear-ignore-selectors']) throw usageError(command, '--clear-ignore-selectors can only be used with edit');
@@ -890,8 +931,12 @@ async function main(argv = process.argv.slice(2), io = {}) {
 
   let fetchary;
   try {
-    fetchary = await createFetchary({ dataDir: parsed.options['data-dir'] || process.env.FETCHARY_DATA_DIR });
-    if (parsed.options.verbose && !parsed.options.quiet) stderr.write(`${colorize('Using', 'gray', errorColor)} ${colorize(fetchary.dataDir, 'cyan', errorColor)}\n`);
+    if (!EXTRACTION_COMMANDS.has(parsed.command)) {
+      fetchary = await createFetchary({ dataDir: parsed.options['data-dir'] || process.env.FETCHARY_DATA_DIR });
+    }
+    if (parsed.options.verbose && !parsed.options.quiet) {
+      stderr.write(fetchary ? `${colorize('Using', 'gray', errorColor)} ${colorize(fetchary.dataDir, 'cyan', errorColor)}\n` : 'Extracting without storage\n');
+    }
     const hyperlinks = Boolean(stdoutHyperlinkSupport && !parsed.options['no-color']);
     return await execute(fetchary, parsed, value => stdout.write(value), {
       color,
