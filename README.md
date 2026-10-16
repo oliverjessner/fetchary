@@ -26,6 +26,20 @@ npm install fetchary
 
 ## Examples
 
+### Analyse a website
+
+Get a single report with a page's favicon, links, social profiles, contact details,
+images, documents, metadata, structured data, and public tracking integrations:
+
+```bash
+fetchary analyse https://oliverjessner.at
+```
+
+Add `--list` for the combined values, one per line, or save the full JSON report
+with `fetchary analyse https://oliverjessner.at > analysis.json`. The command
+inspects that page; it does not crawl the whole website. Missing results in one
+section leave the other sections available.
+
 ### Read a page
 
 Get readable text, or keep the HTML:

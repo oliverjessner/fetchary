@@ -1,5 +1,7 @@
 # Unreleased
 
+- Add `fetchary analyse <url>` and typed `analyse()`/client methods combining ten extractors in one JSON report, with preserved per-section metadata, partial error reporting and deduplicated list output. Share one document capture and at most one passive browser rendering per analysis, including uncached/abortable calls.
+
 - Add Tracker Intelligence with 13 modular provider detectors, typed library/dispatcher/client methods, JSON/list CLI output, scoped Matomo IDs, separate Plausible domains and redacted raw/rendered evidence. Reuse guarded capture/cache infrastructure with passive browser rendering that blocks all additional resources and tracking traffic.
 
 - Add `extract metadata` and `extract structured-data`, typed library exports and isolated-client methods. Extract page metadata with HTML/meta/Schema.org precedence, parse JSON-LD and nested Microdata with itemref support and diagnostics, preserve declared dates and missing values, and provide list/JSON output with bounded parsing and guarded capture reuse.

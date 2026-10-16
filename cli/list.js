@@ -34,6 +34,7 @@ function pageUrls(result, options) {
 
 function listItems(result, options = {}) {
   switch (result.type) {
+    case 'analyse': return [...new Set(Object.values(result.results).flatMap(section => section ? listItems(section) : []))];
     case 'text': case 'html': return pageUrls(result, options);
     case 'images': case 'social-links': return result.data.map(item => item.url);
     case 'links': case 'documents': return [...new Set(result.data.map(item => item.url))];

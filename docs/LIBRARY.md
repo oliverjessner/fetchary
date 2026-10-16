@@ -75,6 +75,76 @@ remains a compatibility path. `extractProfilePicture` aliases
 `extractSocialAvatar`. The earlier selector signature
 `extractSelector(url, selector, options?)` is also supported.
 
+### Website analysis
+
+`analyse(url, options?)` returns one report combining `favicon`, `links`,
+`social-links`, `emails`, `telephone`, `images`, `documents`, `structured-data`,
+`metadata`, and `tracker-intelligence`. `createExtractor().analyse()` uses the
+client's isolated cache. Named CommonJS and ESM exports are available.
+
+```js
+const { analyse, createExtractor } = require('fetchary');
+
+async function main() {
+    const report = await analyse('https://oliverjessner.at', { defaultCountry: 'AT' });
+    console.log(report.results.metadata?.data.title);
+    console.log(report.results.links?.data);
+    console.log(report.errors, report.summary);
+
+    const client = createExtractor({ cacheTtlMs: 120_000 });
+    await client.analyse('https://oliverjessner.at', { mode: 'http' });
+}
+main().catch(console.error);
+```
+
+```ts
+type AnalysisType = 'favicon' | 'links' | 'social-links' | 'emails' | 'telephone'
+    | 'images' | 'documents' | 'structured-data' | 'metadata' | 'tracker-intelligence';
+type AnalysisOptions = ExtractionOptions & { defaultCountry?: CountryCode };
+type AnalysisResults = {
+    [K in AnalysisType]: (K extends 'favicon' ? FaviconResult : ResultMap[K]) | null;
+};
+type AnalysisIssue = { error: string; message: string; status?: number; phase?: string };
+type AnalysisResult = ExtractionMetadata & {
+    type: 'analyse';
+    results: AnalysisResults;
+    errors: Partial<Record<AnalysisType, AnalysisIssue>>;
+    summary: { succeeded: number; failed: number };
+};
+```
+
+Every successful section contains the complete normal extraction result; favicon
+`data` is image metadata, never binary bytes. Failed sections are `null` with a
+serialized issue under the same name in `errors`. Missing matches are successful
+empty results. A missing favicon does not reject the report. Primary capture,
+validation and cancellation failures reject with the existing typed errors.
+The report's metadata describes the latest successful capture; each section
+retains its own capture metadata, including raw/rendered provenance. Result keys
+have the stable order shown above, regardless of completion order.
+
+Analysis accepts common capture options and the telephone `defaultCountry`.
+All ten extractors run without selection/filter flags. It is a separate aggregate
+API, rather than an `extract()` dispatcher type. It reads only the supplied page;
+linked documents and social profiles are not fetched. Favicon manifests and
+candidates are fetched and validated through the existing bounded transport.
+
+The analysis shares one primary HTTP capture and at most one browser rendering.
+This sharing also applies within a single analysis with `cacheTtlMs: 0`, an
+AbortSignal, or authenticated headers; it does not join separately cancelled
+analyses or retain their snapshots when caching is disabled. Client/global
+capture reuse, security checks and cache clearing otherwise behave normally.
+Auxiliary favicon checks are not cached with the page.
+
+`http` uses the HTTP snapshot throughout. `auto` preserves each extractor's
+existing fallback rules; sections already satisfied by raw HTML stay on HTTP,
+while those requiring rendering share a browser snapshot. `browser` renders
+once before running the extractors. All analysis rendering uses the passive
+tracker policy, which allows inline JavaScript but blocks external scripts and
+all additional browser resources/connections/navigation. This protects tracker
+inspection and can limit pages dependent on external bundles or fetched data.
+Standalone extractors retain their existing capture policies. The library does
+not store the report, crawl other pages, monitor the site or infer ownership.
+
 ### Common options
 
 | Option | Default | Meaning |
@@ -657,7 +727,7 @@ main().catch(console.error);
 ```
 
 `createExtractor(options?)` is synchronous and lightweight. It returns all
-extraction functions plus `clearCache()`, with an isolated cache and copied
+extraction functions and `analyse()` plus `clearCache()`, with an isolated cache and copied
 headers. Per-call options override defaults without mutating another client.
 Per-call headers replace default headers. `maxEntries` and `maxCacheBytes` are
 client-only non-negative safe integers; zero retains no completed entries.

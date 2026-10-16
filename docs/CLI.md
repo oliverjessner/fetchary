@@ -9,10 +9,79 @@ It writes extracted results to stdout
 fetchary --version
 fetchary --help
 fetchary extract <type> <url> [options]
+fetchary analyse <url> [options]
 ```
 
 Running without arguments or with `--help` prints help and exits successfully.
 `--version` prints the package version. Help can also follow a command.
+
+## Website analysis
+
+```bash
+fetchary analyse https://oliverjessner.at
+fetchary analyse https://oliverjessner.at --json
+fetchary analyse https://oliverjessner.at --list
+fetchary analyse https://oliverjessner.at --mode browser --wait-after-load 500ms
+fetchary analyse https://oliverjessner.at --default-country AT > analysis.json
+```
+
+`analyse` combines these extractors, in this order: `favicon`, `links`,
+`social-links`, `emails`, `telephone`, `images`, `documents`, `structured-data`,
+`metadata`, `tracker-intelligence`. It inspects one supplied page without crawling
+its links, downloading linked documents or collecting social profile metrics.
+
+The default output is a complete JSON report, identical to `--json`:
+
+```js
+{
+    // Common capture metadata: requestedUrl, finalUrl, status, timestamps, cache, ...
+    type: 'analyse',
+    results: {
+        favicon: { type: 'favicon', data: { /* image metadata */ }, /* capture metadata */ },
+        links: { type: 'links', data: [/* link occurrences */], /* capture metadata */ },
+        // The other eight named extraction results follow in the order above.
+    },
+    errors: {},
+    summary: { succeeded: 10, failed: 0 },
+}
+```
+
+Each successful section keeps the complete standalone result and its original
+schema, including metadata and convenience aliases. A failed section is `null`
+and `errors[section]` contains `{ error, message, status?, phase? }`.
+`summary` counts successful and failed extractors, not individual findings.
+Empty lists count as successful results. A missing favicon therefore gives nine
+successful sections and one failure, with a valid report and exit code 0.
+Failure of the primary capture, invalid input, or cancellation fails the command
+using the regular error/exit-code contract. `--quiet` suppresses success output;
+`--verbose` sends diagnostics to stderr.
+
+`--list` and its alias `--urls-only` combine each successful section's normal
+list output and remove exact duplicate lines in first-occurrence order. Values
+can include URLs, contacts, metadata strings, compact structured-data JSON and
+tracker identifiers. Failed sections contribute no lines. `--json` overrides
+both list flags; use the full report to inspect section errors.
+
+Common capture/safety flags and `--default-country` apply. Individual extractor
+filters (`--platform`, `--source`, selectors, `--binary`, social metric flags,
+and other operation-specific flags) are rejected so all sections stay included.
+Library cache TTL and AbortSignal options are documented in the
+[analysis API](LIBRARY.md#website-analysis).
+
+One analysis shares its primary HTTP capture and at most one browser rendering
+across sections, including when cache reuse is disabled. Favicons still require
+the usual bounded manifest/icon requests. `http` never renders; `auto` retains
+each extractor's fallback rules, so sections may use different raw/rendered
+snapshots. Each result's `captureMode` and timestamps identify its source; the
+report's common metadata describes the latest successful capture. Explicit
+`browser` uses the rendered snapshot for all sections and retains original HTML
+for raw-aware extractors such as Tracker Intelligence.
+
+Analysis rendering uses the existing passive tracker policy: inline JavaScript
+can change the DOM, but external scripts, pixels, frames and other browser
+requests are blocked. Sites requiring external bundles or fetched configuration
+may therefore have incomplete results. Ordinary standalone extractors keep
+their existing rendering behavior. Nothing is persisted by Fetchary.
 
 ## Extraction types
 
@@ -499,7 +568,7 @@ directories are neither read nor deleted.
 
 | Code | Meaning                                                                            |
 | ---- | ---------------------------------------------------------------------------------- |
-| 0    | Successful extraction, including empty matches and explicit insight unavailability |
+| 0    | Successful extraction or analysis report, including empty matches, section failures and explicit insight unavailability |
 | 1    | Unexpected error                                                                   |
 | 2    | Invalid input, unsupported options, unsafe URL, or unsupported avatar platform     |
 | 3    | HTTP, DNS, timeout, or cancellation failure                                        |

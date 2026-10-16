@@ -2,6 +2,7 @@
 
 const { parseHTML } = require('linkedom');
 const { CaptureManager, shouldRender, sharedCaptureCache } = require('../capture');
+const { createCaptureSession } = require('../capture/session');
 const { createCaptureCache, validateCacheTtl } = require('../capture/cache');
 const { validateUrl } = require('../utils/url');
 const { parseWaitAfterLoad, validateSelectors } = require('../utils/options');
@@ -21,6 +22,7 @@ const { structuredData } = require('./structured-data');
 const { trackerIntelligence } = require('./tracker-intelligence');
 
 const clientCache = Symbol('captureCache');
+const analysisSession = Symbol('analysisSession');
 const types = ['text','html','favicon','images','avatar','selector','social-links','social-insights','emails','telephone','links','documents','metadata','structured-data','tracker-intelligence'];
 
 function extractionOptions(options = {}) {
@@ -87,7 +89,8 @@ async function withCapture(url, options, type, operation) {
   settings.passiveTrackerCapture = type === 'tracker-intelligence';
   settings.headerOrigin = new URL(requestedUrl).origin;
   settings.scopedHeaderNames = Object.keys(settings.headers || {}).filter(name => name !== 'user-agent');
-  const capture = new CaptureManager(settings);
+  const session = options[analysisSession];
+  const capture = session || new CaptureManager(settings);
   let page;
   try {
     const source = { url: requestedUrl, captureMode: settings.mode === 'browser' ? 'browser' : 'http', waitAfterLoadMs: settings.waitAfterLoadMs };
@@ -105,7 +108,45 @@ async function withCapture(url, options, type, operation) {
   } catch (error) {
     if (settings.signal?.aborted) throw new FetcharyFetchError('extraction aborted', { url: requestedUrl, cause: settings.signal.reason });
     throw error;
-  } finally { await capture.close(); }
+  } finally { if (!session) await capture.close(); }
+}
+
+async function analyse(url, options = {}) {
+  const requestedUrl = validateUrl(url);
+  const settings = extractionOptions(options);
+  contacts.validateDefaultCountry(options.defaultCountry);
+  if (options.binary) throw new FetcharyValidationError('binary is not supported for analyse');
+  for (const name of ['selector','all','attribute','format','platform','unique','includeMetadata','sources','includeSelectors','ignoreSelectors']) {
+    if (Object.hasOwn(options, name)) throw new FetcharyValidationError(`${name} is not supported for analyse`);
+  }
+  settings.headerOrigin = new URL(requestedUrl).origin;
+  settings.scopedHeaderNames = Object.keys(settings.headers || {}).filter(name => name !== 'user-agent');
+  const session = createCaptureSession(requestedUrl, settings);
+  const methods = { favicon: extractFavicon, links: extractLinks, 'social-links': extractSocialLinks,
+    emails: extractEmails, telephone: extractTelephone, images: extractImages, documents: extractDocuments,
+    'structured-data': extractStructuredData, metadata: extractMetadata, 'tracker-intelligence': extractTrackerIntelligence };
+  try {
+    // Fail once for a failed primary capture; retain section-specific failures.
+    await session.capture({ captureMode: settings.mode === 'browser' ? 'browser' : 'http' });
+    const entries = Object.entries(methods);
+    const settled = await Promise.allSettled(entries.map(([, method]) => method(requestedUrl, { ...options, binary: false, [analysisSession]: session })));
+    if (settings.signal?.aborted) throw new FetcharyFetchError('analysis aborted', { url: requestedUrl, cause: settings.signal.reason });
+    const results = {}; const errors = {};
+    for (let index = 0; index < entries.length; index++) {
+      const [type] = entries[index]; const outcome = settled[index];
+      results[type] = outcome.status === 'fulfilled' ? outcome.value : null;
+      if (outcome.status === 'rejected') {
+        const error = outcome.reason;
+        errors[type] = { error: error.name || 'Error', message: error.message || String(error),
+          ...(error.status === undefined ? {} : { status: error.status }), ...(error.phase === undefined ? {} : { phase: error.phase }) };
+      }
+    }
+    const failed = Object.keys(errors).length;
+    return { ...pageMetadata(session.page), type: 'analyse', results, errors, summary: { succeeded: entries.length - failed, failed } };
+  } catch (error) {
+    if (settings.signal?.aborted) throw new FetcharyFetchError('analysis aborted', { url: requestedUrl, cause: settings.signal.reason });
+    throw error;
+  } finally { await session.close(); }
 }
 
 function textOrHtml(url, options, type) {
@@ -344,11 +385,11 @@ function createExtractor(options = {}) {
   const cache = createCaptureCache({ maxEntries: options.maxEntries, maxCacheBytes: options.maxCacheBytes });
   const defaults = { ...options, headers: settings.headers };
   const client = { clearCache: () => cache.clear() };
-  for (const [name, method] of Object.entries({ extract, extractText, extractHtml, extractFavicon, extractImages, extractSocialLinks, extractSocialAvatar, extractProfilePicture, extractSocialInsights, extractEmails, extractTelephone, extractLinks, extractDocuments, extractMetadata, extractStructuredData, extractTrackerIntelligence })) client[name] = (url, overrides = {}) => method(url, { ...defaults, ...overrides, [clientCache]: cache });
+  for (const [name, method] of Object.entries({ analyse, extract, extractText, extractHtml, extractFavicon, extractImages, extractSocialLinks, extractSocialAvatar, extractProfilePicture, extractSocialInsights, extractEmails, extractTelephone, extractLinks, extractDocuments, extractMetadata, extractStructuredData, extractTrackerIntelligence })) client[name] = (url, overrides = {}) => method(url, { ...defaults, ...overrides, [clientCache]: cache });
   client.extractSelector = (url, selectorOrOptions = {}, overrides = {}) => typeof selectorOrOptions === 'string'
     ? extractSelector(url, { ...defaults, ...overrides, selector: selectorOrOptions, [clientCache]: cache })
     : extractSelector(url, { ...defaults, ...selectorOrOptions, [clientCache]: cache });
   return client;
 }
-module.exports = { extract, extractText, extractHtml, extractFavicon, extractImages, extractSelector, extractSocialLinks, extractEmails, extractTelephone, extractLinks, extractDocuments, extractMetadata, extractStructuredData, extractTrackerIntelligence,
+module.exports = { analyse, extract, extractText, extractHtml, extractFavicon, extractImages, extractSelector, extractSocialLinks, extractEmails, extractTelephone, extractLinks, extractDocuments, extractMetadata, extractStructuredData, extractTrackerIntelligence,
   extractSocialAvatar, extractProfilePicture, extractSocialInsights, createExtractor, clearCache };

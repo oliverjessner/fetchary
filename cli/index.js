@@ -7,6 +7,7 @@ const types = ['text','html','favicon','images','avatar','selector','social-link
 const HELP = `Fetchary ${pkg.version} — Extract what matters.
 
 Usage: fetchary extract <type> <url> [options]
+       fetchary analyse <url> [options]
 
 Types:
   text             Readable page text
@@ -56,6 +57,7 @@ Options:
   --version                      Show version
 
 Examples:
+  fetchary analyse https://oliverjessner.at
   fetchary extract text https://example.com
   fetchary extract links https://example.com
   fetchary extract documents https://example.com --list
@@ -115,11 +117,12 @@ async function main(argv = process.argv.slice(2), io = {}) {
     const command = args.shift();
     let type;
     if (command === 'extract') type = types.includes(args[0]) ? args.shift() : options.text ? 'text' : 'html';
+    else if (command === 'analyse') type = 'analyse';
     else if (command === 'favicon') type = 'favicon';
     else if (command === 'profile-picture') type = 'avatar';
     else invalid(`unknown command "${command}"; use "fetchary extract <type> <url>"`);
     if (args.length !== 1) invalid('exactly one URL is required');
-    for (const [key, allowed] of Object.entries({ binary:['favicon'], selector:['selector'], all:['selector'], attribute:['selector'], format:['selector'], platform:['social-links'], 'default-country':['telephone'], youtube:['social-links'], follower:['social-insights'], posts:['social-insights'], 'exclude-metadata':['images'], source:['images'], duplicates:['images'], 'include-selector':['text','html','emails','telephone','links','documents'], 'ignore-selector':['text','html','emails','telephone','links','documents'], text:['text','html'] })) {
+    for (const [key, allowed] of Object.entries({ binary:['favicon'], selector:['selector'], all:['selector'], attribute:['selector'], format:['selector'], platform:['social-links'], 'default-country':['telephone','analyse'], youtube:['social-links'], follower:['social-insights'], posts:['social-insights'], 'exclude-metadata':['images'], source:['images'], duplicates:['images'], 'include-selector':['text','html','emails','telephone','links','documents'], 'ignore-selector':['text','html','emails','telephone','links','documents'], text:['text','html'] })) {
       if (Object.hasOwn(options, key) && !allowed.includes(type)) invalid(`--${key} is not supported for ${type}`);
     }
     if (options.text && type !== 'text') invalid('--text conflicts with the selected extraction type');
@@ -135,8 +138,8 @@ async function main(argv = process.argv.slice(2), io = {}) {
     if (options['exclude-metadata']) settings.includeMetadata = false;
     if (options.duplicates) settings.unique = false;
     const captureOptions = list ? listCaptureOptions(settings) : settings;
-    if (options.verbose && !options.quiet) stderr.write(`Extracting ${type} (${settings.mode || 'auto'})\n`);
-    const result = await api.extract(args[0], captureOptions);
+    if (options.verbose && !options.quiet) stderr.write(`${type === 'analyse' ? 'Analysing website' : `Extracting ${type}`} (${settings.mode || 'auto'})\n`);
+    const result = type === 'analyse' ? await api.analyse(args[0], captureOptions) : await api.extract(args[0], captureOptions);
     if (options.quiet) return 0;
     if (options.follower || options.posts) {
       const selected = {};
@@ -148,7 +151,7 @@ async function main(argv = process.argv.slice(2), io = {}) {
     }
     else if (options.binary) stdout.write(result.data);
     else if (list) { const items = listItems(result, settings); if (items.length) stdout.write(`${items.join('\n')}\n`); }
-    else if (options.json || ['images','social-links','social-insights','emails','telephone','links','documents','metadata','structured-data','tracker-intelligence'].includes(type)) stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    else if (options.json || type === 'analyse' || ['images','social-links','social-insights','emails','telephone','links','documents','metadata','structured-data','tracker-intelligence'].includes(type)) stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     else if (type === 'favicon' || type === 'avatar') stdout.write(`${result.image.url}\n`);
     else stdout.write(result.content);
     return 0;

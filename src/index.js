@@ -1,6 +1,7 @@
 'use strict';
 const extraction = require('./extract');
 const errors = require('./errors');
+exports.analyse = extraction.analyse;
 exports.extract = extraction.extract;
 exports.extractText = extraction.extractText;
 exports.extractHtml = extraction.extractHtml;
