@@ -26,11 +26,49 @@ Running without arguments or with `--help` prints help and exits successfully.
 | `selector`        | `fetchary extract selector https://example.com --selector h1`       | Selected text      |
 | `social-links`    | `fetchary extract social-links https://example.com`                 | JSON result        |
 | `social-insights` | `fetchary extract social-insights https://www.youtube.com/@YouTube` | JSON result        |
+| `emails`          | `fetchary extract emails https://example.com/contact`              | JSON result        |
+| `telephone`       | `fetchary extract telephone https://example.com/contact`           | JSON result        |
 
 Text and HTML contain exactly the extracted string, with no extra newline or
 status message. Image URLs end with a newline. JSON results are objects with
 common metadata and a `data` field, followed by a newline. An empty URL-only list
 produces no output. Standard output is never colorized.
+
+### List output
+
+`--list` works with every extraction type and the compatibility aliases. It prints
+one URL or selected value per line, with a trailing newline, no headings, bullets,
+or metadata. An empty list prints nothing. `--urls-only` is an alias for `--list`.
+
+```bash
+fetchary extract social-links https://www.tiktok.com/@oliverjessner --platform tiktok --list
+fetchary extract images https://example.com --list
+fetchary extract html https://example.com --list
+fetchary extract selector https://example.com --selector a --attribute href --list
+```
+
+| Type | List contents |
+| --- | --- |
+| `text`, `html` | HTTP(S) hyperlinks from `a[href]` and `area[href]`; for non-HTML responses, whitespace-delimited HTTP(S) URLs |
+| `images` | Discovered image URLs, respecting source filters and `--duplicates` |
+| `favicon`, `avatar` | The selected image URL |
+| `selector` | All matching values, as if `--all` were supplied; missing/empty values are omitted and embedded line breaks become spaces |
+| `social-links` | Discovered social URLs, respecting `--platform`/`--youtube` |
+| `social-insights` | The inspected profile/post URL |
+| `emails` | Found email addresses |
+| `telephone` | Found phone numbers in international form, retaining extensions |
+
+Text/HTML link lists resolve relative URLs against the document base and final
+page URL, remove duplicates in discovery order, and ignore non-HTTP schemes and
+URLs containing credentials. Include/ignore selectors still apply. Selector
+attribute values retain their original form, including relative URLs.
+
+The flag formats results from the captured page; it does not scroll, paginate,
+or crawl every post on a profile. Use `--mode browser` when links require
+JavaScript rendering. `--json` takes precedence over either list flag and keeps
+the original structured result. `--quiet` suppresses successful list output;
+diagnostics/errors stay on stderr. `--binary` cannot be combined with either
+list flag (exit 2).
 
 ### Text and HTML
 
@@ -49,7 +87,46 @@ file downloader.
 `--include-selector` and `--ignore-selector` are repeatable. Includes select the
 first match per selector in page order; overlapping subtrees appear once. Ignores
 remove every matching element, including selected roots and ancestors. Missing
-include matches return empty content. These options apply to `text` and `html`.
+include matches return empty content. These options apply to `text`, `html`,
+`emails`, and `telephone`.
+
+### Emails and telephone
+
+```bash
+fetchary extract emails https://example.com/contact --list
+fetchary extract telephone https://example.com/contact --default-country AT --list
+fetchary extract emails https://example.com --include-selector main --json
+```
+
+Both types return a JSON result with `data: string[]` by default. `emails` also
+has `emails`; `telephone` has `numbers`. `--list` and its alias `--urls-only`
+print the addresses/numbers directly, one per line. No contacts is a successful
+empty array (or no output with `--list`). Includes and ignores filter the page
+before contact extraction.
+
+Emails are read from `mailto:` recipients (including `cc`/`bcc`), page text,
+microdata `email`, and JSON-LD `email` fields. Percent-encoded link recipients and
+HTML entities are decoded; query subjects/bodies are ignored. Common ASCII
+addresses, including plus tags and punycode domains, are supported. Domains are
+lowercased; duplicates are compared case-insensitively, preserving the first
+local-part spelling. Obfuscated addresses and quoted/Unicode local parts are not
+reconstructed. Script/style/comment/template text is ignored, apart from explicit
+JSON-LD contact fields. Non-HTML responses are scanned as decoded text.
+
+Telephone extraction reads `tel:` links, page text, microdata `telephone`, and
+JSON-LD `telephone` fields. Numbers must pass the bundled numbering-plan checks
+and are normalized to international `+` form; extensions use `;ext=42`. This
+checks number syntax, not ownership or reachability. Duplicates are removed after
+normalization. Emergency/short numbers are omitted. `--default-country <code>`
+accepts a supported uppercase two-letter country code such as `AT`, `DE`, or `US`
+and applies only to `telephone`. Without it, national numbers are not inferred.
+Leading `00` on a complete contact value is treated as an international prefix;
+in surrounding prose, international dialing prefixes follow the selected country's
+rules. Country is never inferred from the website hostname or page language.
+
+Contact links are inspected without following contact pages. HTTP-first capture,
+browser fallback for missing scripted contacts, cancellation, caching, and
+request limits apply as usual.
 
 ### Favicon and avatar
 
@@ -65,7 +142,8 @@ It also works with `fetchary favicon <url>`. The format is preserved (including
 SVG and ICO); there is no conversion to PNG. Use `--json` separately to inspect
 `image.contentType` and choose a suitable file extension. The top-level
 `contentType` describes the webpage. Binary output cannot be combined with
-`--json` or used with another extraction type (exit 2). `--quiet` suppresses
+`--json`, `--list`, or `--urls-only`, or used with another extraction type (exit 2).
+`--quiet` suppresses
 successful binary output; diagnostics and errors still use stderr.
 
 Favicon candidates include icon and Apple touch links, Web App Manifest icons,
@@ -127,13 +205,14 @@ attribute value, without resolving relative URLs; absent attributes are `null`
 in JSON and omitted from plain output. `--format` applies only to selector output.
 No matches succeeds with `data: { matched: false, values: [] }` in JSON and empty
 plain output. Invalid CSS is an argument error. Multiple plain values are joined
-with a newline, without an extra trailing newline.
+with a newline, without an extra trailing newline. `--list` selects all matches
+and prints one non-empty value per line, followed by a trailing newline.
 
 ### Social links
 
 ```bash
 fetchary extract social-links https://example.com --youtube
-fetchary extract social-links https://example.com --platform youtube --urls-only
+fetchary extract social-links https://example.com --platform youtube --list
 ```
 
 Discover supported social URLs in hyperlinks, `rel="me"` links, JSON-LD `sameAs`,
@@ -173,7 +252,9 @@ See [Social support](SOCIAL_SUPPORT.md) for implemented patterns and fixtures an
 
 | Option                         | Behavior                                                                       |
 | ------------------------------ | ------------------------------------------------------------------------------ |
-| `--json`                       | Full structured result for any extraction; takes precedence over `--urls-only` |
+| `--json`                       | Full structured result; takes precedence over `--list`/`--urls-only` |
+| `--list`                       | URLs/selected values, one per line, for every extraction type |
+| `--urls-only`                  | Alias for `--list` |
 | `--mode auto\|http\|browser`   | Default `auto`: HTTP first, optional browser fallback                          |
 | `--timeout <ms>`               | Positive milliseconds per request/phase; default 30000                         |
 | `--user-agent <text>`          | HTTP and browser user agent; default `fetchary/2.0`                            |

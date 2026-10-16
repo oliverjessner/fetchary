@@ -40,6 +40,12 @@ console.log(result.data);
 All extraction methods return promises. `extract(url, { type, ...options })`
 dispatches to exactly the same implementation as the explicit functions.
 
+The CLI's `--list`/`--urls-only` flags control terminal formatting; they are not
+library options. Library calls keep their structured results. For example,
+`(await extractSocialLinks(url)).data.map(link => link.url)` gives an array of
+found social URLs, and image results offer the same `.data.map(image => image.url)`
+pattern. Use `.join('\n')` when you want a newline-separated string.
+
 | Type | Function | `data` |
 | --- | --- | --- |
 | `text` | `extractText(url, options?)` | String |
@@ -50,6 +56,8 @@ dispatches to exactly the same implementation as the explicit functions.
 | `selector` | `extractSelector(url, { selector, ...options })` | Match state and values |
 | `social-links` | `extractSocialLinks(url, options?)` | Array of social links |
 | `social-insights` | `extractSocialInsights(url, options?)` | Normalized metrics and availability |
+| `emails` | `extractEmails(url, options?)` | Array of email strings |
+| `telephone` | `extractTelephone(url, options?)` | Array of international phone strings |
 
 Without `type`, `extract(url)` returns HTML. `extract(url, { format: 'text' })`
 remains a compatibility path. `extractProfilePicture` aliases
@@ -88,6 +96,35 @@ declared supported HTTP charsets and simple HTML meta charset declarations use
 `TextDecoder`, with UTF-8 fallback for unsupported labels.
 
 ### Operation-specific options
+
+`emails` and `telephone` accept `includeSelectors` and `ignoreSelectors` with the
+same selection rules as text/HTML. They inspect contact links, page text,
+microdata, and JSON-LD contact fields. `telephone` additionally accepts
+`defaultCountry`, a supported uppercase two-letter country code, for national
+numbers. Without it, country context is not guessed. Phone parsing uses
+[libphonenumber-js](https://github.com/catamphetamine/libphonenumber-js) with full
+numbering-plan metadata. Results use international `+` form, with `;ext=42` when
+an extension is present. Checks establish syntactic validity, not reachability.
+See the [CLI contact reference](CLI.md#emails-and-telephone) for recognition limits.
+
+```js
+const { extractEmails, extractTelephone } = require('fetchary');
+
+async function main() {
+    const url = 'https://example.com/contact';
+    const emails = await extractEmails(url);
+    const phones = await extractTelephone(url, { defaultCountry: 'AT' });
+    console.log(emails.data, phones.data);
+}
+main().catch(console.error);
+```
+
+Both functions are also available through `extract(url, { type: 'emails' })`,
+`extract(url, { type: 'telephone', defaultCountry: 'AT' })`, and isolated clients.
+Results are deduplicated arrays; empty results are successful. Explicit mail/tel
+links are scanned first, then microdata, JSON-LD, and page text. Domains are
+lowercased and email duplicates are compared case-insensitively, keeping the first
+local-part spelling. Contact targets are not requested and no files are saved.
 
 `text` and `html` accept `includeSelectors: string[]` and `ignoreSelectors: string[]`.
 Includes select the first match per selector, deduplicating overlapping trees in
@@ -159,7 +196,7 @@ type ExtractionMetadata = {
     capturedAt: string | null;
     extractedAt: string;
     type: 'text' | 'html' | 'favicon' | 'images' | 'avatar'
-        | 'selector' | 'social-links' | 'social-insights';
+        | 'selector' | 'social-links' | 'social-insights' | 'emails' | 'telephone';
     captureMode: 'http' | 'browser';
     status: number;
     contentType: string | null;
@@ -181,6 +218,9 @@ Operation data shapes:
 ```ts
 // text / html
 data: string;
+
+// emails / telephone
+data: string[];
 
 // favicon (binary omitted or false)
 data: {
@@ -233,7 +273,8 @@ data: {
 
 Compatibility fields remain: text/HTML have `content` and `format`; selectors
 also have joined `content` and `format`; image lists have `images`; social links
-have `links`; favicon/avatar have `image`; avatars also have `platform`, `profile`,
+have `links`; email results have `emails`; telephone results have `numbers`;
+favicon/avatar have `image`; avatars also have `platform`, `profile`,
 and `vendor`; insights have `vendor` and `followers` (falling back to YouTube
 subscribers). Prefer `data` for new integrations.
 

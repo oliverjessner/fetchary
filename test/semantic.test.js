@@ -12,8 +12,8 @@ const fixture = name => fs.readFileSync(path.join(__dirname, 'fixtures/social', 
 const url = 'https://page.example.test/';
 function options(html, extra = {}) { return { mode:'http', allowPrivateNetwork:true, fetch: async () => new Response(html, { headers: { 'content-type':'text/html' } }), ...extra }; }
 
-test('all eight dispatcher types use shared implementations and predictable result metadata', async () => {
-  for (const type of ['text','html','images','selector','social-links','social-insights']) {
+test('dispatcher types use shared implementations and predictable result metadata', async () => {
+  for (const type of ['text','html','images','selector','social-links','social-insights','emails','telephone']) {
     const settings = options('<h1>Hello &copy;</h1><img src="/a.png">', { type, selector:'h1' });
     const result = await api.extract(url, settings);
     assert.equal(result.type, type); assert.ok(Object.hasOwn(result, 'data'));

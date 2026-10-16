@@ -7,7 +7,7 @@
 > **Extract what matters.**
 
 Fetchary is a stateless web extraction toolkit for your terminal and Node.js apps.
-Ask for text, images, favicons, social links, or public social metrics without
+Ask for text, images, favicons, contact details, social links, or public social metrics without
 working out a different set of CSS selectors for every website.
 
 ## Install
@@ -42,7 +42,7 @@ or `--mode http` to read only the server response.
 ### Find images and icons
 
 ```bash
-fetchary extract images https://example.com --urls-only
+fetchary extract images https://example.com --list
 fetchary extract favicon https://github.com
 fetchary extract avatar https://github.com/oliverjessner
 ```
@@ -55,6 +55,18 @@ save it in its original format:
 ```bash
 fetchary extract favicon https://github.com --binary > favicon.bin
 ```
+
+### Find contact details
+
+Get email addresses and phone numbers from a contact page:
+
+```bash
+fetchary extract emails https://example.com/contact --list
+fetchary extract telephone https://example.com/contact --default-country AT --list
+```
+
+Use `--default-country` for national phone numbers. Numbers with an international
+country code work without it.
 
 ### Select an element
 
@@ -72,8 +84,13 @@ to read a link target.
 ```bash
 fetchary extract social-links https://example.com
 fetchary extract social-links https://example.com --youtube
+fetchary extract social-links https://www.tiktok.com/@oliverjessner --platform tiktok --list
 fetchary extract social-insights https://www.youtube.com/@YouTube
 ```
+
+Use `--list` to print found URLs one per line, ready to copy or pipe to another
+tool. It works with every extraction type; for selectors, it lists all matching
+values. It uses the loaded page and does not collect additional profile posts.
 
 Lists and social insights use JSON output by default. Add `--json` to other
 commands for structured results too. A missing metric stays `null`, with a reason;

@@ -1,5 +1,7 @@
 # Unreleased
 
+- Add `extract emails` and `extract telephone` with JSON and list output, plus typed `extractEmails()`/`extractTelephone()` library and client methods. Read contact links, page text, microdata and JSON-LD; deduplicate contacts, normalize phone numbers with libphonenumber-js, and support national numbers via `--default-country`/`defaultCountry`. Preserve scoped selectors, RAM-only captures, and guarded HTTP/browser behavior.
+- Add `--list` for every CLI extraction type and compatibility alias, printing found URLs or selector values one per line. Keep `--urls-only` as an alias, preserve JSON precedence, and reject binary/list conflicts. Text/HTML lists resolve safe page links; selector lists include all matches. List output does not crawl or paginate profiles.
 - Add optional favicon binary output: CLI `extract favicon <url> --binary` and `favicon <url> --binary` write original image bytes to stdout. Library `binary: true` returns a Buffer in `data` alongside image metadata, reusing the validated image response without another download.
 - Keep URL/JSON output as the default; reject CLI binary/JSON conflicts and binary output for other extraction types. Add TypeScript inference, binary regression tests, and CLI/library examples.
 

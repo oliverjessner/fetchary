@@ -1,7 +1,8 @@
 import type { LookupAddress } from 'node:dns';
 import type { Buffer } from 'node:buffer';
+import type { CountryCode } from 'libphonenumber-js';
 
-export type ExtractionType = 'text' | 'html' | 'favicon' | 'images' | 'avatar' | 'selector' | 'social-links' | 'social-insights';
+export type ExtractionType = 'text' | 'html' | 'favicon' | 'images' | 'avatar' | 'selector' | 'social-links' | 'social-insights' | 'emails' | 'telephone';
 export type CaptureMode = 'auto' | 'http' | 'browser';
 export type Platform = 'youtube' | 'tiktok' | 'instagram' | 'facebook' | 'x' | 'threads' | 'linkedin' | 'twitch' | 'reddit' | 'github' | 'vimeo' | 'bluesky';
 export type SocialKind = 'profile' | 'channel' | 'post' | 'video' | 'unknown';
@@ -28,6 +29,8 @@ export type ExtractionOptions = {
   cacheTtlMs?: number;
 };
 export type ContentOptions = ExtractionOptions & { includeSelectors?: string[]; ignoreSelectors?: string[]; format?: 'html' | 'text' };
+export type ContactOptions = ExtractionOptions & { includeSelectors?: string[]; ignoreSelectors?: string[] };
+export type TelephoneOptions = ContactOptions & { defaultCountry?: CountryCode };
 export type FaviconOptions<Binary extends boolean = boolean> = ExtractionOptions & { binary?: Binary };
 export type SelectorOptions = ExtractionOptions & { selector: string; all?: boolean; format?: 'text' | 'html'; attribute?: string };
 export type ImageSource = 'img' | 'srcset' | 'lazy' | 'metadata' | 'link' | 'background';
@@ -56,6 +59,8 @@ export type ImagesResult = ExtractionResult<ImageLink[], 'images'> & { images: I
 export type SelectorResult = ExtractionResult<{ matched: boolean; values: Array<string | null> }, 'selector'> & { content: string; format: 'text' | 'html' };
 export type SocialLink = { platform: Platform; url: string; kind: SocialKind; source: 'link' | 'rel-me' | 'metadata' | 'json-ld' };
 export type SocialLinksResult = ExtractionResult<SocialLink[], 'social-links'> & { links: SocialLink[] };
+export type EmailsResult = ExtractionResult<string[], 'emails'> & { emails: string[] };
+export type TelephoneResult = ExtractionResult<string[], 'telephone'> & { numbers: string[] };
 export type Metric = 'likes' | 'comments' | 'views' | 'shares' | 'saves' | 'followers' | 'following' | 'posts' | 'subscribers';
 export type InsightStatus = 'available' | 'partial' | 'unavailable' | 'unsupported' | 'login_required' | 'blocked' | 'extraction_error';
 export type SocialInsightsData = {
@@ -66,13 +71,15 @@ export type SocialInsightsData = {
   unavailable: Partial<Record<Metric, string>>;
 };
 export type SocialInsightsResult = ExtractionResult<SocialInsightsData, 'social-insights'> & { vendor: Platform | null; followers: number | null };
-export type ResultMap = { text: ContentResult<'text'>; html: ContentResult<'html'>; favicon: FaviconResult<boolean>; images: ImagesResult; avatar: ProfilePictureResult; selector: SelectorResult; 'social-links': SocialLinksResult; 'social-insights': SocialInsightsResult };
-export type OptionsMap = { text: ContentOptions; html: ContentOptions; favicon: FaviconOptions; images: ImagesOptions; avatar: ExtractionOptions; selector: SelectorOptions; 'social-links': SocialLinksOptions; 'social-insights': ExtractionOptions };
+export type ResultMap = { text: ContentResult<'text'>; html: ContentResult<'html'>; favicon: FaviconResult<boolean>; images: ImagesResult; avatar: ProfilePictureResult; selector: SelectorResult; 'social-links': SocialLinksResult; 'social-insights': SocialInsightsResult; emails: EmailsResult; telephone: TelephoneResult };
+export type OptionsMap = { text: ContentOptions; html: ContentOptions; favicon: FaviconOptions; images: ImagesOptions; avatar: ExtractionOptions; selector: SelectorOptions; 'social-links': SocialLinksOptions; 'social-insights': ExtractionOptions; emails: ContactOptions; telephone: TelephoneOptions };
 export declare function extract<Binary extends boolean = false>(url: string, options: FaviconOptions<Binary> & { type: 'favicon' }): Promise<FaviconResult<Binary>>;
 export declare function extract<K extends ExtractionType>(url: string, options: OptionsMap[K] & { type: K }): Promise<ResultMap[K]>;
 export declare function extract(url: string, options?: ContentOptions): Promise<ContentResult>;
 export declare function extractText(url: string, options?: ContentOptions): Promise<ContentResult<'text'>>;
 export declare function extractHtml(url: string, options?: ContentOptions): Promise<ContentResult<'html'>>;
+export declare function extractEmails(url: string, options?: ContactOptions): Promise<EmailsResult>;
+export declare function extractTelephone(url: string, options?: TelephoneOptions): Promise<TelephoneResult>;
 export declare function extractFavicon<Binary extends boolean = false>(url: string, options?: FaviconOptions<Binary>): Promise<FaviconResult<Binary>>;
 export declare function extractImages(url: string, options?: ImagesOptions): Promise<ImagesResult>;
 export declare function extractSelector(url: string, options: SelectorOptions): Promise<SelectorResult>;
@@ -82,7 +89,7 @@ export declare function extractSocialInsights(url: string, options?: ExtractionO
 export declare function extractSocialAvatar(url: string, options?: ExtractionOptions): Promise<ProfilePictureResult>;
 export declare const extractProfilePicture: typeof extractSocialAvatar;
 export type ExtractorOptions = ExtractionOptions & { maxEntries?: number; maxCacheBytes?: number };
-export type Extractor = { extract: typeof extract; extractText: typeof extractText; extractHtml: typeof extractHtml; extractFavicon: typeof extractFavicon; extractImages: typeof extractImages; extractSelector: typeof extractSelector; extractSocialLinks: typeof extractSocialLinks; extractSocialInsights: typeof extractSocialInsights; extractSocialAvatar: typeof extractSocialAvatar; extractProfilePicture: typeof extractProfilePicture; clearCache(): void };
+export type Extractor = { extract: typeof extract; extractText: typeof extractText; extractHtml: typeof extractHtml; extractEmails: typeof extractEmails; extractTelephone: typeof extractTelephone; extractFavicon: typeof extractFavicon; extractImages: typeof extractImages; extractSelector: typeof extractSelector; extractSocialLinks: typeof extractSocialLinks; extractSocialInsights: typeof extractSocialInsights; extractSocialAvatar: typeof extractSocialAvatar; extractProfilePicture: typeof extractProfilePicture; clearCache(): void };
 export declare function createExtractor(options?: ExtractorOptions): Extractor;
 export declare function clearCache(): void;
 export declare class FetcharyError extends Error { url?: string }

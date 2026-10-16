@@ -2,7 +2,8 @@
 'use strict';
 const api = require('../src');
 const pkg = require('../package.json');
-const types = ['text','html','favicon','images','avatar','selector','social-links','social-insights'];
+const { listItems, listCaptureOptions } = require('./list');
+const types = ['text','html','favicon','images','avatar','selector','social-links','social-insights','emails','telephone'];
 const HELP = `Fetchary ${pkg.version} — Extract what matters.
 
 Usage: fetchary extract <type> <url> [options]
@@ -16,9 +17,12 @@ Types:
   selector         Elements matching a CSS selector
   social-links     Public social URLs linked by a webpage
   social-insights  Public profile and post metrics with availability
+  emails           Email addresses from links, page text and structured data
+  telephone        Phone numbers from links, page text and structured data
 
 Options:
   --json                         Structured extraction result
+  --list                         Print URLs/selected values, one per line
   --binary                       Write favicon bytes to stdout (favicon only)
   --mode auto|http|browser        Capture strategy (default: auto, HTTP first)
   --timeout <ms>                 Request timeout (default: 30000)
@@ -33,8 +37,9 @@ Options:
   --attribute <name>             Read an attribute instead of element content
   --format text|html             Selector output format (default: text)
   --platform <name>              Filter social links to one platform
+  --default-country <code>       Country for national phone numbers, e.g. AT
   --youtube                      Shortcut for --platform youtube
-  --urls-only                    Print image/social-link URLs, one per line
+  --urls-only                    Alias for --list
   --exclude-metadata             Exclude Open Graph/Twitter image metadata
   --source <name>                Filter image sources (repeatable)
   --duplicates                   Keep duplicate image URLs
@@ -45,10 +50,13 @@ Options:
 
 Examples:
   fetchary extract text https://example.com
+  fetchary extract emails https://example.com --list
+  fetchary extract telephone https://example.com --default-country AT --list
   fetchary extract favicon https://example.com
   fetchary extract favicon https://example.com --binary > favicon.bin
   fetchary extract selector https://example.com --selector h1
   fetchary extract social-links https://example.com --youtube
+  fetchary extract social-links https://www.tiktok.com/@oliverjessner --list
   fetchary extract social-insights https://www.youtube.com/watch?v=VIDEO_ID
 
 Compatibility aliases:
@@ -56,8 +64,8 @@ Compatibility aliases:
   fetchary favicon <url>
   fetchary profile-picture <url>
 `;
-const flags = new Set(['json','binary','all','youtube','urls-only','exclude-metadata','duplicates','quiet','verbose','no-color','allow-private-network','help','version','text']);
-const values = new Set(['mode','timeout','user-agent','wait-after-load','max-response-bytes','selector','attribute','format','platform']);
+const flags = new Set(['json','list','binary','all','youtube','urls-only','exclude-metadata','duplicates','quiet','verbose','no-color','allow-private-network','help','version','text']);
+const values = new Set(['mode','timeout','user-agent','wait-after-load','max-response-bytes','selector','attribute','format','platform','default-country']);
 const repeated = new Set(['include-selector','ignore-selector','source']);
 function invalid(message) { throw new api.FetcharyValidationError(message); }
 
@@ -97,25 +105,28 @@ async function main(argv = process.argv.slice(2), io = {}) {
     else if (command === 'profile-picture') type = 'avatar';
     else invalid(`unknown command "${command}"; use "fetchary extract <type> <url>"`);
     if (args.length !== 1) invalid('exactly one URL is required');
-    for (const [key, allowed] of Object.entries({ binary:['favicon'], selector:['selector'], all:['selector'], attribute:['selector'], format:['selector'], platform:['social-links'], youtube:['social-links'], 'urls-only':['images','social-links'], 'exclude-metadata':['images'], source:['images'], duplicates:['images'], 'include-selector':['text','html'], 'ignore-selector':['text','html'], text:['text','html'] })) {
+    for (const [key, allowed] of Object.entries({ binary:['favicon'], selector:['selector'], all:['selector'], attribute:['selector'], format:['selector'], platform:['social-links'], 'default-country':['telephone'], youtube:['social-links'], 'exclude-metadata':['images'], source:['images'], duplicates:['images'], 'include-selector':['text','html','emails','telephone'], 'ignore-selector':['text','html','emails','telephone'], text:['text','html'] })) {
       if (Object.hasOwn(options, key) && !allowed.includes(type)) invalid(`--${key} is not supported for ${type}`);
     }
     if (options.text && type !== 'text') invalid('--text conflicts with the selected extraction type');
     if (options.youtube && options.platform && options.platform !== 'youtube') invalid('--youtube conflicts with --platform');
     if (options.binary && options.json) invalid('--binary conflicts with --json');
+    if (options.binary && (options.list || options['urls-only'])) invalid('--binary conflicts with --list/--urls-only');
+    const list = !options.json && (options.list || options['urls-only']);
     const settings = { ...(io.options || {}), type };
-    for (const [key, name] of Object.entries({ binary:'binary', mode:'mode', timeout:'timeout', 'user-agent':'userAgent', 'wait-after-load':'waitAfterLoad', 'max-response-bytes':'maxResponseBytes', selector:'selector', all:'all', attribute:'attribute', format:'format', platform:'platform', 'allow-private-network':'allowPrivateNetwork', 'include-selector':'includeSelectors', 'ignore-selector':'ignoreSelectors', source:'sources' })) {
+    for (const [key, name] of Object.entries({ binary:'binary', mode:'mode', timeout:'timeout', 'user-agent':'userAgent', 'wait-after-load':'waitAfterLoad', 'max-response-bytes':'maxResponseBytes', selector:'selector', all:'all', attribute:'attribute', format:'format', platform:'platform', 'default-country':'defaultCountry', 'allow-private-network':'allowPrivateNetwork', 'include-selector':'includeSelectors', 'ignore-selector':'ignoreSelectors', source:'sources' })) {
       if (options[key] !== undefined) settings[name] = ['timeout','maxResponseBytes'].includes(name) ? Number(options[key]) : options[key];
     }
     if (options.youtube) settings.platform = 'youtube';
     if (options['exclude-metadata']) settings.includeMetadata = false;
     if (options.duplicates) settings.unique = false;
+    const captureOptions = list ? listCaptureOptions(settings) : settings;
     if (options.verbose && !options.quiet) stderr.write(`Extracting ${type} (${settings.mode || 'auto'})\n`);
-    const result = await api.extract(args[0], settings);
+    const result = await api.extract(args[0], captureOptions);
     if (options.quiet) return 0;
     if (options.binary) stdout.write(result.data);
-    else if (options.json || ['images','social-links','social-insights'].includes(type) && !options['urls-only']) stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-    else if (options['urls-only']) { const urls = result.data.map(item => item.url); if (urls.length) stdout.write(`${urls.join('\n')}\n`); }
+    else if (list) { const items = listItems(result, settings); if (items.length) stdout.write(`${items.join('\n')}\n`); }
+    else if (options.json || ['images','social-links','social-insights','emails','telephone'].includes(type)) stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     else if (type === 'favicon' || type === 'avatar') stdout.write(`${result.image.url}\n`);
     else stdout.write(result.content);
     return 0;
