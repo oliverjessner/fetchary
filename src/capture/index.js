@@ -61,7 +61,7 @@ class CaptureManager {
       url.href, source.captureMode, [...headers.entries()].sort(), this.timeout,
       identity(this.httpFetch), identity(this.browserIdentity), identity(this.vendorIdentity),
       this.options.maxResponseBytes, Boolean(this.options.allowPrivateNetwork), identity(this.options.lookup),
-      source.captureMode === 'browser' ? [source.waitAfterLoadMs, this.browserUserAgent] : null,
+      source.captureMode === 'browser' ? [source.waitAfterLoadMs, this.browserUserAgent, Boolean(this.options.passiveTrackerCapture)] : null,
     ]);
     const page = await this.cache.capture(key, ttlMs, async () => {
       const snapshot = await this._capture({ ...source, url: url.href });
@@ -96,7 +96,8 @@ class CaptureManager {
     }
     const rendered = await this.browser.capture({
       ...this.options,
-      url: source.url,
+      url: this.options.passiveTrackerCapture ? http.rawFinalUrl.split('#')[0] : source.url,
+      documentSnapshot: this.options.passiveTrackerCapture ? http : undefined,
       timeout: this.timeout,
       waitAfterLoadMs: source.waitAfterLoadMs,
       userAgent: this.browserUserAgent,

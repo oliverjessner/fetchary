@@ -1,0 +1,8 @@
+<!doctype html><html><body>
+<script src="https://connect.facebook.net/en_US/fbevents.js"></script>
+<script>
+fetch('/must-not-request'); navigator.sendBeacon('/must-not-beacon', 'secret');
+const frame = document.createElement('iframe'); frame.src = '/must-not-frame'; document.body.append(frame);
+const script = document.createElement('script'); script.src = 'https://www.googletagmanager.com/gtm.js?id=GTM-DYNAMIC1'; document.body.append(script);
+const pixel = document.createElement('img'); pixel.src = 'https://www.facebook.com/tr?id=123456789012345'; document.body.append(pixel);
+</script></body></html>

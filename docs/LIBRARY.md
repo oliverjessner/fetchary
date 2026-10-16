@@ -68,6 +68,7 @@ retains metric sources and availability reasons.
 | `documents` | `extractDocuments(url, options?)` | Array of document link occurrences |
 | `metadata` | `extractMetadata(url, options?)` | Page metadata fields, with nulls for missing values |
 | `structured-data` | `extractStructuredData(url, options?)` | JSON-LD objects, Microdata items, and diagnostics |
+| `tracker-intelligence` | `extractTrackerIntelligence(url, options?)` | Tracker configurations, public identifiers, evidence and resource hosts |
 
 Without `type`, `extract(url)` returns HTML. `extract(url, { format: 'text' })`
 remains a compatibility path. `extractProfilePicture` aliases
@@ -104,6 +105,168 @@ The page HTTP status/content type remain the original HTTP response metadata,
 even when the browser subsequently renders or redirects. UTF-8 is the default;
 declared supported HTTP charsets and simple HTML meta charset declarations use
 `TextDecoder`, with UTF-8 fallback for unsupported labels.
+
+### Tracker intelligence
+
+```js
+const { extractTrackerIntelligence, extract, createExtractor } = require('fetchary');
+
+async function inspect() {
+    const result = await extractTrackerIntelligence('https://example.com');
+    console.log(result.data.trackers, result.data.externalHosts);
+    // Equivalent dispatcher and isolated client methods:
+    await extract('https://example.com', { type: 'tracker-intelligence' });
+    const client = createExtractor({ cacheTtlMs: 120_000 });
+    await client.extractTrackerIntelligence('https://example.com');
+}
+inspect().catch(console.error);
+```
+
+New provider modules in `src/trackers/providers/` export
+`{ provider, category, detect(context, emit) }` and are discovered automatically.
+Detectors receive parsed resource/script/configuration contexts and emit only
+validated identifiers and evidence; they do not perform I/O. Each detector can
+be tested independently by passing it to the internal `trackerIntelligence`
+function. The central extractor needs no provider list update. Public TypeScript
+provider/identifier unions should be extended alongside new supported providers.
+
+The extractor accepts `ExtractionOptions`, including timeout, AbortSignal,
+network validation, response limits and cache TTL. HTTP captures can be shared
+with other extractors. Browser captures have a separate policy in the cache key,
+so unrestricted and passive snapshots cannot replace each other. `auto` stays
+HTTP-only even for empty scripted pages. Explicit `browser` mode renders the
+already captured HTML with inline JavaScript and all further requests blocked.
+It examines both raw HTML and rendered DOM without fetching external scripts or
+contacting trackers. It does not dismiss consent overlays. Custom browser
+implementations must support guarded request interception even when private
+network access is allowed.
+
+| Provider | Category | Identifier kinds and recognized configuration |
+| --- | --- | --- |
+| `google-tag-manager` | `tag-manager` | `container-id`: GTM resource IDs and standard inline bootstrap |
+| `google-analytics` | `analytics` | `measurement-id`: GA4 G- IDs; `tracking-id`: Universal Analytics UA- IDs, `gtag('config', ...)`, `ga('create', ...)` |
+| `google-ads` | `advertising` | `conversion-id`: AW- IDs in Google tag configuration and conversion endpoints |
+| `meta-pixel` | `advertising` | `pixel-id`: `fbq('init', ...)`, Facebook pixel URL IDs |
+| `tiktok-pixel` | `advertising` | `pixel-id`: `ttq.load(...)`, pixel script `sdkid` |
+| `linkedin-insight` | `advertising` | `partner-id`: `_linkedin_partner_id`, collect pixel `pid` |
+| `pinterest-tag` | `advertising` | `tag-id`: `pintrk('load', ...)`, pixel `tid` |
+| `microsoft-clarity` | `analytics` | `project-id`: Clarity tag URL or standard bootstrap |
+| `microsoft-advertising-uet` | `advertising` | `tag-id`: UET constructor with `ti`, Bing pixel URL |
+| `hotjar` | `analytics` | `site-id`: `_hjSettings.hjid`, numbered Hotjar script URL |
+| `yandex-metrica` | `analytics` | `counter-id`: `ym(id, 'init', ...)`, legacy `Ya.Metrika`/`Ya.Metrika2` id and watch pixel |
+| `matomo` | `analytics` | `site-id` with `scope`: `_paq` setTrackerUrl/setSiteId/addTracker, Matomo/Piwik pixel URLs |
+| `plausible` | `analytics` | No account identifier; script integration and `configuration.trackedDomains` from `data-domain` |
+
+Known provider script references are reported even without an identifier.
+Resource signatures use known provider hosts and paths, plus Matomo/Piwik file
+names for self-hosting. Plausible recognizes its hosted `/js/*.js` scripts and
+self-hosted script/plausible filenames with `data-domain`. Renamed proxies,
+obfuscated integrations and vendor formats outside these signatures can be missed.
+Signature examples follow the vendors' [Google tag](https://developers.google.com/tag-platform/gtagjs/install),
+[Matomo](https://developer.matomo.org/guides/tracking-javascript-guide),
+[Pinterest](https://help.pinterest.com/en-gb/business/article/add-event-codes) and
+[Plausible](https://plausible.github.io/docs/plausible-script) documentation.
+
+```ts
+type TrackerIntelligenceData = {
+    trackers: Array<{
+        provider: TrackerProvider; // stable names in the table above
+        category: 'tag-manager' | 'analytics' | 'advertising';
+        identifiers: Array<{ kind: string; value: string; scope?: string | null }>;
+        detection: 'confirmed_configuration' | 'provider_reference';
+        evidence: Array<{
+            source: string; document: 'raw' | 'rendered'; field: string; index: number; tokenIndex?: number;
+        }>;
+        configuration?: { trackedDomains: string[] };
+    }>;
+    externalHosts: string[];
+    summary: { providers: number; uniqueIdentifiers: number };
+};
+```
+
+`TrackerIntelligenceResult` is `ExtractionResult<TrackerIntelligenceData,
+ 'tracker-intelligence'>`, with the usual requested/final URL, timestamps,
+status, capture mode and cache metadata. One tracker record combines all
+identifiers for a provider. Identifier equality includes provider, kind, exact
+value and scope. Duplicate raw/rendered findings merge; distinct evidence
+locations remain. Provider names, identifiers, evidence and hosts are sorted
+lexicographically by their stable fields. `summary.uniqueIdentifiers` counts
+these distinct identifier objects, including unscoped Matomo IDs; it excludes
+Plausible domains. It is not a count of globally unique accounts.
+
+Evidence contains only a source label, raw/rendered document, allowlisted field
+name, zero-based element index in that document traversal, and an optional
+zero-based inline JavaScript token index to retain distinct calls. It never includes
+full scripts, request headers, cookies, script text excerpts or URL query values.
+Resource URLs resolve against `<base>` and the final document URL. External
+hosts are resource-attribute hostnames different from the document's hostname
+(including sibling subdomains); inline bootstrap literals can identify providers
+but are not added to this host inventory until present in a resource attribute.
+Hyperlinks and canonical metadata are excluded. This inventory describes
+references, not successful requests, ownership or a registrable-domain-based
+third-party classification.
+
+A valid technical initialization or configuration is
+`confirmed_configuration`; a resource/initialization with no safely usable
+identifier is `provider_reference`. Plausible with a valid `data-domain` is
+confirmed without an account identifier. Classification applies to the combined
+provider record, so an identified configuration can coexist with reference-only
+evidence. Neither classification proves execution, transmitted data, common
+ownership, identity or control.
+
+Only literal initialization arguments, simple literal variables and string
+concatenation are resolved, without evaluation. Comments, quoted code examples,
+regex literals, templates and JSON-LD are not scanned as executable code.
+There is a 200,000-token JavaScript budget per document, shared across inline
+scripts; remaining inline code is skipped. Dynamic expressions, complex scopes,
+inter-script variable dependencies and configurations loaded by external scripts
+are not resolved. Static analysis can include unreachable code. IDs receive
+syntactic checks rather than validation with a provider: GTM has 4–12 uppercase
+alphanumeric suffix characters, GA4 has 10, UA uses a numeric property/view
+suffix, AW uses 6–15 digits, Meta/Pinterest/UET use 5–25 digits, TikTok uses 20
+alphanumeric characters, LinkedIn uses 4–15 digits, and Clarity uses 6–20
+alphanumeric characters. Other counter/site IDs are positive decimal strings
+of up to 25 digits. Values retain their spelling and case.
+
+Explicit configuration attributes are `data-gtm-id`, `data-gtm-container-id`,
+`data-ga-id`, `data-ga-measurement-id`, `data-google-analytics-id`,
+`data-google-ads-id`, `data-facebook-pixel-id`, `data-meta-pixel-id`,
+`data-tiktok-pixel-id`, `data-linkedin-partner-id`, `data-pinterest-tag-id`,
+`data-clarity-id`, `data-uet-tag-id`, `data-hotjar-id` and
+`data-yandex-metrica-id`. Matching `<meta name="..." content="...">` names omit
+the `data-` prefix. Other arbitrary attributes, verification meta tags and prose
+are not tracker configuration.
+
+Matomo pairs setTrackerUrl/setSiteId calls in order within each inline script;
+addTracker carries its own server/site pair. A server endpoint is resolved to
+HTTP(S), stripped of query/fragment, and rejected if it contains credentials.
+A missing server is `scope: null`. **Never correlate an unscoped site ID across
+websites.** Different servers with site ID `1` remain distinct. Plausible's
+`trackedDomains` identify tracked websites and are not shared account IDs.
+
+A separate analysis application can compare two independent extractions:
+
+```js
+const { extractTrackerIntelligence } = require('fetchary');
+
+function correlationKeys(result) {
+    return result.data.trackers.flatMap(tracker => tracker.identifiers
+        .filter(id => tracker.provider !== 'matomo' || id.scope)
+        .map(id => JSON.stringify([tracker.provider, id.kind, id.scope ?? null, id.value])));
+}
+async function compareSites(leftUrl, rightUrl) {
+    const [left, right] = await Promise.all([
+        extractTrackerIntelligence(leftUrl), extractTrackerIntelligence(rightUrl),
+    ]);
+    const rightKeys = new Set(correlationKeys(right));
+    return correlationKeys(left).filter(key => rightKeys.has(key));
+}
+compareSites('https://example.com', 'https://example.org').then(console.log);
+```
+
+Shared identifiers are technical indications only, **not proof of common
+ownership or identity**. Correlation, attribution and storage belong to the
+calling application. Fetchary remains stateless.
 
 ### Operation-specific options
 
@@ -252,7 +415,7 @@ type ExtractionMetadata = {
     extractedAt: string;
     type: 'text' | 'html' | 'favicon' | 'images' | 'avatar'
         | 'selector' | 'social-links' | 'social-insights' | 'emails' | 'telephone'
-        | 'links' | 'documents' | 'metadata' | 'structured-data';
+        | 'links' | 'documents' | 'metadata' | 'structured-data' | 'tracker-intelligence';
     captureMode: 'http' | 'browser';
     status: number;
     contentType: string | null;

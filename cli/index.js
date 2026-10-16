@@ -3,7 +3,7 @@
 const api = require('../src');
 const pkg = require('../package.json');
 const { listItems, listCaptureOptions } = require('./list');
-const types = ['text','html','favicon','images','avatar','selector','social-links','social-insights','emails','telephone','links','documents','metadata','structured-data'];
+const types = ['text','html','favicon','images','avatar','selector','social-links','social-insights','emails','telephone','links','documents','metadata','structured-data','tracker-intelligence'];
 const HELP = `Fetchary ${pkg.version} — Extract what matters.
 
 Usage: fetchary extract <type> <url> [options]
@@ -23,6 +23,7 @@ Types:
   documents        Document/download links with format hints and locations
   metadata         Title, description, canonical URL, language and dates
   structured-data  JSON-LD and Microdata objects, including Schema.org data
+  tracker-intelligence  Public tracker references and scoped identifiers
 
 Options:
   --json                         Structured extraction result
@@ -60,6 +61,7 @@ Examples:
   fetchary extract documents https://example.com --list
   fetchary extract metadata https://example.com
   fetchary extract structured-data https://example.com
+  fetchary extract tracker-intelligence https://example.com --list
   fetchary extract emails https://example.com --list
   fetchary extract telephone https://example.com --default-country AT --list
   fetchary extract favicon https://example.com
@@ -146,7 +148,7 @@ async function main(argv = process.argv.slice(2), io = {}) {
     }
     else if (options.binary) stdout.write(result.data);
     else if (list) { const items = listItems(result, settings); if (items.length) stdout.write(`${items.join('\n')}\n`); }
-    else if (options.json || ['images','social-links','social-insights','emails','telephone','links','documents','metadata','structured-data'].includes(type)) stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    else if (options.json || ['images','social-links','social-insights','emails','telephone','links','documents','metadata','structured-data','tracker-intelligence'].includes(type)) stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     else if (type === 'favicon' || type === 'avatar') stdout.write(`${result.image.url}\n`);
     else stdout.write(result.content);
     return 0;

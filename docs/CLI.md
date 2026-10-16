@@ -32,6 +32,7 @@ Running without arguments or with `--help` prints help and exits successfully.
 | `documents`       | `fetchary extract documents https://example.com`                   | JSON result        |
 | `metadata`        | `fetchary extract metadata https://example.com`                    | JSON result        |
 | `structured-data` | `fetchary extract structured-data https://example.com`             | JSON result        |
+| `tracker-intelligence` | `fetchary extract tracker-intelligence https://example.com` | JSON result |
 
 Text and HTML contain exactly the extracted string, with no extra newline or
 status message. Image URLs end with a newline. Unfiltered JSON results are objects with
@@ -64,6 +65,7 @@ fetchary extract selector https://example.com --selector a --attribute href --li
 | `links`, `documents` | Unique discovered URLs in first-occurrence order; JSON retains every occurrence |
 | `metadata` | Present values in title, description, canonical, language, publishedAt, modifiedAt order; nulls omitted |
 | `structured-data` | One compact JSON object per line, JSON-LD first and Microdata items second |
+| `tracker-intelligence` | Provider/identifier pairs; provider name alone when no identifiers exist; Matomo includes its scope |
 
 Text/HTML link lists resolve relative URLs against the document base and final
 page URL, remove duplicates in discovery order, and ignore non-HTTP schemes and
@@ -96,6 +98,57 @@ first match per selector in page order; overlapping subtrees appear once. Ignore
 remove every matching element, including selected roots and ancestors. Missing
 include matches return empty content. These options apply to `text`, `html`,
 `emails`, `telephone`, `links`, and `documents`.
+
+### Tracker intelligence
+
+```bash
+fetchary extract tracker-intelligence https://example.com
+fetchary extract tracker-intelligence https://example.com --json
+fetchary extract tracker-intelligence https://example.com --list
+fetchary extract tracker-intelligence https://example.com --mode browser --wait-after-load 500ms
+```
+
+Default output and `--json` both include the complete extraction result:
+`data: { trackers, externalHosts, summary: { providers, uniqueIdentifiers } }`.
+An empty page succeeds with empty arrays and zero counts. Shared capture flags
+apply; there are no provider-specific flags or include/ignore selectors.
+
+`--list` prints one `provider:value` line per identifier. A provider without an
+identifier prints its name alone, including Plausible, whose tracked domains
+are configuration rather than account identifiers. For example:
+
+```text
+google-tag-manager:GTM-ABC1234
+matomo:https%3A%2F%2Fstats.example.com%2Fmatomo.php:1
+meta-pixel:123456789012345
+plausible
+```
+
+Matomo uses `matomo:<encodeURIComponent(server endpoint)>:<site ID>`; a missing
+server prints `matomo:unscoped:<site ID>`, which must not be used for cross-site
+correlation. Provider names, identifier arrays, evidence and hosts have stable,
+lexicographic ordering. `--json` takes precedence over `--list`; `--quiet`
+suppresses successful output. No findings print nothing in list mode.
+
+`auto` and `http` inspect only the HTTP document for this extractor. Explicit
+`browser` mode reuses that document in the existing guarded Chromium capture,
+allows inline JavaScript to update the DOM, and blocks all further resources,
+external JavaScript, frames, connections and navigation. It merges raw HTML and
+rendered DOM findings. This deliberately limits sites whose tags require an
+external bundle, consent action or fetched configuration. There is no tracker
+API request, script download for analysis, scrolling or crawling.
+
+A `confirmed_configuration` is a recognized initialization, valid identifier in
+a provider endpoint, explicit tracker configuration attribute, or Plausible
+script with `data-domain`. A `provider_reference` is a known resource or
+initialization without a usable identifier. Neither classification establishes
+execution, successful transmission, ownership, or control. Plain prose, code
+comments, quoted code examples, JSON-LD and ordinary hyperlinks do not install
+a tracker. Static signatures cannot establish whether code is reachable or
+whether a referenced script is genuine.
+
+See [provider support, schemas and comparison example](LIBRARY.md#tracker-intelligence)
+for the exact identifier types and limitations.
 
 ### Metadata and structured data
 

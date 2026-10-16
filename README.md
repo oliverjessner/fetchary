@@ -51,6 +51,20 @@ fetchary extract structured-data https://example.com
 
 Structured data includes JSON-LD objects and Microdata with nested properties.
 
+### Inspect public tracking integrations
+
+See which analytics and advertising tags a page references, including public
+tracking IDs when available:
+
+```bash
+fetchary extract tracker-intelligence https://example.com --list
+```
+
+Matching IDs can help investigate connections between websites, but they do not
+prove common ownership or identity. Fetchary inspects the captured page without
+contacting the tracking services. See the [tracker reference](docs/CLI.md#tracker-intelligence)
+for supported providers and capture limits.
+
 ### Find images and icons
 
 ```bash

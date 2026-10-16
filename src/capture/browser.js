@@ -55,7 +55,7 @@ class BrowserCapture {
   }
 
   async capture(options) {
-    const vendors = this.getVendors();
+    const vendors = options.passiveTrackerCapture ? [] : this.getVendors();
     await validateRemoteUrl(options.url, options);
     const controller = new AbortController();
     const signal = options.signal ? AbortSignal.any([options.signal, controller.signal]) : controller.signal;
@@ -67,6 +67,7 @@ class BrowserCapture {
     const activeRequests = new Set();
     let page;
     let navigation;
+    let suppliedDocument = false;
     try {
       signal.throwIfAborted();
       const browser = await abortable(this._getBrowser(options), signal).catch(cause => {
@@ -80,6 +81,15 @@ class BrowserCapture {
           page.on('request', request => {
             const task = (async () => {
               try {
+                if (options.passiveTrackerCapture) {
+                  // Render only the captured document. No scripts, pixels,
+                  // beacons, child navigations or other resources reach HTTP.
+                  if (suppliedDocument || !request.isNavigationRequest() || request.url() !== options.url) return await request.abort();
+                  suppliedDocument = true;
+                  return await request.respond({ status: options.documentSnapshot.status, body: options.documentSnapshot.rawBody,
+                    headers: { 'content-type': options.documentSnapshot.contentType || 'text/html',
+                      'content-security-policy': "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'none'; frame-src 'none'; worker-src 'none'; form-action 'none'" } });
+                }
                 if (!/^https?:/.test(request.url())) {
                   if (request.isNavigationRequest()) throw new Error('unsupported navigation scheme');
                   return await request.abort();
@@ -107,7 +117,7 @@ class BrowserCapture {
             activeRequests.add(task);
             task.finally(() => activeRequests.delete(task)).catch(() => {});
           });
-        } else if (!options.allowPrivateNetwork) throw new Error('browser implementation must support guarded request interception');
+        } else if (options.passiveTrackerCapture || !options.allowPrivateNetwork) throw new Error('browser implementation must support guarded request interception');
         await prepareVendorPage(page, options.url, vendors);
         navigation = await abortable(page.goto(options.url, { waitUntil: 'load', timeout: options.timeout }), signal);
         if (navigation && navigation.status() >= 400) {

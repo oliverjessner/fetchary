@@ -1,5 +1,7 @@
 # Unreleased
 
+- Add Tracker Intelligence with 13 modular provider detectors, typed library/dispatcher/client methods, JSON/list CLI output, scoped Matomo IDs, separate Plausible domains and redacted raw/rendered evidence. Reuse guarded capture/cache infrastructure with passive browser rendering that blocks all additional resources and tracking traffic.
+
 - Add `extract metadata` and `extract structured-data`, typed library exports and isolated-client methods. Extract page metadata with HTML/meta/Schema.org precedence, parse JSON-LD and nested Microdata with itemref support and diagnostics, preserve declared dates and missing values, and provide list/JSON output with bounded parsing and guarded capture reuse.
 - Add `extract links` and `extract documents`, typed `extractLinks()`/`extractDocuments()` and client methods. Preserve every link occurrence with anchor text, rel tokens, internal/external classification and original DOM location. Discover document extensions, MIME/download/query hints and embedded documents without fetching targets; provide unique URL lists and scoped extraction.
 - Add social-insights `--follower` and `--posts` count selection. Single selections print a number or `null`; combined selections return only the named counts, with line-by-line values in list mode. Preserve zero counts, YouTube subscriber fallback, JSON precedence, quiet output, and existing unfiltered library/CLI results.

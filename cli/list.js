@@ -39,6 +39,10 @@ function listItems(result, options = {}) {
     case 'links': case 'documents': return [...new Set(result.data.map(item => item.url))];
     case 'emails': case 'telephone': return result.data;
     case 'metadata': return Object.values(result.data).filter(value => value !== null);
+    case 'tracker-intelligence': return result.data.trackers.flatMap(tracker => tracker.identifiers.length
+      ? tracker.identifiers.map(id => id.kind === 'site-id' && tracker.provider === 'matomo'
+        ? `matomo:${id.scope ? encodeURIComponent(id.scope) : 'unscoped'}:${id.value}` : `${tracker.provider}:${id.value}`)
+      : [tracker.provider]);
     case 'structured-data': return [...result.data.jsonLd, ...result.data.microdata].map(value => JSON.stringify(value));
     case 'favicon': case 'avatar': return [result.image.url];
     case 'selector': return result.data.values.filter(value => value !== null).map(value => value.replace(/[\r\n]+/g, ' ').trim()).filter(Boolean);

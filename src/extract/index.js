@@ -18,9 +18,10 @@ const { pageLinks } = require('./links');
 const { documentLinks } = require('./documents');
 const { pageMetadata: extractPageMetadata } = require('./metadata');
 const { structuredData } = require('./structured-data');
+const { trackerIntelligence } = require('./tracker-intelligence');
 
 const clientCache = Symbol('captureCache');
-const types = ['text','html','favicon','images','avatar','selector','social-links','social-insights','emails','telephone','links','documents','metadata','structured-data'];
+const types = ['text','html','favicon','images','avatar','selector','social-links','social-insights','emails','telephone','links','documents','metadata','structured-data','tracker-intelligence'];
 
 function extractionOptions(options = {}) {
   if (!options || typeof options !== 'object' || Array.isArray(options)) throw new FetcharyValidationError('options must be an object');
@@ -64,6 +65,7 @@ function accessStatus(page) {
 }
 
 function fallbackNeeded(page, result, type) {
+  if (type === 'tracker-intelligence') return false;
   if (!shouldRender(page.contentType) || accessStatus(page)) return false;
   const html = pageHtml(page);
   const scripts = /<script\b/i.test(html);
@@ -82,6 +84,7 @@ function fallbackNeeded(page, result, type) {
 async function withCapture(url, options, type, operation) {
   const requestedUrl = validateUrl(url);
   const settings = extractionOptions(options);
+  settings.passiveTrackerCapture = type === 'tracker-intelligence';
   settings.headerOrigin = new URL(requestedUrl).origin;
   settings.scopedHeaderNames = Object.keys(settings.headers || {}).filter(name => name !== 'user-agent');
   const capture = new CaptureManager(settings);
@@ -129,6 +132,17 @@ async function extractStructuredData(url, options = {}) {
     const jsonLd = page.contentType?.split(';')[0].trim().toLowerCase() === 'application/ld+json';
     const data = structuredData(shouldRender(page.contentType) ? pageDocument(page) : null, pageMetadata(page).finalUrl, settings.maxResponseBytes, jsonLd ? pageHtml(page) : undefined);
     return { data, structuredData: data };
+  });
+}
+
+async function extractTrackerIntelligence(url, options = {}) {
+  return withCapture(url, options, 'tracker-intelligence', page => {
+    const documents = [];
+    if (shouldRender(page.contentType)) {
+      documents.push({ html: page.rawHtml ?? page.rawBody.toString('utf8'), url: page.rawFinalUrl, document: 'raw' });
+      if (page.renderedHtml != null) documents.push({ html: page.renderedHtml, url: page.browserFinalUrl, document: 'rendered' });
+    }
+    return { data: trackerIntelligence(documents) };
   });
 }
 
@@ -320,7 +334,7 @@ async function extract(url, options = {}) {
   const type = options.type ?? (options.format === 'text' ? 'text' : 'html');
   if (options.format !== undefined && !['text','html'].includes(options.format)) throw new FetcharyValidationError('format must be text or html');
   const methods = { text: extractText, html: extractHtml, favicon: extractFavicon, images: extractImages, avatar: extractSocialAvatar,
-    selector: extractSelector, 'social-links': extractSocialLinks, 'social-insights': extractSocialInsights, emails: extractEmails, telephone: extractTelephone, links: extractLinks, documents: extractDocuments, metadata: extractMetadata, 'structured-data': extractStructuredData };
+    selector: extractSelector, 'social-links': extractSocialLinks, 'social-insights': extractSocialInsights, emails: extractEmails, telephone: extractTelephone, links: extractLinks, documents: extractDocuments, metadata: extractMetadata, 'structured-data': extractStructuredData, 'tracker-intelligence': extractTrackerIntelligence };
   if (!types.includes(type)) throw new FetcharyValidationError(`unknown extraction type: ${type}`);
   return methods[type](url, options);
 }
@@ -330,11 +344,11 @@ function createExtractor(options = {}) {
   const cache = createCaptureCache({ maxEntries: options.maxEntries, maxCacheBytes: options.maxCacheBytes });
   const defaults = { ...options, headers: settings.headers };
   const client = { clearCache: () => cache.clear() };
-  for (const [name, method] of Object.entries({ extract, extractText, extractHtml, extractFavicon, extractImages, extractSocialLinks, extractSocialAvatar, extractProfilePicture, extractSocialInsights, extractEmails, extractTelephone, extractLinks, extractDocuments, extractMetadata, extractStructuredData })) client[name] = (url, overrides = {}) => method(url, { ...defaults, ...overrides, [clientCache]: cache });
+  for (const [name, method] of Object.entries({ extract, extractText, extractHtml, extractFavicon, extractImages, extractSocialLinks, extractSocialAvatar, extractProfilePicture, extractSocialInsights, extractEmails, extractTelephone, extractLinks, extractDocuments, extractMetadata, extractStructuredData, extractTrackerIntelligence })) client[name] = (url, overrides = {}) => method(url, { ...defaults, ...overrides, [clientCache]: cache });
   client.extractSelector = (url, selectorOrOptions = {}, overrides = {}) => typeof selectorOrOptions === 'string'
     ? extractSelector(url, { ...defaults, ...overrides, selector: selectorOrOptions, [clientCache]: cache })
     : extractSelector(url, { ...defaults, ...selectorOrOptions, [clientCache]: cache });
   return client;
 }
-module.exports = { extract, extractText, extractHtml, extractFavicon, extractImages, extractSelector, extractSocialLinks, extractEmails, extractTelephone, extractLinks, extractDocuments, extractMetadata, extractStructuredData,
+module.exports = { extract, extractText, extractHtml, extractFavicon, extractImages, extractSelector, extractSocialLinks, extractEmails, extractTelephone, extractLinks, extractDocuments, extractMetadata, extractStructuredData, extractTrackerIntelligence,
   extractSocialAvatar, extractProfilePicture, extractSocialInsights, createExtractor, clearCache };
