@@ -1,0 +1,7 @@
+# Netscape HTTP Cookie File
+# Synthetic test credentials, not an actual account session.
+#HttpOnly_.linkedin.test	TRUE	/	TRUE	0	li_at	test-session
+.linkedin.test	TRUE	/voyager	TRUE	0	JSESSIONID	"ajax:test-csrf"
+www.linkedin.test	FALSE	/	TRUE	0	host_only	www-only
+.linkedin.test	TRUE	/	TRUE	1	expired	expired-secret
+.other.test	TRUE	/	TRUE	0	unrelated	other-session

@@ -95,6 +95,14 @@ async function readResource(url, options, maxBytes = options.maxResponseBytes) {
     for (let redirects = 0; redirects <= 10; redirects++) {
       signal.throwIfAborted();
       const checked = await abortable(validateRemoteUrl(target, options), signal);
+      if (options.cookieJar) {
+        // Recompute on every redirect. A cookie is not an origin-wide header:
+        // its host, path, Secure flag and expiration all constrain delivery.
+        const value = options.cookieJar.allows(checked.url)
+          ? options.cookieHeaderFromBrowser ? headers.get('cookie') : options.cookieJar.header(checked.url) : '';
+        headers.delete('cookie');
+        if (value) headers.set('cookie', value);
+      }
       response = await abortable(options.fetch
         ? options.fetch(checked.url.href, { headers: Object.fromEntries(headers), redirect: 'manual', signal, method, ...(body ? { body } : {}) })
         : nativeResponse(checked.url, { headers: Object.fromEntries(headers), method, body, allowPrivateNetwork: options.allowPrivateNetwork }, signal, checked.addresses), signal);

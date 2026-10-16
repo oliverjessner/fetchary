@@ -153,6 +153,7 @@ not store the report, crawl other pages, monitor the site or infer ownership.
 | `timeout` | `30000` | Positive milliseconds per request/phase |
 | `userAgent` | `'fetchary/2.0'` | Non-empty HTTP and browser user agent |
 | `headers` | none | `HeadersInit`; caller headers are scoped to the original origin |
+| `cookieFile` | none | Path to a read-only Netscape/JSON session cookie export; disables page caching |
 | `waitAfterLoad` | `5000` | Non-negative integer milliseconds or duration such as `'500ms'`, `'5s'` |
 | `signal` | none | `AbortSignal`; aborted operations fail and bypass shared in-flight work |
 | `maxResponseBytes` | `20971520` | Positive safe integer; decoded response/resource/rendered HTML limit |
@@ -175,6 +176,59 @@ The page HTTP status/content type remain the original HTTP response metadata,
 even when the browser subsequently renders or redirects. UTF-8 is the default;
 declared supported HTTP charsets and simple HTML meta charset declarations use
 `TextDecoder`, with UTF-8 fallback for unsupported labels.
+
+### Cookie-file authentication
+
+```js
+const { extractSocialInsights, createExtractor } = require('fetchary');
+
+async function main() {
+    const url = 'https://www.linkedin.com/in/oliverjessner';
+    const result = await extractSocialInsights(url, {
+        mode: 'browser', cookieFile: '/absolute/path/to/linkedin-cookies.txt',
+    });
+    console.log(result.followers, result.data.status);
+
+    const client = createExtractor({ cookieFile: '/absolute/path/to/linkedin-cookies.txt' });
+    await client.extractMetadata(url, { mode: 'http' });
+    await client.analyse(url);
+}
+main().catch(console.error);
+```
+
+`cookieFile?: string` is a common `ExtractionOptions` field, available on explicit
+methods, the dispatcher, analysis and isolated clients. The file is read afresh
+per operation, never modified or copied into persistent application state. An
+analysis imports it once and shares that session among its ten extractors.
+Authenticated page captures bypass completed cache entries and in-flight work
+in both global and private-client caches; `cache.ttlMs` is 0. Anonymous cache
+entries are neither overwritten nor reused for cookie-file calls.
+
+[CLI cookie-file documentation](CLI.md#signed-in-sessions) defines accepted
+Netscape/JSON formats, validation, bounds and exact hostname/path behavior.
+The native HTTP transport computes scoped Cookie headers on every redirect,
+including auxiliary icon requests. Browser mode seeds a fresh isolated (incognito) context with
+relevant cookies using [BrowserContext.setCookie](https://pptr.dev/api/puppeteer.browsercontext.setcookie).
+It preserves HttpOnly, Secure, expiry and SameSite attributes, supports JS-readable
+cookies, and allows normal in-memory browser session updates. Imported credentials
+are stripped from requests outside the initially requested hostname tree.
+The HTTP phase uses the exported values; refreshed browser cookies stay in that
+browser run and are not written back to the export.
+
+A custom `launchBrowser` used with `cookieFile` must expose
+`browser.createBrowserContext()` returning a context with `setCookie()`,
+`newPage()` and `close()`; `CaptureCookieData` documents the values
+passed to it. Protocol errors during cookie import are sanitized rather than
+retaining a cause which might contain serialized credentials. File and format
+failures are `FetcharyValidationError`; browser import failures are
+`FetcharyBrowserError` with `phase: 'cookies'`. Cookie values and file contents
+are absent from result metadata and diagnostics. `cookieFile` cannot be combined
+with a caller-provided Cookie header. No cookie file is read during import or
+`createExtractor()` construction; validation and I/O happen when a method runs.
+
+An authenticated session may still encounter access checks. This option does
+not automate login or guarantee LinkedIn availability, and it imports no saved
+passwords or browser-profile data.
 
 ### Tracker intelligence
 
@@ -754,7 +808,8 @@ implementation identity, DNS implementation identity, private-network policy,
 and browser wait settings. HTTP and browser snapshots are separate. Extraction
 selectors and formats do not change a page snapshot's key.
 
-Authorization, Cookie, and Proxy-Authorization requests bypass the shared global
+Cookie-file requests bypass all capture caches, including isolated clients.
+Authorization, Cookie, and Proxy-Authorization headers bypass the shared global
 cache. Private clients isolate their authenticated entries by complete headers.
 Never change a custom transport's hidden session while retaining its entries;
 clear the client or create a new one when switching contexts. Responses setting

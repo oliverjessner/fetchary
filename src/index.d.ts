@@ -6,8 +6,15 @@ export type ExtractionType = 'text' | 'html' | 'favicon' | 'images' | 'avatar' |
 export type CaptureMode = 'auto' | 'http' | 'browser';
 export type Platform = 'youtube' | 'tiktok' | 'instagram' | 'facebook' | 'x' | 'threads' | 'linkedin' | 'twitch' | 'reddit' | 'github' | 'vimeo' | 'bluesky';
 export type SocialKind = 'profile' | 'channel' | 'post' | 'video' | 'unknown';
+export type CaptureCookieData = { name: string; value: string; domain: string; path: string; secure: boolean; httpOnly: boolean; expires?: number; sameSite?: 'Strict' | 'Lax' | 'None' };
+export type CapturePage = {
+  goto(url: string, options: { waitUntil: 'load'; timeout: number }): Promise<unknown>;
+  content(): Promise<string>; url(): string; close(): Promise<void>;
+};
 export type CaptureBrowser = {
-  newPage(): Promise<{ goto(url: string, options: { waitUntil: 'load'; timeout: number }): Promise<unknown>; content(): Promise<string>; url(): string; close(): Promise<void> }>;
+  newPage(): Promise<CapturePage>;
+  /** Required when using cookieFile with a custom browser implementation. */
+  createBrowserContext?(): Promise<{ newPage(): Promise<CapturePage>; setCookie(...cookies: CaptureCookieData[]): Promise<void>; close(): Promise<void> }>;
   close(): Promise<void>;
 };
 export type ExtractionOptions = {
@@ -15,6 +22,8 @@ export type ExtractionOptions = {
   timeout?: number;
   userAgent?: string;
   headers?: HeadersInit;
+  /** Read-only Netscape/JSON cookie export. Cookie-file captures bypass all page caches. */
+  cookieFile?: string;
   waitAfterLoad?: number | string;
   signal?: AbortSignal;
   /** Default 20 MiB, applied to each decoded response/resource and rendered HTML. */

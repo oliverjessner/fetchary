@@ -1,5 +1,7 @@
 # Unreleased
 
+- Add `--cookies <file>` and library `cookieFile` support for read-only Netscape/JSON session exports across extractors and analysis. Apply scoped cookies to HTTP redirects and browser contexts, bypass authenticated capture caches, preserve browser session updates, and validate/redact exports without storing passwords or rewriting cookie files.
+
 - Increase the default decoded response/resource and rendered HTML limit to 20 MiB (20971520 bytes), with an 80 MiB aggregate browser resource budget. Explicit `maxResponseBytes`/`--max-response-bytes` values continue to override the default.
 
 - Report failed browser resource downloads as resource-phase browser errors. Include effective byte limits and the `--max-response-bytes` recovery option for oversized scripts, without copying signed resource URLs into the top-level message. Document bounded captures for large YouTube bundles.

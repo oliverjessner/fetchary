@@ -36,6 +36,7 @@ Options:
   --wait-after-load <duration>   Browser wait, e.g. 500ms or 5s (default: 5s)
   --max-response-bytes <bytes>   Maximum response/DOM size (default: 20971520)
   --allow-private-network        Allow trusted local/internal targets
+  --cookies <file>               Import Netscape or JSON session cookies
   --include-selector <css>       Include first matching section (repeatable)
   --ignore-selector <css>        Remove matching elements (repeatable)
   --selector <css>               Required for selector extraction
@@ -81,7 +82,7 @@ Compatibility aliases:
   fetchary profile-picture <url>
 `;
 const flags = new Set(['json','list','binary','all','youtube','follower','posts','urls-only','exclude-metadata','duplicates','quiet','verbose','no-color','allow-private-network','help','version','text']);
-const values = new Set(['mode','timeout','user-agent','wait-after-load','max-response-bytes','selector','attribute','format','platform','default-country']);
+const values = new Set(['mode','timeout','user-agent','wait-after-load','max-response-bytes','cookies','selector','attribute','format','platform','default-country']);
 const repeated = new Set(['include-selector','ignore-selector','source']);
 function invalid(message) { throw new api.FetcharyValidationError(message); }
 
@@ -131,7 +132,7 @@ async function main(argv = process.argv.slice(2), io = {}) {
     if (options.binary && (options.list || options['urls-only'])) invalid('--binary conflicts with --list/--urls-only');
     const list = !options.json && (options.list || options['urls-only']);
     const settings = { ...(io.options || {}), type };
-    for (const [key, name] of Object.entries({ binary:'binary', mode:'mode', timeout:'timeout', 'user-agent':'userAgent', 'wait-after-load':'waitAfterLoad', 'max-response-bytes':'maxResponseBytes', selector:'selector', all:'all', attribute:'attribute', format:'format', platform:'platform', 'default-country':'defaultCountry', 'allow-private-network':'allowPrivateNetwork', 'include-selector':'includeSelectors', 'ignore-selector':'ignoreSelectors', source:'sources' })) {
+    for (const [key, name] of Object.entries({ binary:'binary', mode:'mode', timeout:'timeout', 'user-agent':'userAgent', 'wait-after-load':'waitAfterLoad', 'max-response-bytes':'maxResponseBytes', cookies:'cookieFile', selector:'selector', all:'all', attribute:'attribute', format:'format', platform:'platform', 'default-country':'defaultCountry', 'allow-private-network':'allowPrivateNetwork', 'include-selector':'includeSelectors', 'ignore-selector':'ignoreSelectors', source:'sources' })) {
       if (options[key] !== undefined) settings[name] = ['timeout','maxResponseBytes'].includes(name) ? Number(options[key]) : options[key];
     }
     if (options.youtube) settings.platform = 'youtube';

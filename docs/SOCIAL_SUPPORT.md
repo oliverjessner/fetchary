@@ -34,6 +34,8 @@ follower parsers retain unknown precision (`approximate: null`).
 
 Authentication walls, challenge pages, entity mismatches, parser errors and
 unsupported combinations are distinct in the [result schema](LIBRARY.md#result-schemas).
+An exported session can be imported with `--cookies <file>`; see
+[signed-in sessions](CLI.md#signed-in-sessions). The same metric parsers apply.
 
 Tests: `test/semantic.test.js`,
 `test/followers.test.js`,
@@ -138,7 +140,10 @@ Tests: `test/semantic.test.js`,
 - Browser: optional for HTTP-exposed data; localized consent and dismissible login
   dialogs are covered. An HTTP avatar can supply a safe same-capture login-wall
   fallback. The guarded public HTTP follower fallback is retained at a same-platform login wall; insights still report `login_required` and identify `followerCountFromRaw` as the source.
-- Limits: no post metrics, historical comparisons, or authenticated data.
+- Sessions: `--cookies <file>` can import an existing session into an isolated
+  browser context. Authenticated LinkedIn availability has not been live-verified.
+- Limits: no post metrics or historical comparisons. Importing a session does not
+  guarantee access or add support for other metrics.
 - Tests: `linkedin.test.js`, LinkedIn avatar cases in `extract.test.js`, real
   hidden/unrelated/challenge dialog guards in `vendor-browser.test.js`.
 

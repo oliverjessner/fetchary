@@ -3,6 +3,7 @@
 const { parseHTML } = require('linkedom');
 const { CaptureManager, shouldRender, sharedCaptureCache } = require('../capture');
 const { createCaptureSession } = require('../capture/session');
+const { loadCookieJar } = require('../capture/cookies');
 const { createCaptureCache, validateCacheTtl } = require('../capture/cache');
 const { validateUrl } = require('../utils/url');
 const { parseWaitAfterLoad, validateSelectors } = require('../utils/options');
@@ -23,13 +24,14 @@ const { trackerIntelligence } = require('./tracker-intelligence');
 
 const clientCache = Symbol('captureCache');
 const analysisSession = Symbol('analysisSession');
+const sessionCookies = Symbol('sessionCookies');
 const types = ['text','html','favicon','images','avatar','selector','social-links','social-insights','emails','telephone','links','documents','metadata','structured-data','tracker-intelligence'];
 
 function extractionOptions(options = {}) {
   if (!options || typeof options !== 'object' || Array.isArray(options)) throw new FetcharyValidationError('options must be an object');
   for (const name of ['method','body','followRedirects','getVendors']) if (Object.hasOwn(options, name)) throw new FetcharyValidationError(`${name} is not an extraction option`);
   const settings = {
-    fetch: options.fetch, launchBrowser: options.launchBrowser, headers: options.headers, signal: options.signal,
+    fetch: options.fetch, launchBrowser: options.launchBrowser, headers: options.headers, signal: options.signal, cookieFile: options.cookieFile,
     lookup: options.lookup, allowPrivateNetwork: options.allowPrivateNetwork,
     timeout: options.timeout ?? 30_000, userAgent: options.userAgent ?? 'fetchary/2.0',
     browserUserAgent: options.userAgent ?? 'fetchary/2.0', mode: options.mode ?? 'auto',
@@ -43,7 +45,9 @@ function extractionOptions(options = {}) {
   if (typeof settings.userAgent !== 'string' || !settings.userAgent.trim()) throw new FetcharyValidationError('userAgent must be a non-empty string');
   for (const name of ['allowPrivateNetwork','unique','includeMetadata','all','binary']) if (options[name] !== undefined && typeof options[name] !== 'boolean') throw new FetcharyValidationError(`${name} must be a boolean`);
   if (settings.signal !== undefined && !(settings.signal instanceof AbortSignal)) throw new FetcharyValidationError('signal must be an AbortSignal');
+  if (settings.cookieFile !== undefined && (typeof settings.cookieFile !== 'string' || !settings.cookieFile.trim() || settings.cookieFile.length > 4096)) throw new FetcharyValidationError('cookieFile must be a non-empty file path');
   try { if (settings.headers !== undefined) settings.headers = Object.fromEntries(new Headers(settings.headers)); } catch (cause) { throw new FetcharyValidationError('invalid request headers', { cause }); }
+  if (settings.cookieFile && new Headers(settings.headers).has('cookie')) throw new FetcharyValidationError('cookieFile cannot be combined with a Cookie header');
   return settings;
 }
 
@@ -86,6 +90,7 @@ function fallbackNeeded(page, result, type) {
 async function withCapture(url, options, type, operation) {
   const requestedUrl = validateUrl(url);
   const settings = extractionOptions(options);
+  if (settings.cookieFile) settings.cookieJar = options[sessionCookies] || await loadCookieJar(settings.cookieFile, requestedUrl, settings.signal);
   settings.passiveTrackerCapture = type === 'tracker-intelligence';
   settings.headerOrigin = new URL(requestedUrl).origin;
   settings.scopedHeaderNames = Object.keys(settings.headers || {}).filter(name => name !== 'user-agent');
@@ -119,6 +124,7 @@ async function analyse(url, options = {}) {
   for (const name of ['selector','all','attribute','format','platform','unique','includeMetadata','sources','includeSelectors','ignoreSelectors']) {
     if (Object.hasOwn(options, name)) throw new FetcharyValidationError(`${name} is not supported for analyse`);
   }
+  if (settings.cookieFile) settings.cookieJar = await loadCookieJar(settings.cookieFile, requestedUrl, settings.signal);
   settings.headerOrigin = new URL(requestedUrl).origin;
   settings.scopedHeaderNames = Object.keys(settings.headers || {}).filter(name => name !== 'user-agent');
   const session = createCaptureSession(requestedUrl, settings);
@@ -129,7 +135,7 @@ async function analyse(url, options = {}) {
     // Fail once for a failed primary capture; retain section-specific failures.
     await session.capture({ captureMode: settings.mode === 'browser' ? 'browser' : 'http' });
     const entries = Object.entries(methods);
-    const settled = await Promise.allSettled(entries.map(([, method]) => method(requestedUrl, { ...options, binary: false, [analysisSession]: session })));
+    const settled = await Promise.allSettled(entries.map(([, method]) => method(requestedUrl, { ...options, binary: false, [analysisSession]: session, [sessionCookies]: settings.cookieJar })));
     if (settings.signal?.aborted) throw new FetcharyFetchError('analysis aborted', { url: requestedUrl, cause: settings.signal.reason });
     const results = {}; const errors = {};
     for (let index = 0; index < entries.length; index++) {

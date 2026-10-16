@@ -506,6 +506,7 @@ See [Social support](SOCIAL_SUPPORT.md) for implemented patterns and fixtures an
 | `--user-agent <text>`          | HTTP and browser user agent; default `fetchary/2.0`                            |
 | `--wait-after-load <duration>` | Browser post-load wait; default `5s`; accepts `500ms`, `5s`, or `0ms`          |
 | `--max-response-bytes <bytes>` | Decoded response/resource/rendered HTML limit; default 20971520 (20 MiB)                               |
+| `--cookies <file>`            | Read a Netscape/JSON cookie export; cookie-file captures bypass page caches |
 | `--allow-private-network`      | Explicitly allow trusted local/internal targets                                |
 | `--quiet`                      | Suppress successful output, keeping errors on stderr                           |
 | `--verbose`                    | Print operation/mode diagnostics on stderr                                     |
@@ -515,6 +516,68 @@ See [Social support](SOCIAL_SUPPORT.md) for implemented patterns and fixtures an
 Value options support both `--option value` and `--option=value`. Use `--` to
 end option parsing. Unknown options and operation-specific options used with the
 wrong type are rejected. There is no data-directory or monitoring configuration.
+
+## Signed-in sessions
+
+`--cookies <file>` imports an existing session for any extraction type, the
+standalone aliases and `analyse`. It does not ask for or save a password.
+
+1. Sign in normally in your browser.
+2. Export only the desired site's cookies as a Netscape cookie file or a JSON
+   cookie array, and save the file locally outside your repository.
+3. Use the hostname where that session is signed in. For LinkedIn, use
+   `www.linkedin.com`:
+
+```bash
+fetchary extract social-insights https://www.linkedin.com/in/oliverjessner --follower --mode browser --cookies ~/linkedin-cookies.txt
+```
+
+The file path is the argument; cookie values never belong in the command line.
+Keep the export private: session cookies grant access to the signed-in account.
+Fetchary reads it without changing its contents, creating a session directory,
+copying it into application storage or writing refreshed cookies back. It does
+not automatically inspect your browser profile or saved passwords.
+
+Accepted exports are Netscape's seven tab-separated fields (including
+`#HttpOnly_` records and zero-expiry session cookies), a browser JSON cookie
+array, or a JSON object with a `cookies` array such as Playwright storage state.
+JSON supports `name`, `value`, `domain`, `path`, `secure`, `httpOnly`, `hostOnly`,
+`sameSite`, `session`, and `expires`/`expirationDate` in Unix seconds.
+Chromium's `-1` means a session cookie. Unsupported partitioned cookies and
+malformed entries are rejected. Files are limited to 1 MiB and 3000 entries.
+Cookie data is never evaluated as code.
+
+Domain, host-only, path, Secure and expiration constraints control delivery.
+Credentials are additionally restricted to the initially requested hostname and
+its subdomains: cookies are not sent to parent/sibling hosts or unrelated
+redirect destinations, even if the export contains overly broad domains.
+For example, a request to `www.linkedin.com` does not send imported credentials
+to `at.linkedin.com` or a third-party image host. A request to `linkedin.com`
+can use matching domain cookies on its `www` subdomain, but a host-only cookie
+for `www.linkedin.com` cannot authenticate the initial bare-host request.
+Use the exact signed-in hostname to avoid an unauthenticated first request.
+
+HTTP captures and auxiliary favicon requests apply the export on each request
+and redirect. Browser mode imports relevant cookies, including HttpOnly cookies,
+into a fresh isolated (incognito) Chromium context before navigation. Browser session updates
+and JavaScript-readable cookies work during that run; the file remains unchanged.
+Custom browser launchers must implement `browser.createBrowserContext()` with
+`setCookie()`, `newPage()` and `close()`.
+
+Cookie-file captures bypass both global and private-client page caches and
+in-flight sharing across independent operations. `analyse` still shares its
+capture within that one report. File contents are reread on every operation,
+so replacing an export or letting it expire cannot reuse an old authenticated
+snapshot. Combining a cookie file with an explicit Cookie request header is
+rejected. A missing, malformed, expired-only or unrelated export fails with
+validation exit code 2 without printing cookie values.
+
+A session import does not guarantee access: expired/revoked sessions, additional
+security checks and CAPTCHA pages can still return `blocked` or `login_required`.
+Fetchary does not solve CAPTCHA, perform an automatic login, change its user
+agent to impersonate a browser, or expose account credentials in extraction
+metadata. Without `--follower`, the full social-insights result retains the
+availability reason. See [LinkedIn's sign-in security guidance](https://www.linkedin.com/help/linkedin/answer/a1339220/security-verification-when-signing-in?lang=en).
 
 ## Capture, network access, and cache
 

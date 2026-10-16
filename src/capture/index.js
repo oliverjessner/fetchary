@@ -56,7 +56,7 @@ class CaptureManager {
     // Explicit credentials bypass the global cache. Private clients can retain
     // header-authenticated snapshots, keyed by their complete request headers.
     const sensitive = url.username || url.password || [...headers.keys()].some(name => ['authorization', 'cookie', 'proxy-authorization'].includes(name));
-    const ttlMs = this.options.signal ? 0 : sensitive && this.cache === sharedCaptureCache ? 0 : this.cacheTtlMs;
+    const ttlMs = this.options.signal || this.options.cookieJar ? 0 : sensitive && this.cache === sharedCaptureCache ? 0 : this.cacheTtlMs;
     const key = JSON.stringify([
       url.href, source.captureMode, [...headers.entries()].sort(), this.timeout,
       identity(this.httpFetch), identity(this.browserIdentity), identity(this.vendorIdentity),

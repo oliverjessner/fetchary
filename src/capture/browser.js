@@ -79,6 +79,7 @@ class BrowserCapture {
     let transferred = 0;
     const activeRequests = new Set();
     let page;
+    let cookieContext;
     let navigation;
     let suppliedDocument = false;
     const checkRequestErrors = () => {
@@ -90,7 +91,18 @@ class BrowserCapture {
         throw browserError('could not launch Chromium', options, cause, 'launch');
       });
       try {
-        page = await abortable(browser.newPage(), signal);
+        if (options.cookieJar) {
+          try {
+            if (typeof browser.createBrowserContext !== 'function') throw new Error();
+            cookieContext = await abortable(browser.createBrowserContext(), signal);
+            if (typeof cookieContext.setCookie !== 'function') throw new Error();
+            await abortable(cookieContext.setCookie(...options.cookieJar.browserCookies()), signal);
+          } catch {
+            // Protocol errors may serialize the credentials passed to Chromium.
+            throw new FetcharyBrowserError('could not import cookieFile into the browser context', {url:options.url, phase:'cookies'});
+          }
+        }
+        page = await abortable((cookieContext || browser).newPage(), signal);
         if (options.userAgent && typeof page.setUserAgent === 'function') await page.setUserAgent(options.userAgent);
         if (typeof page.setRequestInterception === 'function') {
           await page.setRequestInterception(true);
@@ -115,7 +127,7 @@ class BrowserCapture {
                   for (const [name, value] of new Headers(options.headers)) headersForRequest.set(name, value);
                 }
                 const resource = await readResource(request.url(), { ...options, signal, followRedirects: false,
-                  headers: Object.fromEntries(headersForRequest), method: request.method(), body: request.postData() }, options.maxResponseBytes);
+                  cookieHeaderFromBrowser: true, headers: Object.fromEntries(headersForRequest), method: request.method(), body: request.postData() }, options.maxResponseBytes);
                 transferred += resource.body.length;
                 if (transferred > options.maxResponseBytes * 4) {
                   const error = new Error('browser resource budget exceeded');
@@ -180,6 +192,9 @@ class BrowserCapture {
       controller.abort();
       if (page) {
         try { await page.close(); } catch {}
+      }
+      if (cookieContext) {
+        try { await cookieContext.close(); } catch {}
       }
       await Promise.allSettled([...activeRequests]);
     }
