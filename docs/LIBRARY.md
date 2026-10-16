@@ -155,7 +155,7 @@ not store the report, crawl other pages, monitor the site or infer ownership.
 | `headers` | none | `HeadersInit`; caller headers are scoped to the original origin |
 | `waitAfterLoad` | `5000` | Non-negative integer milliseconds or duration such as `'500ms'`, `'5s'` |
 | `signal` | none | `AbortSignal`; aborted operations fail and bypass shared in-flight work |
-| `maxResponseBytes` | `10485760` | Positive safe integer; decoded body/rendered HTML limit |
+| `maxResponseBytes` | `20971520` | Positive safe integer; decoded response/resource/rendered HTML limit |
 | `allowPrivateNetwork` | `false` | Explicitly permit trusted local/internal targets |
 | `cacheTtlMs` | `45000` | Finite, non-negative age limit; zero requests a fresh capture |
 | `fetch` | guarded native HTTP | Optional Fetch-compatible transport injection |
@@ -796,7 +796,14 @@ platform availability.
 Errors inherit from `FetcharyError`: `FetcharyValidationError` for invalid options,
 unsafe URLs and invalid selectors; `FetcharyFetchError` for HTTP/DNS/timeout/abort
 failures; `FetcharyBrowserError` for browser failures; `FetcharyNotFoundError`
-for inaccessible favicon/avatar candidates. Insights can instead return explicit
+for inaccessible favicon/avatar candidates. A failed browser resource download
+is a `FetcharyBrowserError` with `phase: 'resource'` and its original transport
+error in `cause`. Byte-limit errors include the effective `maxResponseBytes`
+and a recovery hint without echoing resource URLs into the top-level message.
+The default 20 MiB limit applies to external scripts as well as the document and
+rendered HTML; large bundles may require an explicit override, for example
+`{ mode: 'browser', maxResponseBytes: 32 * 1024 * 1024 }`. The aggregate browser
+resource budget remains four times that limit. Insights can instead return explicit
 availability, as documented above. Type declarations are bundled in
 [`src/index.d.ts`](../src/index.d.ts), including dispatcher result inference.
 

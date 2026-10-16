@@ -7,6 +7,19 @@ const { discoverVendors, prepareVendorPage, dismissVendorOverlays } = require('.
 
 function browserError(message, options, cause, phase) {
   if (cause instanceof FetcharyBrowserError) return cause;
+  // Report bounded-resource failures without echoing subresource URLs, which
+  // can contain signed query strings or other credentials.
+  let failure = cause;
+  for (let depth = 0; failure && depth < 8; depth++, failure = failure.cause) {
+    if (/^(?:response|rendered HTML) exceeds maxResponseBytes/.test(failure.message || '')) {
+      message += `: ${phase === 'resource' ? 'browser resource' : 'response or rendered HTML'} exceeds maxResponseBytes (${options.maxResponseBytes} bytes); increase --max-response-bytes (library: maxResponseBytes)`;
+      break;
+    }
+    if (failure.message === 'browser resource budget exceeded') {
+      message += `: browser resource budget exceeded (${options.maxResponseBytes * 4} bytes)`;
+      break;
+    }
+  }
   return new FetcharyBrowserError(message, {
     url: options.url,
     phase,
@@ -68,6 +81,9 @@ class BrowserCapture {
     let page;
     let navigation;
     let suppliedDocument = false;
+    const checkRequestErrors = () => {
+      if (requestError) throw browserError(`browser resource request failed for ${options.url}`, options, requestError, 'resource');
+    };
     try {
       signal.throwIfAborted();
       const browser = await abortable(this._getBrowser(options), signal).catch(cause => {
@@ -129,7 +145,7 @@ class BrowserCapture {
         throw browserError(`browser navigation failed for ${options.url}`, options, cause, 'navigation');
       }
 
-      if (requestError) throw requestError;
+      checkRequestErrors();
       let dismissedOverlays;
       try {
         dismissedOverlays = await abortable(waitAfterLoad(page, { ...options, signal }, vendors), signal);
@@ -141,7 +157,7 @@ class BrowserCapture {
       let browserFinalUrl;
       try {
         signal.throwIfAborted();
-        if (requestError) throw requestError;
+        checkRequestErrors();
         renderedHtml = await abortable(page.content(), signal);
         if (Buffer.byteLength(renderedHtml) > options.maxResponseBytes) throw new Error('rendered HTML exceeds maxResponseBytes');
         if (typeof renderedHtml !== 'string' || !renderedHtml.trim()) throw new Error('invalid rendered HTML snapshot');

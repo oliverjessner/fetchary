@@ -34,7 +34,7 @@ Options:
   --timeout <ms>                 Request timeout (default: 30000)
   --user-agent <text>            Request user agent
   --wait-after-load <duration>   Browser wait, e.g. 500ms or 5s (default: 5s)
-  --max-response-bytes <bytes>   Maximum response/DOM size (default: 10485760)
+  --max-response-bytes <bytes>   Maximum response/DOM size (default: 20971520)
   --allow-private-network        Allow trusted local/internal targets
   --include-selector <css>       Include first matching section (repeatable)
   --ignore-selector <css>        Remove matching elements (repeatable)

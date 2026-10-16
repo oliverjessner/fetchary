@@ -33,7 +33,7 @@ function extractionOptions(options = {}) {
     lookup: options.lookup, allowPrivateNetwork: options.allowPrivateNetwork,
     timeout: options.timeout ?? 30_000, userAgent: options.userAgent ?? 'fetchary/2.0',
     browserUserAgent: options.userAgent ?? 'fetchary/2.0', mode: options.mode ?? 'auto',
-    waitAfterLoadMs: parseWaitAfterLoad(options.waitAfterLoad), maxResponseBytes: options.maxResponseBytes ?? 10 * 1024 * 1024,
+    waitAfterLoadMs: parseWaitAfterLoad(options.waitAfterLoad), maxResponseBytes: options.maxResponseBytes ?? 20 * 1024 * 1024,
     cacheTtlMs: validateCacheTtl(options.cacheTtlMs), captureCache: options[clientCache],
   };
   if (!['auto','http','browser'].includes(settings.mode)) throw new FetcharyValidationError('mode must be auto, http or browser');

@@ -17,7 +17,7 @@ export type ExtractionOptions = {
   headers?: HeadersInit;
   waitAfterLoad?: number | string;
   signal?: AbortSignal;
-  /** Default 10 MiB, applied to decoded responses and rendered HTML. */
+  /** Default 20 MiB, applied to each decoded response/resource and rendered HTML. */
   maxResponseBytes?: number;
   /** Explicitly trust local/private network targets; false by default. */
   allowPrivateNetwork?: boolean;

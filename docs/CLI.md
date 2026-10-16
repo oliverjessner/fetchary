@@ -505,7 +505,7 @@ See [Social support](SOCIAL_SUPPORT.md) for implemented patterns and fixtures an
 | `--timeout <ms>`               | Positive milliseconds per request/phase; default 30000                         |
 | `--user-agent <text>`          | HTTP and browser user agent; default `fetchary/2.0`                            |
 | `--wait-after-load <duration>` | Browser post-load wait; default `5s`; accepts `500ms`, `5s`, or `0ms`          |
-| `--max-response-bytes <bytes>` | Positive safe integer; default 10485760 (10 MiB)                               |
+| `--max-response-bytes <bytes>` | Decoded response/resource/rendered HTML limit; default 20971520 (20 MiB)                               |
 | `--allow-private-network`      | Explicitly allow trusted local/internal targets                                |
 | `--quiet`                      | Suppress successful output, keeping errors on stderr                           |
 | `--verbose`                    | Print operation/mode diagnostics on stderr                                     |
@@ -541,6 +541,23 @@ headers (except the user agent). Caller headers are scoped to the original origi
 for auxiliary/browser requests as well. The
 rendered DOM has the same byte limit; total fetched browser resources are limited
 to four times that limit. Invalid or incomplete captures are not retained.
+
+The per-response limit also applies to browser scripts and other resources, not
+only to the final HTML. Large application bundles can exceed the default 20 MiB
+before a usable DOM is captured. Such failures report `browser resource request
+failed`, `maxResponseBytes`, the effective byte limit, and the option to change it.
+For pages that exceed the default, choose a larger explicit bound:
+
+```bash
+fetchary extract social-insights https://youtube.com/@oliverjessner --follower --mode browser --max-response-bytes 33554432
+```
+
+This sets 32 MiB per response and for the rendered DOM, with an aggregate browser
+resource budget of 128 MiB. The default is 20 MiB per response/DOM and 80 MiB
+for the aggregate browser resource budget.
+The JSON error format and browser exit code 4 are unchanged. Subresource URLs
+and query strings are retained in the library cause chain, rather than copied
+into the top-level CLI error message.
 
 Compatible page captures share a process-local, RAM-only cache, with a default
 45-second TTL, 100 entries, and approximately 50 MiB of retained payload memory.

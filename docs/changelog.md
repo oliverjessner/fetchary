@@ -1,5 +1,9 @@
 # Unreleased
 
+- Increase the default decoded response/resource and rendered HTML limit to 20 MiB (20971520 bytes), with an 80 MiB aggregate browser resource budget. Explicit `maxResponseBytes`/`--max-response-bytes` values continue to override the default.
+
+- Report failed browser resource downloads as resource-phase browser errors. Include effective byte limits and the `--max-response-bytes` recovery option for oversized scripts, without copying signed resource URLs into the top-level message. Document bounded captures for large YouTube bundles.
+
 - Add `fetchary analyse <url>` and typed `analyse()`/client methods combining ten extractors in one JSON report, with preserved per-section metadata, partial error reporting and deduplicated list output. Share one document capture and at most one passive browser rendering per analysis, including uncached/abortable calls.
 
 - Add Tracker Intelligence with 13 modular provider detectors, typed library/dispatcher/client methods, JSON/list CLI output, scoped Matomo IDs, separate Plausible domains and redacted raw/rendered evidence. Reuse guarded capture/cache infrastructure with passive browser rendering that blocks all additional resources and tracking traffic.
