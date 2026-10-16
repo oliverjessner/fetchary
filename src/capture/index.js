@@ -79,7 +79,6 @@ class CaptureManager {
     const http = source.httpCapture || await captureHttp({
       ...this.options,
       url: source.url,
-      sourceId: source.id,
       fetch: this.httpFetch,
       timeout: this.timeout,
       userAgent: this.userAgent,
@@ -98,7 +97,6 @@ class CaptureManager {
     const rendered = await this.browser.capture({
       ...this.options,
       url: source.url,
-      sourceId: source.id,
       timeout: this.timeout,
       waitAfterLoadMs: source.waitAfterLoadMs,
       userAgent: this.browserUserAgent,

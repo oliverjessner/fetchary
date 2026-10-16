@@ -92,6 +92,7 @@ async function withCapture(url, options, type, operation) {
 }
 
 function textOrHtml(url, options, type) {
+  extractionOptions(options);
   const includeSelectors = validateSelectors(options.includeSelectors ?? [], 'include');
   const ignoreSelectors = validateSelectors(options.ignoreSelectors ?? [], 'ignore');
   return withCapture(url, options, type, page => {
@@ -176,6 +177,7 @@ async function extractProfilePicture(url, options = {}) {
 
 
 async function extractSelector(url, options = {}, legacyOptions = {}) {
+  if (typeof options !== 'string') extractionOptions(options);
   if (typeof options === 'string') options = { ...legacyOptions, selector: options };
   const [selector] = validateSelectors([options.selector], 'include');
   const format = options.format ?? 'text';
@@ -192,39 +194,71 @@ async function extractImages(url, options = {}) {
   return withCapture(url, options, 'images', page => { const data = imageLinks(pageDocument(page), pageMetadata(page).finalUrl, options); return { data, images: data }; });
 }
 async function extractSocialLinks(url, options = {}) {
+  extractionOptions(options);
   if (options.platform !== undefined && !Object.hasOwn(domains, options.platform === 'twitter' ? 'x' : options.platform)) throw new FetcharyValidationError('unsupported social platform');
   return withCapture(url, options, 'social-links', page => { const data = socialLinks(pageDocument(page), pageMetadata(page).finalUrl, options); return { data, links: data }; });
 }
 async function extractSocialInsights(url, options = {}) {
   return withCapture(url, options, 'social-insights', page => {
-    const requested = classifyUrl(page.requestedUrl);
     const finalUrl = pageMetadata(page).finalUrl;
+    const insightUrl = classifyUrl(page.requestedUrl).kind === 'unknown' ? finalUrl : page.requestedUrl;
+    const requested = classifyUrl(insightUrl);
     const document = pageDocument(page);
     let data;
     const blocked = accessStatus(page);
-    let mismatch = requested.id !== null && !sameEntity(page.requestedUrl, finalUrl);
-    const canonical = httpUrl(document.querySelector('link[rel="canonical"]')?.getAttribute('href'), finalUrl);
-    if (canonical && !sameEntity(canonical, page.requestedUrl)) {
+    let mismatch = requested.id !== null && !sameEntity(insightUrl, finalUrl);
+    const canonical = httpUrl(document.querySelector('link[rel="canonical"]')?.getAttribute('href') || document.querySelector('meta[property="og:url"]')?.getAttribute('content'), finalUrl);
+    if (canonical && !sameEntity(canonical, insightUrl)) {
       // YouTube /@handle and /channel/id aliases are accepted only when both
       // captured URLs are channels; raw requests and redirects still agree.
-      const alias = requested.platform === 'youtube' && requested.kind === 'channel' && classifyUrl(canonical).kind === 'channel';
+      const alias = requested.platform === 'youtube' && requested.kind === 'channel'
+        && new URL(insightUrl).pathname.startsWith('/@') && /^\/channel\//.test(new URL(canonical).pathname)
+        && classifyUrl(canonical).platform === 'youtube';
       if (!alias) mismatch = true;
     }
     const vendor = discoverVendors().find(vendor => vendor.name === requested.platform);
     if (blocked || mismatch || !vendor?.socialInsights) {
-      data = insightBuilder(page.requestedUrl).finish(blocked || (mismatch ? 'unavailable' : 'unsupported'));
+      data = insightBuilder(insightUrl).finish(blocked || (mismatch ? 'unavailable' : 'unsupported'));
       if (mismatch && !blocked) data.unavailable = Object.fromEntries(Object.keys(data.metrics).map(name => [name, 'identity_mismatch']));
     } else {
-      try { data = vendor.socialInsights(document, page.requestedUrl, { finalUrl }); } catch {
-        data = insightBuilder(page.requestedUrl).finish('extraction_error');
+      try { data = vendor.socialInsights(document, insightUrl, { finalUrl }); } catch {
+        data = insightBuilder(insightUrl).finish('extraction_error');
+      }
+    }
+    if (blocked === 'login_required' && vendor?.followerCountFromRaw && sameEntity(page.rawFinalUrl, insightUrl)) {
+      const count = vendor.followerCountFromRaw(parseHTML(page.rawHtml ?? page.rawBody.toString('utf8')).document, page.rawFinalUrl, finalUrl);
+      if (count !== null) {
+        const builder = insightBuilder(insightUrl, ['followers']);
+        builder.set('followers', count, 'vendor', 'followerCountFromRaw', null);
+        data = builder.finish('login_required');
+      }
+    } else if (page.renderedHtml != null && !blocked && !mismatch && vendor?.socialInsights && !['extraction_error','unsupported'].includes(data.status) && sameEntity(page.rawFinalUrl, insightUrl)) {
+      const rawDocument = parseHTML(page.rawHtml ?? page.rawBody.toString('utf8')).document;
+      const rawCanonical = httpUrl(rawDocument.querySelector('link[rel="canonical"]')?.getAttribute('href'), page.rawFinalUrl);
+      if (!rawCanonical || sameEntity(rawCanonical, insightUrl)) {
+        const raw = vendor.socialInsights(rawDocument, insightUrl);
+        for (const [metric, value] of Object.entries(raw.metrics)) if (value !== null && data.metrics[metric] === null) {
+          data.metrics[metric] = value;
+          data.sources[metric] = { ...raw.sources[metric], field: `rawHTTP:${raw.sources[metric].field}` };
+          delete data.unavailable[metric];
+        }
+        if (Object.values(data.metrics).some(value => value !== null)) data.status = Object.values(data.unavailable).every(reason => reason === 'unsupported') ? 'available' : 'partial';
       }
     }
     return { data, vendor: data.platform, followers: data.metrics.followers ?? data.metrics.subscribers };
+  }).catch(error => {
+    if (!(error instanceof FetcharyFetchError) || ![401,403,429].includes(error.status)) throw error;
+    const requestedUrl = validateUrl(url);
+    const data = insightBuilder(requestedUrl).finish(error.status === 401 ? 'login_required' : 'blocked');
+    return { requestedUrl, finalUrl: requestedUrl, rawFinalUrl: requestedUrl, extractedAt: new Date().toISOString(), capturedAt: null,
+      captureMode: 'http', status: error.status, contentType: null, dismissedOverlays: [], cache: { hit: false, ageMs: 0, ttlMs: validateCacheTtl(options.cacheTtlMs) },
+      type: 'social-insights', data, vendor: data.platform, followers: null };
   });
 }
 const extractSocialAvatar = extractProfilePicture;
 
 async function extract(url, options = {}) {
+  extractionOptions(options);
   const type = options.type ?? (options.format === 'text' ? 'text' : 'html');
   if (options.format !== undefined && !['text','html'].includes(options.format)) throw new FetcharyValidationError('format must be text or html');
   const methods = { text: extractText, html: extractHtml, favicon: extractFavicon, images: extractImages, avatar: extractSocialAvatar,

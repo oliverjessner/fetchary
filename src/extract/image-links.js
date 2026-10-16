@@ -21,7 +21,7 @@ function imageLinks(document, pageUrl, options = {}) {
   if (filters !== undefined && (!Array.isArray(filters) || filters.some(source => !sources.includes(source)))) throw new FetcharyValidationError('sources must be an array of image source names');
   const base = documentBase(document, pageUrl);
   const results = []; const seen = new Set();
-  const dimension = value => /^\d+$/.test(value || '') && Number(value) > 0 ? Number(value) : null;
+  const dimension = value => /^\d+$/.test(value || '') && Number.isSafeInteger(Number(value)) && Number(value) > 0 ? Number(value) : null;
   function add(value, element, source, originalAttribute) {
     if (filters && !filters.includes(source) || options.includeMetadata === false && source === 'metadata') return;
     const url = httpUrl(value, base);

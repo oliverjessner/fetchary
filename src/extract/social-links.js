@@ -1,7 +1,7 @@
 'use strict';
 const { httpUrl, documentBase } = require('./images');
 const { domains, classifyUrl } = require('../utils/social');
-const { jsonObjects } = require('../metrics/followers');
+const { objects } = require('../metrics/insights');
 const { FetcharyValidationError } = require('../errors');
 
 function socialLinks(document, pageUrl, options = {}) {
@@ -19,7 +19,11 @@ function socialLinks(document, pageUrl, options = {}) {
   for (const element of document.querySelectorAll('a[href], area[href], link[rel~="me"][href], meta[property="og:url"], meta[property="og:see_also"], meta[name="twitter:url"]')) {
     add(element.getAttribute('href') || element.getAttribute('content'), element.localName === 'meta' ? 'metadata' : element.localName === 'link' ? 'rel-me' : 'link');
   }
-  for (const object of jsonObjects(document)) for (const value of [object.sameAs].flat()) if (typeof value === 'string') add(value, 'json-ld');
+  for (const script of document.querySelectorAll('script[type="application/ld+json"]')) {
+    let root;
+    try { root = JSON.parse(script.textContent); } catch { continue; }
+    for (const object of objects(root)) for (const value of [object.sameAs].flat()) if (typeof value === 'string') add(value, 'json-ld');
+  }
   return results;
 }
 module.exports = { socialLinks };

@@ -74,4 +74,3 @@ test('YouTube counts channel subscribers from modern and historical headers inst
   assert.equal(count('youtube', 'https://www.youtube.com/@example', '<aside><span>99M subscribers</span></aside>'), null);
   assert.equal(count('youtube', 'https://www.youtube.com/watch?v=example', html), null);
 });
-

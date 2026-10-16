@@ -22,7 +22,7 @@ function classifyUrl(value) {
   const p = url.pathname.replace(/\/+$/, '');
   let kind = 'unknown'; let id = null; let match;
   if (platform === 'youtube') {
-    id = url.hostname.endsWith('youtu.be') ? p.slice(1) : url.searchParams.get('v') || p.match(/^\/(?:shorts|embed|live)\/([^/]+)/)?.[1];
+    id = url.hostname.endsWith('youtu.be') ? p.match(/^\/([^/]+)$/)?.[1] : (p === '/watch' ? url.searchParams.get('v') : null) || p.match(/^\/(?:shorts|embed|live)\/([^/]+)/)?.[1];
     if (id) kind = 'video';
     else if ((match = p.match(/^\/(?:@([^/]+)|(?:channel|c|user)\/([^/]+))(?:\/(?:about|videos|shorts|streams|featured|playlists|community))?$/))) { kind = 'channel'; id = match[1] || match[2]; }
   } else if (platform === 'tiktok') {

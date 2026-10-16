@@ -17,6 +17,8 @@ function discoverVendors(directory = __dirname) {
     const vendor = require(path.join(directory, file));
     if (!vendor || typeof vendor.name !== 'string' || !/^[a-z][a-z0-9-]*$/.test(vendor.name) ||
         typeof vendor.matches !== 'function' || !Array.isArray(vendor.overlays) ||
+        (vendor.classifyUrl !== undefined && typeof vendor.classifyUrl !== 'function') ||
+        (vendor.socialInsights !== undefined && typeof vendor.socialInsights !== 'function') ||
         (vendor.prepare !== undefined && typeof vendor.prepare !== 'function') ||
         (vendor.followerCount !== undefined && typeof vendor.followerCount !== 'function') ||
         (vendor.profilePicture !== undefined && typeof vendor.profilePicture !== 'function') ||
@@ -43,7 +45,7 @@ async function prepareVendorPage(page, url, vendors = discoverVendors()) {
     try {
       await vendor.prepare(page);
     } catch {
-      // Vendor preparation is best-effort and must never prevent archiving.
+      // Vendor preparation is best-effort and must never prevent extraction.
     }
   }
 }
@@ -59,7 +61,7 @@ async function dismissVendorOverlays(page, url, alreadyDismissed = [], vendors =
       try {
         if (await overlay.dismiss(page)) dismissed.push(overlay.id);
       } catch {
-        // Vendor helpers are best-effort and must never prevent archiving.
+        // Vendor helpers are best-effort and must never prevent extraction.
       }
     }
   }

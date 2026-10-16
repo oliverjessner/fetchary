@@ -73,4 +73,3 @@ test('LinkedIn login walls, challenges and post pages do not provide a profile c
   for (const path of ['company', 'school', 'showcase']) assert.equal(count(html, `https://www.linkedin.com/${path}/example/`), 1234);
   assert.equal(count(html, 'https://www.linkedin.com/company/example/about/'), 1234);
 });
-

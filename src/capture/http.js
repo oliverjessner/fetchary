@@ -5,6 +5,12 @@ const https = require('node:https');
 const zlib = require('node:zlib');
 const { validateRemoteUrl } = require('../utils/url');
 const { FetcharyFetchError, FetcharyValidationError } = require('../errors');
+// Only sockets established by this transport enter these pools. Keep trusted
+// local development separate from the default public-network policy.
+const agents = new Map([false, true].map(trusted => [trusted, {
+  http: new http.Agent({ keepAlive: true, maxSockets: 16 }),
+  https: new https.Agent({ keepAlive: true, maxSockets: 16 }),
+}]));
 
 function abortable(promise, signal) {
   if (signal.aborted) return Promise.reject(signal.reason);
@@ -51,7 +57,7 @@ function nativeResponse(target, options, signal, addresses) {
     const lookup = addresses && ((hostname, settings, callback) => settings.all
       ? callback(null, addresses) : callback(null, addresses[0].address, addresses[0].family));
     const request = transport.request(target, { method: options.method || 'GET', headers: options.headers, signal,
-      ...(lookup ? { lookup } : {}) }, response => {
+      ...(lookup ? { lookup } : {}), agent: agents.get(Boolean(options.allowPrivateNetwork))[target.protocol === 'https:' ? 'https' : 'http'] }, response => {
       const headers = new Headers();
       for (let i = 0; i < response.rawHeaders.length; i += 2) headers.append(response.rawHeaders[i], response.rawHeaders[i+1]);
       let body = response;
@@ -71,6 +77,7 @@ function nativeResponse(target, options, signal, addresses) {
 }
 
 async function readResource(url, options, maxBytes = options.maxResponseBytes) {
+  maxBytes = Math.min(maxBytes, options.maxResponseBytes);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(new Error('request timed out')), options.timeout);
   const signal = options.signal ? AbortSignal.any([options.signal, controller.signal]) : controller.signal;
@@ -87,7 +94,7 @@ async function readResource(url, options, maxBytes = options.maxResponseBytes) {
       const checked = await abortable(validateRemoteUrl(target, options), signal);
       response = await abortable(options.fetch
         ? options.fetch(checked.url.href, { headers: Object.fromEntries(headers), redirect: 'manual', signal, method, ...(body ? { body } : {}) })
-        : nativeResponse(checked.url, { headers: Object.fromEntries(headers), method, body }, signal, checked.addresses), signal);
+        : nativeResponse(checked.url, { headers: Object.fromEntries(headers), method, body, allowPrivateNetwork: options.allowPrivateNetwork }, signal, checked.addresses), signal);
       if (!response || !Number.isInteger(response.status)) throw new Error('fetch returned an invalid response');
       if (response.url && response.url !== checked.url.href) await abortable(validateRemoteUrl(response.url, options), signal);
       const location = response.headers?.get?.('location');

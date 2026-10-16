@@ -1,5 +1,5 @@
 'use strict';
-const { jsonRoots, objects, insightBuilder, jsonLdMetrics, legacyFollower } = require('../metrics/insights');
+const { insightBuilder, legacyFollower } = require('../metrics/insights');
 const { classifyUrl } = require('../utils/social');
 
 const { linkCount, profileName } = require('../metrics/followers');

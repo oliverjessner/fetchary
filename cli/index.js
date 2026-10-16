@@ -82,7 +82,7 @@ function parseArgs(argv) {
 async function main(argv = process.argv.slice(2), io = {}) {
   const stdout = io.stdout || process.stdout;
   const stderr = io.stderr || process.stderr;
-  let options = {};
+  let options = { json: argv.includes('--json') };
   try {
     const parsed = parseArgs(argv); options = parsed.options;
     const args = parsed.positionals;
@@ -95,9 +95,10 @@ async function main(argv = process.argv.slice(2), io = {}) {
     else if (command === 'profile-picture') type = 'avatar';
     else invalid(`unknown command "${command}"; use "fetchary extract <type> <url>"`);
     if (args.length !== 1) invalid('exactly one URL is required');
-    for (const [key, allowed] of Object.entries({ selector:['selector'], all:['selector'], attribute:['selector'], format:['selector','text','html'], platform:['social-links'], youtube:['social-links'], 'urls-only':['images','social-links'], 'exclude-metadata':['images'], source:['images'], duplicates:['images'], 'include-selector':['text','html'], 'ignore-selector':['text','html'], text:['text','html'] })) {
+    for (const [key, allowed] of Object.entries({ selector:['selector'], all:['selector'], attribute:['selector'], format:['selector'], platform:['social-links'], youtube:['social-links'], 'urls-only':['images','social-links'], 'exclude-metadata':['images'], source:['images'], duplicates:['images'], 'include-selector':['text','html'], 'ignore-selector':['text','html'], text:['text','html'] })) {
       if (Object.hasOwn(options, key) && !allowed.includes(type)) invalid(`--${key} is not supported for ${type}`);
     }
+    if (options.text && type !== 'text') invalid('--text conflicts with the selected extraction type');
     if (options.youtube && options.platform && options.platform !== 'youtube') invalid('--youtube conflicts with --platform');
     const settings = { ...(io.options || {}), type };
     for (const [key, name] of Object.entries({ mode:'mode', timeout:'timeout', 'user-agent':'userAgent', 'wait-after-load':'waitAfterLoad', 'max-response-bytes':'maxResponseBytes', selector:'selector', all:'all', attribute:'attribute', format:'format', platform:'platform', 'allow-private-network':'allowPrivateNetwork', 'include-selector':'includeSelectors', 'ignore-selector':'ignoreSelectors', source:'sources' })) {

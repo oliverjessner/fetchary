@@ -8,7 +8,6 @@ const { discoverVendors, prepareVendorPage, dismissVendorOverlays } = require('.
 function browserError(message, options, cause, phase) {
   if (cause instanceof FetcharyBrowserError) return cause;
   return new FetcharyBrowserError(message, {
-    sourceId: options.sourceId,
     url: options.url,
     phase,
     cause,
@@ -38,12 +37,14 @@ class BrowserCapture {
       return puppeteer.launch(launchOptions);
     });
     this.browserPromise = null;
+    this.browser = null;
   }
 
   async _getBrowser(options) {
     if (!this.browserPromise) {
       this.browserPromise = Promise.resolve()
-        .then(() => this.launch({ headless: true, args: ['--disable-background-networking', '--disable-quic', '--proxy-server=http://127.0.0.1:9', '--proxy-bypass-list=<-loopback>', '--force-webrtc-ip-handling-policy=disable_non_proxied_udp'] }))
+        .then(() => this.launch({ headless: true, timeout: options.timeout, signal: options.signal, args: ['--disable-background-networking', '--disable-quic', '--proxy-server=http://127.0.0.1:9', '--proxy-bypass-list=<-loopback>', '--force-webrtc-ip-handling-policy=disable_non_proxied_udp'] }))
+        .then(browser => { this.browser = browser; return browser; })
         .catch(cause => {
           this.browserPromise = null;
           throw browserError('could not launch Chromium', options, cause, 'launch');
@@ -55,7 +56,6 @@ class BrowserCapture {
   async capture(options) {
     const vendors = this.getVendors();
     await validateRemoteUrl(options.url, options);
-    const browser = await this._getBrowser(options);
     const controller = new AbortController();
     const signal = options.signal ? AbortSignal.any([options.signal, controller.signal]) : controller.signal;
     const timer = setTimeout(() => controller.abort(new Error('browser capture timed out')), options.timeout + options.waitAfterLoadMs);
@@ -67,8 +67,12 @@ class BrowserCapture {
     let page;
     let navigation;
     try {
+      signal.throwIfAborted();
+      const browser = await abortable(this._getBrowser(options), signal).catch(cause => {
+        throw browserError('could not launch Chromium', options, cause, 'launch');
+      });
       try {
-        page = await browser.newPage();
+        page = await abortable(browser.newPage(), signal);
         if (options.userAgent && typeof page.setUserAgent === 'function') await page.setUserAgent(options.userAgent);
         if (options.headers && typeof page.setExtraHTTPHeaders === 'function') {
           const headers = new Headers(options.headers);
@@ -101,7 +105,7 @@ class BrowserCapture {
           });
         } else if (!options.allowPrivateNetwork) throw new Error('browser implementation must support guarded request interception');
         await prepareVendorPage(page, options.url, vendors);
-        navigation = await page.goto(options.url, { waitUntil: 'load', timeout: options.timeout });
+        navigation = await abortable(page.goto(options.url, { waitUntil: 'load', timeout: options.timeout }), signal);
         if (navigation && navigation.status() >= 400) throw new Error(`HTTP ${navigation.status()}`);
       } catch (cause) {
         throw browserError(`browser navigation failed for ${options.url}`, options, cause, 'navigation');
@@ -110,7 +114,7 @@ class BrowserCapture {
       if (requestError) throw requestError;
       let dismissedOverlays;
       try {
-        dismissedOverlays = await waitAfterLoad(page, { ...options, signal }, vendors);
+        dismissedOverlays = await abortable(waitAfterLoad(page, { ...options, signal }, vendors), signal);
       } catch (cause) {
         throw browserError(`post-load wait failed for ${options.url}`, options, cause, 'post-load-wait');
       }
@@ -120,7 +124,7 @@ class BrowserCapture {
       try {
         signal.throwIfAborted();
         if (requestError) throw requestError;
-        renderedHtml = await page.content();
+        renderedHtml = await abortable(page.content(), signal);
         if (Buffer.byteLength(renderedHtml) > options.maxResponseBytes) throw new Error('rendered HTML exceeds maxResponseBytes');
         if (typeof renderedHtml !== 'string' || !renderedHtml.trim()) throw new Error('invalid rendered HTML snapshot');
         browserFinalUrl = typeof page.url === 'function' ? page.url() : options.url;
@@ -149,12 +153,16 @@ class BrowserCapture {
 
   async close() {
     const promise = this.browserPromise;
+    const browser = this.browser;
     this.browserPromise = null;
-    if (!promise) return;
-    try {
-      const browser = await promise;
-      await browser.close();
-    } catch {}
+    this.browser = null;
+    if (browser) {
+      try { await browser.close(); } catch {}
+    } else if (promise) {
+      // A custom launcher may ignore cancellation. Close a late result without
+      // making the already aborted extraction wait for an unresolved launcher.
+      promise.then(late => late.close()).catch(() => {});
+    }
   }
 }
 

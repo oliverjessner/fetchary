@@ -62,7 +62,7 @@ function descriptionCount(document) {
 function* jsonObjects(document) {
   for (const script of document.querySelectorAll('script')) {
     let data;
-    // Embedded JSON is data only; never evaluate JavaScript from an archive.
+    // Embedded JSON is data only; never evaluate JavaScript from a page snapshot.
     try { data = JSON.parse(script.textContent); } catch { continue; }
     const pending = [data];
     while (pending.length) {

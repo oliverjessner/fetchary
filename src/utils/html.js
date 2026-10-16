@@ -14,7 +14,7 @@ function htmlToText(html) {
     .replace(/[ \t\f\v]+/g, ' ')
     .replace(/ *\n */g, '\n')
     .replace(/\n{3,}/g, '\n\n')
-    .trim());
+    .trim()).replace(/[^\S\r\n]+/g, ' ').replace(/ *\n */g, '\n').trim();
 }
 
 function validateSelector(selector) {
