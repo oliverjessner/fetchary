@@ -28,6 +28,8 @@ Running without arguments or with `--help` prints help and exits successfully.
 | `social-insights` | `fetchary extract social-insights https://www.youtube.com/@YouTube` | JSON result        |
 | `emails`          | `fetchary extract emails https://example.com/contact`              | JSON result        |
 | `telephone`       | `fetchary extract telephone https://example.com/contact`           | JSON result        |
+| `links`           | `fetchary extract links https://example.com`                       | JSON result        |
+| `documents`       | `fetchary extract documents https://example.com`                   | JSON result        |
 
 Text and HTML contain exactly the extracted string, with no extra newline or
 status message. Image URLs end with a newline. Unfiltered JSON results are objects with
@@ -57,6 +59,7 @@ fetchary extract selector https://example.com --selector a --attribute href --li
 | `social-insights` | The inspected profile/post URL; with `--follower`/`--posts`, the selected counts |
 | `emails` | Found email addresses |
 | `telephone` | Found phone numbers in international form, retaining extensions |
+| `links`, `documents` | Unique discovered URLs in first-occurrence order; JSON retains every occurrence |
 
 Text/HTML link lists resolve relative URLs against the document base and final
 page URL, remove duplicates in discovery order, and ignore non-HTTP schemes and
@@ -88,7 +91,55 @@ file downloader.
 first match per selector in page order; overlapping subtrees appear once. Ignores
 remove every matching element, including selected roots and ancestors. Missing
 include matches return empty content. These options apply to `text`, `html`,
-`emails`, and `telephone`.
+`emails`, `telephone`, `links`, and `documents`.
+
+### Links and documents
+
+```bash
+fetchary extract links https://example.com --json
+fetchary extract links https://example.com --include-selector main
+fetchary extract documents https://example.com --list
+fetchary extract documents https://example.com --ignore-selector footer --json
+```
+
+`links` discovers HTTP(S) URLs in `a[href]`, `area[href]`, and `link[href]`,
+including canonical, alternate, and resource links. Relative URLs resolve against
+the document base and final captured page URL. Empty hrefs and fragment links
+are retained; queries/fragments are preserved. Other schemes and URLs containing
+credentials are skipped. `internal` means the target has the same origin as the
+final page (scheme, hostname, and port); subdomains or different ports are external.
+
+Every occurrence contains `url`, `rawUrl`, `text`, `rel`, `internal`, `source`,
+and `location: { pageUrl, selector, attribute }`. The CSS selector identifies
+the element in the captured DOM, including when include/ignore selectors filter
+results. `text` normalizes whitespace and decodes entities; empty link text can
+use an accessible label, area/image alt text, or title. `rel` is an array of
+distinct lowercase tokens. Repeated URLs retain separate texts and locations in
+JSON. `--list`/`--urls-only` print each URL once, in discovery order. Templates and
+other inert script/style/noscript content are ignored.
+
+`documents` uses the same metadata and also inspects `iframe[src]`, `embed[src]`,
+and `object[data]`. It recognizes file extensions, `type` MIME hints, download
+filenames, and common query parameters (`file`, `filename`, `name`, `path`,
+`attachment`, `document`, `download`, `format`, `ext`, `extension`, `type`).
+Detection priority is MIME hint, download filename, URL path, then query hint.
+Explicit downloads of an unknown format are retained with nullable format fields;
+obvious image, media, executable, script, and stylesheet downloads are excluded.
+
+Recognized extensions: `pdf`, `csv`, `tsv`, `doc`, `docx`, `docm`, `dot`, `dotx`,
+`dotm`, `xls`, `xlsx`, `xlsm`, `xlsb`, `xlt`, `xltx`, `xltm`, `ppt`, `pptx`,
+`pptm`, `pot`, `potx`, `potm`, `pps`, `ppsx`, `ppsm`, `odt`, `ods`, `odp`, `odg`,
+`odf`, `ott`, `ots`, `otp`, `rtf`, `txt`, `md`, `markdown`, `rst`, `tex`, `epub`,
+`mobi`, `azw`, `azw3`, `ics`, `vcf`, `json`, `xml`, `yaml`, `yml`, `ndjson`,
+`jsonl`, `log`, `zip`, `7z`, `rar`, `tar`, `gz`, `tgz`, `bz2`, and `xz`.
+
+Document records add `filename`, `extension`, `contentType`, and `detectedBy`.
+These describe advertised or inferred format hints; linked targets are not
+requested, so their existence and actual response MIME type are not verified.
+The top-level `contentType` still describes the captured webpage. Discovery
+does not follow linked pages or download files. Empty results succeed with
+`data: []` (or no list output). HTTP/browser capture, cache and safety limits
+apply as usual. See [record schemas](LIBRARY.md#link-and-document-records).
 
 ### Emails and telephone
 

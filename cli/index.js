@@ -3,7 +3,7 @@
 const api = require('../src');
 const pkg = require('../package.json');
 const { listItems, listCaptureOptions } = require('./list');
-const types = ['text','html','favicon','images','avatar','selector','social-links','social-insights','emails','telephone'];
+const types = ['text','html','favicon','images','avatar','selector','social-links','social-insights','emails','telephone','links','documents'];
 const HELP = `Fetchary ${pkg.version} — Extract what matters.
 
 Usage: fetchary extract <type> <url> [options]
@@ -19,6 +19,8 @@ Types:
   social-insights  Public profile and post metrics with availability
   emails           Email addresses from links, page text and structured data
   telephone        Phone numbers from links, page text and structured data
+  links            Internal/external links with text, rel and locations
+  documents        Document/download links with format hints and locations
 
 Options:
   --json                         Structured extraction result
@@ -52,6 +54,8 @@ Options:
 
 Examples:
   fetchary extract text https://example.com
+  fetchary extract links https://example.com
+  fetchary extract documents https://example.com --list
   fetchary extract emails https://example.com --list
   fetchary extract telephone https://example.com --default-country AT --list
   fetchary extract favicon https://example.com
@@ -109,7 +113,7 @@ async function main(argv = process.argv.slice(2), io = {}) {
     else if (command === 'profile-picture') type = 'avatar';
     else invalid(`unknown command "${command}"; use "fetchary extract <type> <url>"`);
     if (args.length !== 1) invalid('exactly one URL is required');
-    for (const [key, allowed] of Object.entries({ binary:['favicon'], selector:['selector'], all:['selector'], attribute:['selector'], format:['selector'], platform:['social-links'], 'default-country':['telephone'], youtube:['social-links'], follower:['social-insights'], posts:['social-insights'], 'exclude-metadata':['images'], source:['images'], duplicates:['images'], 'include-selector':['text','html','emails','telephone'], 'ignore-selector':['text','html','emails','telephone'], text:['text','html'] })) {
+    for (const [key, allowed] of Object.entries({ binary:['favicon'], selector:['selector'], all:['selector'], attribute:['selector'], format:['selector'], platform:['social-links'], 'default-country':['telephone'], youtube:['social-links'], follower:['social-insights'], posts:['social-insights'], 'exclude-metadata':['images'], source:['images'], duplicates:['images'], 'include-selector':['text','html','emails','telephone','links','documents'], 'ignore-selector':['text','html','emails','telephone','links','documents'], text:['text','html'] })) {
       if (Object.hasOwn(options, key) && !allowed.includes(type)) invalid(`--${key} is not supported for ${type}`);
     }
     if (options.text && type !== 'text') invalid('--text conflicts with the selected extraction type');
@@ -138,7 +142,7 @@ async function main(argv = process.argv.slice(2), io = {}) {
     }
     else if (options.binary) stdout.write(result.data);
     else if (list) { const items = listItems(result, settings); if (items.length) stdout.write(`${items.join('\n')}\n`); }
-    else if (options.json || ['images','social-links','social-insights','emails','telephone'].includes(type)) stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    else if (options.json || ['images','social-links','social-insights','emails','telephone','links','documents'].includes(type)) stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     else if (type === 'favicon' || type === 'avatar') stdout.write(`${result.image.url}\n`);
     else stdout.write(result.content);
     return 0;

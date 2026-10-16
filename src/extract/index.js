@@ -14,9 +14,11 @@ const { imageLinks } = require('./image-links');
 const { socialLinks } = require('./social-links');
 const { insightBuilder } = require('../metrics/insights');
 const contacts = require('./contacts');
+const { pageLinks } = require('./links');
+const { documentLinks } = require('./documents');
 
 const clientCache = Symbol('captureCache');
-const types = ['text','html','favicon','images','avatar','selector','social-links','social-insights','emails','telephone'];
+const types = ['text','html','favicon','images','avatar','selector','social-links','social-insights','emails','telephone','links','documents'];
 
 function extractionOptions(options = {}) {
   if (!options || typeof options !== 'object' || Array.isArray(options)) throw new FetcharyValidationError('options must be an object');
@@ -65,7 +67,7 @@ function fallbackNeeded(page, result, type) {
   const scripts = /<script\b/i.test(html);
   if (type === 'social-insights') return ['unavailable','partial'].includes(result.data.status) && scripts;
   if (type === 'selector') return !result.data.matched && scripts;
-  if (['images','social-links','emails','telephone'].includes(type)) return result.data.length === 0 && scripts;
+  if (['images','social-links','emails','telephone','links','documents'].includes(type)) return result.data.length === 0 && scripts;
   const document = pageDocument(page);
   const text = htmlToText((document.body || document).toString());
   return scripts && (!text || /id=["'](?:root|app|__next)["']/i.test(html) && text.length < 40);
@@ -214,6 +216,18 @@ async function extractSelector(url, options = {}, legacyOptions = {}) {
     return { data: { matched: matches.length > 0, values }, content: values.filter(value => value !== null).join('\n'), format };
   });
 }
+function extractLinkCollection(url, options, type) {
+  extractionOptions(options);
+  const includeSelectors = validateSelectors(options.includeSelectors ?? [], 'include');
+  const ignoreSelectors = validateSelectors(options.ignoreSelectors ?? [], 'ignore');
+  return withCapture(url, options, type, page => {
+    const data = (type === 'links' ? pageLinks : documentLinks)(pageDocument(page), pageMetadata(page).finalUrl, { includeSelectors, ignoreSelectors });
+    return type === 'links' ? { data, links: data } : { data, documents: data };
+  });
+}
+async function extractLinks(url, options = {}) { return extractLinkCollection(url, options, 'links'); }
+async function extractDocuments(url, options = {}) { return extractLinkCollection(url, options, 'documents'); }
+
 async function extractImages(url, options = {}) {
   return withCapture(url, options, 'images', page => { const data = imageLinks(pageDocument(page), pageMetadata(page).finalUrl, options); return { data, images: data }; });
 }
@@ -286,7 +300,7 @@ async function extract(url, options = {}) {
   const type = options.type ?? (options.format === 'text' ? 'text' : 'html');
   if (options.format !== undefined && !['text','html'].includes(options.format)) throw new FetcharyValidationError('format must be text or html');
   const methods = { text: extractText, html: extractHtml, favicon: extractFavicon, images: extractImages, avatar: extractSocialAvatar,
-    selector: extractSelector, 'social-links': extractSocialLinks, 'social-insights': extractSocialInsights, emails: extractEmails, telephone: extractTelephone };
+    selector: extractSelector, 'social-links': extractSocialLinks, 'social-insights': extractSocialInsights, emails: extractEmails, telephone: extractTelephone, links: extractLinks, documents: extractDocuments };
   if (!types.includes(type)) throw new FetcharyValidationError(`unknown extraction type: ${type}`);
   return methods[type](url, options);
 }
@@ -296,11 +310,11 @@ function createExtractor(options = {}) {
   const cache = createCaptureCache({ maxEntries: options.maxEntries, maxCacheBytes: options.maxCacheBytes });
   const defaults = { ...options, headers: settings.headers };
   const client = { clearCache: () => cache.clear() };
-  for (const [name, method] of Object.entries({ extract, extractText, extractHtml, extractFavicon, extractImages, extractSocialLinks, extractSocialAvatar, extractProfilePicture, extractSocialInsights, extractEmails, extractTelephone })) client[name] = (url, overrides = {}) => method(url, { ...defaults, ...overrides, [clientCache]: cache });
+  for (const [name, method] of Object.entries({ extract, extractText, extractHtml, extractFavicon, extractImages, extractSocialLinks, extractSocialAvatar, extractProfilePicture, extractSocialInsights, extractEmails, extractTelephone, extractLinks, extractDocuments })) client[name] = (url, overrides = {}) => method(url, { ...defaults, ...overrides, [clientCache]: cache });
   client.extractSelector = (url, selectorOrOptions = {}, overrides = {}) => typeof selectorOrOptions === 'string'
     ? extractSelector(url, { ...defaults, ...overrides, selector: selectorOrOptions, [clientCache]: cache })
     : extractSelector(url, { ...defaults, ...selectorOrOptions, [clientCache]: cache });
   return client;
 }
-module.exports = { extract, extractText, extractHtml, extractFavicon, extractImages, extractSelector, extractSocialLinks, extractEmails, extractTelephone,
+module.exports = { extract, extractText, extractHtml, extractFavicon, extractImages, extractSelector, extractSocialLinks, extractEmails, extractTelephone, extractLinks, extractDocuments,
   extractSocialAvatar, extractProfilePicture, extractSocialInsights, createExtractor, clearCache };

@@ -64,6 +64,8 @@ retains metric sources and availability reasons.
 | `social-insights` | `extractSocialInsights(url, options?)` | Normalized metrics and availability |
 | `emails` | `extractEmails(url, options?)` | Array of email strings |
 | `telephone` | `extractTelephone(url, options?)` | Array of international phone strings |
+| `links` | `extractLinks(url, options?)` | Array of link occurrences |
+| `documents` | `extractDocuments(url, options?)` | Array of document link occurrences |
 
 Without `type`, `extract(url)` returns HTML. `extract(url, { format: 'text' })`
 remains a compatibility path. `extractProfilePicture` aliases
@@ -102,6 +104,31 @@ declared supported HTTP charsets and simple HTML meta charset declarations use
 `TextDecoder`, with UTF-8 fallback for unsupported labels.
 
 ### Operation-specific options
+
+`links` and `documents` accept `includeSelectors` and `ignoreSelectors`, following
+the text/HTML selection rules. Discovery keeps the original document base and
+DOM locations. Each occurrence is returned separately, including repeated URLs.
+Link locations refer to the captured page; they are not selectors for the target
+website. All links use HTTP(S) without credentials. Internal/external classification
+compares origins with the final captured page URL.
+
+```js
+const { extractLinks, extractDocuments } = require('fetchary');
+
+async function main() {
+    const url = 'https://example.com';
+    const links = await extractLinks(url, { includeSelectors: ['main'] });
+    const documents = await extractDocuments(url);
+    console.log(links.data, documents.data);
+}
+main().catch(console.error);
+```
+
+Both methods also work through the dispatcher (`type: 'links'` / `'documents'`)
+and isolated clients. They discover references without requesting the targets or
+saving files. Document hints are not verified file contents. The
+[CLI reference](CLI.md#links-and-documents) lists discovery sources, supported
+extensions, MIME/download/query hints, and filtering behavior.
 
 `emails` and `telephone` accept `includeSelectors` and `ignoreSelectors` with the
 same selection rules as text/HTML. They inspect contact links, page text,
@@ -202,7 +229,8 @@ type ExtractionMetadata = {
     capturedAt: string | null;
     extractedAt: string;
     type: 'text' | 'html' | 'favicon' | 'images' | 'avatar'
-        | 'selector' | 'social-links' | 'social-insights' | 'emails' | 'telephone';
+        | 'selector' | 'social-links' | 'social-insights' | 'emails' | 'telephone'
+        | 'links' | 'documents';
     captureMode: 'http' | 'browser';
     status: number;
     contentType: string | null;
@@ -227,6 +255,9 @@ data: string;
 
 // emails / telephone
 data: string[];
+
+// links / documents (types detailed below)
+data: ExtractedLink[] | DocumentLink[];
 
 // favicon (binary omitted or false)
 data: {
@@ -282,7 +313,46 @@ also have joined `content` and `format`; image lists have `images`; social links
 have `links`; email results have `emails`; telephone results have `numbers`;
 favicon/avatar have `image`; avatars also have `platform`, `profile`,
 and `vendor`; insights have `vendor` and `followers` (falling back to YouTube
-subscribers). Prefer `data` for new integrations.
+subscribers). Link results also have `links`; document results have `documents`.
+Prefer `data` for new integrations.
+
+### Link and document records
+
+```ts
+type LinkLocation = {
+    pageUrl: string;
+    selector: string;
+    attribute: 'href' | 'src' | 'data';
+};
+type ExtractedLink = {
+    url: string;
+    rawUrl: string;
+    text: string;
+    rel: string[];
+    internal: boolean;
+    source: 'a' | 'area' | 'link';
+    location: LinkLocation;
+};
+type DocumentLink = Omit<ExtractedLink, 'source'> & {
+    source: ExtractedLink['source'] | 'iframe' | 'embed' | 'object';
+    filename: string | null;
+    extension: string | null;
+    contentType: string | null;
+    detectedBy: 'url' | 'query' | 'download' | 'type';
+};
+```
+
+`rawUrl` is the original DOM attribute value after HTML entity decoding. `text`
+contains normalized link text or its label/alt/title fallback. `location.selector`
+is a unique CSS path in the captured DOM, and `location.pageUrl` is the final
+captured page URL. Paths remain relative to the full DOM even when extraction
+uses includes/ignores. Locations can change on a later capture.
+
+`filename` is a hint from the download attribute, a recognized file query value,
+or the URL path. `extension` is a recognized lowercase format, or `null`.
+`contentType` is the element's MIME hint, or a known MIME type inferred from the
+format; it can be `null`. `detectedBy` records the first matching hint. Explicit
+downloads with an unknown format use `download` and nullable format fields.
 
 ### Social availability and precision
 

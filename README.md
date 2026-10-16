@@ -56,6 +56,18 @@ save it in its original format:
 fetchary extract favicon https://github.com --binary > favicon.bin
 ```
 
+### Discover links and documents
+
+Inspect internal and external links, or find downloadable documents:
+
+```bash
+fetchary extract links https://example.com
+fetchary extract documents https://example.com --list
+```
+
+Link results include their text, `rel` values, and where they appeared on the
+page. Document discovery finds PDFs, spreadsheets, Word files, and other downloads.
+
 ### Find contact details
 
 Get email addresses and phone numbers from a contact page:

@@ -36,6 +36,7 @@ function listItems(result, options = {}) {
   switch (result.type) {
     case 'text': case 'html': return pageUrls(result, options);
     case 'images': case 'social-links': return result.data.map(item => item.url);
+    case 'links': case 'documents': return [...new Set(result.data.map(item => item.url))];
     case 'emails': case 'telephone': return result.data;
     case 'favicon': case 'avatar': return [result.image.url];
     case 'selector': return result.data.values.filter(value => value !== null).map(value => value.replace(/[\r\n]+/g, ' ').trim()).filter(Boolean);

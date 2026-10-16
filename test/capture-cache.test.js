@@ -453,7 +453,7 @@ test('extraction clients create no persistent files, including cache directories
 
 test('all extraction and cache exports are available as named ES module imports', async () => {
   const module = await import('../src/index.js');
-  for (const name of ['extract', 'extractText', 'extractHtml', 'extractEmails', 'extractTelephone', 'extractFavicon', 'extractImages', 'extractSelector',
+  for (const name of ['extract', 'extractText', 'extractHtml', 'extractLinks', 'extractDocuments', 'extractEmails', 'extractTelephone', 'extractFavicon', 'extractImages', 'extractSelector',
     'extractSocialLinks', 'extractSocialAvatar', 'extractSocialInsights', 'extractProfilePicture', 'createExtractor', 'clearCache']) {
     assert.equal(module[name], actualApi[name], name);
   }
