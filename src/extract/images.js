@@ -1,7 +1,7 @@
 'use strict';
 
 const { parseHTML } = require('linkedom');
-const { FetcharyFetchError } = require('../errors');
+const { readResource } = require('../capture/http');
 
 function httpUrl(value, base) {
   if (typeof value !== 'string' || !value.trim()) return null;
@@ -82,42 +82,6 @@ function imageDimensions(body) {
     return result(numeric(svg?.getAttribute('width')), numeric(svg?.getAttribute('height')), 'image/svg+xml', true);
   }
   return null;
-}
-
-async function readResource(url, options, maxBytes) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), options.timeout);
-  let response;
-  try {
-    response = await options.fetch(url, {
-      headers: { 'user-agent': options.userAgent }, redirect: 'follow', signal: controller.signal,
-    });
-    if (!response?.ok) throw new Error(`HTTP ${response?.status}`);
-    if (Number(response.headers?.get?.('content-length')) > maxBytes) throw new Error('resource is too large');
-    let body;
-    if (response.body?.getReader) {
-      const reader = response.body.getReader();
-      const chunks = [];
-      let length = 0;
-      try {
-        while (true) {
-          const part = await reader.read();
-          if (part.done) break;
-          length += part.value.length;
-          if (length > maxBytes) throw new Error('resource is too large');
-          chunks.push(Buffer.from(part.value));
-        }
-        body = Buffer.concat(chunks, length);
-      } finally { await reader.cancel().catch(() => {}); }
-    } else {
-      body = Buffer.from(await response.arrayBuffer());
-      if (body.length > maxBytes) throw new Error('resource is too large');
-    }
-    return { body, url: httpUrl(response.url, url) || url, contentType: response.headers?.get?.('content-type')?.split(';')[0].trim().toLowerCase() || null };
-  } catch (cause) {
-    await response?.body?.cancel?.().catch(() => {});
-    throw new FetcharyFetchError(`could not read image resource ${url}`, { url, cause });
-  } finally { clearTimeout(timer); }
 }
 
 async function selectImage(candidates, options) {

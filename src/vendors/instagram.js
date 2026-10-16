@@ -1,4 +1,6 @@
 'use strict';
+const { jsonRoots, objects, insightBuilder, jsonLdMetrics, legacyFollower } = require('../metrics/insights');
+const { classifyUrl } = require('../utils/social');
 const { profilePictures } = require('../metrics/profile-pictures');
 
 const { parseCount, linkCount, descriptionCount, jsonObjects, profileName } = require('../metrics/followers');
@@ -107,4 +109,25 @@ function profilePicture(document, url) {
   });
 }
 
-module.exports = { name: 'instagram', matches, overlays, followerCount, profilePicture };
+function socialInsights(document, url) {
+  const identity = classifyUrl(url);
+  const isProfile = identity.kind === 'profile';
+  const builder = insightBuilder(url, isProfile ? ['followers','following','posts'] : ['post','video'].includes(identity.kind) ? ['likes','comments','views'] : []);
+  for (const root of jsonRoots(document)) for (const object of objects(root)) {
+    if (isProfile && String(object.username || '').toLowerCase() === identity.id) {
+      builder.set('followers', object.edge_followed_by?.count ?? object.follower_count, 'embedded-json', 'user.follower_count');
+      builder.set('following', object.edge_follow?.count ?? object.following_count, 'embedded-json', 'user.following_count');
+      builder.set('posts', object.edge_owner_to_timeline_media?.count ?? object.media_count, 'embedded-json', 'user.media_count');
+    }
+    if (!isProfile && object.shortcode === identity.id) {
+      builder.set('likes', object.edge_media_preview_like?.count ?? object.edge_liked_by?.count ?? object.like_count, 'embedded-json', 'media.like_count');
+      builder.set('comments', object.edge_media_to_parent_comment?.count ?? object.edge_media_to_comment?.count ?? object.comment_count, 'embedded-json', 'media.comment_count');
+      builder.set('views', object.video_view_count ?? object.video_play_count ?? object.play_count, 'embedded-json', 'media.video_view_count');
+    }
+  }
+  if (isProfile) legacyFollower(document, url, builder, followerCount);
+  else jsonLdMetrics(document, url, builder);
+  return builder.finish();
+}
+
+module.exports = { name: 'instagram', matches, classifyUrl, socialInsights, overlays, followerCount, profilePicture };

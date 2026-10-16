@@ -1,278 +1,89 @@
-import type { EventEmitter } from 'node:events';
+import type { LookupAddress } from 'node:dns';
 
-export type FetcharyHooks = {
-  beforeFetch?: (context: { sourceId: number; url: string }) => void | Promise<void>;
-  afterFetch?: (result: FetchResult) => void | Promise<void>;
-  onChange?: (result: FetchResult) => void | Promise<void>;
-  onError?: (event: { sourceId: number; url: string; error: Error }) => void | Promise<void>;
-};
-
-export type FetcharyOptions = {
-  dataDir?: string;
-  timeout?: number;
-  userAgent?: string;
-  fetch?: typeof globalThis.fetch;
-  hooks?: FetcharyHooks;
-};
-
-export type CaptureMode = 'browser' | 'http';
-
-/** Minimal injectable browser contract; a Puppeteer Browser satisfies it. */
+export type ExtractionType = 'text' | 'html' | 'favicon' | 'images' | 'avatar' | 'selector' | 'social-links' | 'social-insights';
+export type CaptureMode = 'auto' | 'http' | 'browser';
+export type Platform = 'youtube' | 'tiktok' | 'instagram' | 'facebook' | 'x' | 'threads' | 'linkedin' | 'twitch' | 'reddit' | 'github' | 'vimeo' | 'bluesky';
+export type SocialKind = 'profile' | 'channel' | 'post' | 'video' | 'unknown';
 export type CaptureBrowser = {
-  newPage(): Promise<{
-    goto(url: string, options: { waitUntil: 'load'; timeout: number }): Promise<unknown>;
-    content(): Promise<string>;
-    url(): string;
-    close(): Promise<void>;
-  }>;
+  newPage(): Promise<{ goto(url: string, options: { waitUntil: 'load'; timeout: number }): Promise<unknown>; content(): Promise<string>; url(): string; close(): Promise<void> }>;
   close(): Promise<void>;
 };
-
-/** Standalone extraction never initializes Fetchary storage. */
 export type ExtractionOptions = {
   mode?: CaptureMode;
-  waitAfterLoad?: string | number;
   timeout?: number;
   userAgent?: string;
-  fetch?: typeof globalThis.fetch;
   headers?: HeadersInit;
-  launchBrowser?: (options: { headless: boolean }) => Promise<CaptureBrowser>;
-  /** Capture age limit in milliseconds; 45000 by default, 0 bypasses cache and deduplication. */
+  waitAfterLoad?: number | string;
+  signal?: AbortSignal;
+  /** Default 10 MiB, applied to decoded responses and rendered HTML. */
+  maxResponseBytes?: number;
+  /** Explicitly trust local/private network targets; false by default. */
+  allowPrivateNetwork?: boolean;
+  fetch?: typeof globalThis.fetch;
+  launchBrowser?: (options: { headless: true; args: string[]; timeout?: number; signal?: AbortSignal }) => Promise<CaptureBrowser>;
+  /** Trusted DNS injection. All returned addresses are validated. */
+  lookup?: (hostname: string, options: { all: true; verbatim: true }) => Promise<LookupAddress[]>;
+  /** Default 45000. Zero bypasses both cache and in-flight deduplication. */
   cacheTtlMs?: number;
 };
-
-export type ExtractOptions = ExtractionOptions & {
-  format?: 'html' | 'text';
-  includeSelectors?: string[];
-  ignoreSelectors?: string[];
-};
-
+export type ContentOptions = ExtractionOptions & { includeSelectors?: string[]; ignoreSelectors?: string[]; format?: 'html' | 'text' };
+export type SelectorOptions = ExtractionOptions & { selector: string; all?: boolean; format?: 'text' | 'html'; attribute?: string };
+export type ImageSource = 'img' | 'srcset' | 'lazy' | 'metadata' | 'link' | 'background';
+export type ImagesOptions = ExtractionOptions & { unique?: boolean; includeMetadata?: boolean; sources?: ImageSource[] };
+export type SocialLinksOptions = ExtractionOptions & { platform?: Platform | 'twitter' };
 export type ExtractionMetadata = {
-  requestedUrl: string;
-  finalUrl: string;
-  rawFinalUrl: string;
-  capturedAt: string;
-  status: number;
-  contentType: string | null;
-  captureMode: CaptureMode;
-  dismissedOverlays: string[];
-  cache: { hit: boolean; ageMs: number; ttlMs: number };
+  requestedUrl: string; finalUrl: string; rawFinalUrl: string;
+  /** Original snapshot timestamp; preserved on cache hits. */
+  capturedAt: string | null;
+  /** Time this extraction result was produced. */
+  extractedAt: string;
+  captureMode: 'http' | 'browser'; status: number; contentType: string | null;
+  dismissedOverlays: string[]; cache: { hit: boolean; ageMs: number; ttlMs: number };
 };
-
-export type ExtractResult = ExtractionMetadata & {
-  format: 'html' | 'text';
-  content: string;
+export type ExtractionResult<T, K extends ExtractionType = ExtractionType> = ExtractionMetadata & { type: K; data: T };
+export type ContentResult<K extends 'text' | 'html' = 'text' | 'html'> = ExtractionResult<string, K> & { content: string; format: K };
+/** Compatibility name for HTML/text results. */
+export type ExtractResult = ContentResult;
+export type ExtractOptions = ContentOptions;
+export type ExtractedImage = { url: string; width: number | null; height: number | null; scalable: boolean; resolutionVerified: boolean; contentType: string | null; source: string };
+export type FaviconResult = ExtractionResult<ExtractedImage, 'favicon'> & { image: ExtractedImage };
+export type AvatarData = { platform: Platform; profile: string | null; image: ExtractedImage };
+export type ProfilePictureResult = ExtractionResult<AvatarData, 'avatar'> & AvatarData & { vendor: string };
+export type ImageLink = { url: string; alt: string; width: number | null; height: number | null; source: ImageSource; originalAttribute: string; resolutionVerified: false };
+export type ImagesResult = ExtractionResult<ImageLink[], 'images'> & { images: ImageLink[] };
+export type SelectorResult = ExtractionResult<{ matched: boolean; values: Array<string | null> }, 'selector'> & { content: string; format: 'text' | 'html' };
+export type SocialLink = { platform: Platform; url: string; kind: SocialKind; source: 'link' | 'rel-me' | 'metadata' | 'json-ld' };
+export type SocialLinksResult = ExtractionResult<SocialLink[], 'social-links'> & { links: SocialLink[] };
+export type Metric = 'likes' | 'comments' | 'views' | 'shares' | 'saves' | 'followers' | 'following' | 'posts' | 'subscribers';
+export type InsightStatus = 'available' | 'partial' | 'unavailable' | 'unsupported' | 'login_required' | 'blocked' | 'extraction_error';
+export type SocialInsightsData = {
+  platform: Platform | null; kind: SocialKind; url: string;
+  metrics: Record<Metric, number | null>;
+  status: InsightStatus;
+  sources: Partial<Record<Metric, { type: 'embedded-json' | 'json-ld' | 'vendor'; field: string; approximate: boolean | null }>>;
+  unavailable: Partial<Record<Metric, string>>;
 };
-
-export type ExtractedImage = {
-  url: string;
-  width: number | null;
-  height: number | null;
-  scalable: boolean;
-  /** Dimensions or SVG scalability were read from the image bytes. */
-  resolutionVerified: boolean;
-  contentType: string | null;
-  source: string;
-};
-
-export type FaviconResult = ExtractionMetadata & { image: ExtractedImage };
-export type ProfilePictureResult = FaviconResult & { vendor: string };
-export type ImagesResult = ExtractionMetadata & { images: Array<{ url: string; alt: string }> };
-export type SocialLinksResult = ExtractionMetadata & { links: Array<{ platform: string; url: string }> };
-export type SocialInsightsResult = ExtractionMetadata & { vendor: string; followers: number | null };
-
-export type ExtractorOptions = ExtractionOptions & {
-  /** Maximum retained captures; default 100. */
-  maxEntries?: number;
-  /** Approximate retained byte budget; default 50 * 1024 * 1024. */
-  maxCacheBytes?: number;
-};
-
-export type Extractor = {
-  extract: typeof extract;
-  extractText: typeof extractText;
-  extractHtml: typeof extractHtml;
-  extractFavicon: typeof extractFavicon;
-  extractImages: typeof extractImages;
-  extractSelector: typeof extractSelector;
-  extractSocialLinks: typeof extractSocialLinks;
-  extractSocialAvatar: typeof extractSocialAvatar;
-  extractProfilePicture: typeof extractProfilePicture;
-  extractSocialInsights: typeof extractSocialInsights;
-  clearCache(): void;
-};
-
-export type Vendor = {
-  name: string;
-  active: boolean;
-};
-
-export type Follower = {
-  id: number;
-  follower: number;
-  name: string;
-  url: string;
-  lastCheckedAt: string | null;
-  lastChangedAt: string | null;
-};
-
-export type FollowerList = {
-  followers: Follower[];
-  sum: number;
-};
-
-export type Schedule = {
-  sourceId: number;
-  enabled: boolean;
-  every: string;
-  intervalSeconds: number;
-  lastRunAt?: string | null;
-  nextRunAt: string;
-};
-
-export type Source = {
-  id: number;
-  url: string;
-  name: string | null;
-  tag: string | null;
-  enabled: boolean;
-  createdAt: string;
-  lastCheckedAt: string | null;
-  lastChangedAt: string | null;
-  currentHash: string | null;
-  currentRawHash: string | null;
-  currentRenderedHash: string | null;
-  currentComparisonHash: string | null;
-  currentVersionId: number | null;
-  ignoreSelectors: string[];
-  includeSelectors: string[];
-  captureMode: CaptureMode;
-  waitAfterLoadMs: number;
-  versions: number;
-  schedule: Omit<Schedule, 'sourceId'> | null;
-};
-
-export type Version = {
-  id: number;
-  sourceId: number;
-  requestedUrl: string;
-  finalUrl: string;
-  fetchedAt: string;
-  status: number;
-  contentType: string | null;
-  contentLength: number;
-  hash: string;
-  rawHash: string;
-  renderedHash: string | null;
-  comparisonHash: string | null;
-  etag: string | null;
-  lastModified: string | null;
-  file: string;
-  rawFile: string;
-  renderedFile: string | null;
-  renderedLength: number | null;
-  captureMode: CaptureMode;
-  renderedCapturedAt: string | null;
-  browserFinalUrl: string | null;
-};
-
-export type FetchResult = {
-  id: number;
-  sourceId: number;
-  url: string;
-  /** Whether the visible text content changed. */
-  changed: boolean;
-  /** Whether the exact response bytes changed and a new version was archived. */
-  rawChanged: boolean;
-  /** Whether the exact rendered browser DOM changed. */
-  renderedChanged: boolean;
-  /** Whether the visible text content changed. */
-  contentChanged: boolean;
-  previousHash?: string;
-  hash: string;
-  rawHash: string;
-  renderedHash: string | null;
-  contentHash: string;
-  comparisonHash: string;
-  captureMode: CaptureMode;
-  version: number;
-  fetchedAt: string;
-  status: number;
-  contentLength: number;
-  renderedLength: number | null;
-  finalUrl: string;
-  browserFinalUrl: string | null;
-  /** Known overlays dismissed before the browser DOM snapshot was taken. */
-  dismissedOverlays: string[];
-};
-
-export type DiffResult = {
-  sourceId: number;
-  from: number;
-  to: number;
-  mode: 'text' | 'element-content' | 'element-raw' | 'raw';
-  changed: boolean;
-  diff: Array<{ type: 'added' | 'removed'; value: string }>;
-};
-
-export type FetcharyRunner = { stop(): Promise<void> };
-
-export declare class Fetchary extends EventEmitter {
-  readonly dataDir: string;
-  readonly databasePath: string;
-  vendors(): Promise<Vendor[]>;
-  syncVendors(): Promise<Vendor[]>;
-  setVendorActive(name: string, active: boolean): Promise<Vendor>;
-  add(url: string, options?: { name?: string; tag?: string; every?: string; ignoreSelectors?: string[]; includeSelectors?: string[]; mode?: CaptureMode; captureMode?: CaptureMode; waitAfterLoad?: string | number; waitAfterLoadMs?: string | number }): Promise<Source & { version: number; changed: boolean; rawChanged: boolean; renderedChanged: boolean; contentChanged: boolean }>;
-  list(options?: { tag?: string }): Promise<Source[]>;
-  get(id: number): Promise<Source>;
-  /** Follower count from the latest archived vendor profile (YouTube subscribers). */
-  followerCount(id: number): Promise<number>;
-  /** Available follower counts and their sum, optionally filtered by source tag. */
-  followers(options?: { tag?: string }): Promise<FollowerList>;
-  fetch(): Promise<FetchResult[]>;
-  fetch(id: number): Promise<FetchResult>;
-  fetch(ids: number[]): Promise<FetchResult[]>;
-  history(id: number, options?: { limit?: number; offset?: number }): Promise<Version[]>;
-  version(sourceId: number, versionId?: number): Promise<Version>;
-  read(sourceId: number, versionId?: number): Promise<string>;
-  readRendered(sourceId: number, versionId?: number): Promise<string>;
-  diff(sourceId: number, options?: { from?: number; to?: number; mode?: 'text' | 'element-content' | 'element-raw' | 'raw'; includeSelectors?: string[] }): Promise<DiffResult>;
-  edit(id: number, changes: { url?: string; name?: string | null; tag?: string | null; ignoreSelectors?: string[]; includeSelectors?: string[]; mode?: CaptureMode; captureMode?: CaptureMode; waitAfterLoad?: string | number; waitAfterLoadMs?: string | number }): Promise<Source>;
-  enable(id: number): Promise<Source>;
-  disable(id: number): Promise<Source>;
-  remove(id: number, options?: { purge?: boolean }): Promise<void>;
-  schedule(id: number, every: string, options?: { now?: boolean }): Promise<Schedule>;
-  unschedule(id: number): Promise<void>;
-  schedules(): Promise<Schedule[]>;
-  run(options?: { pollInterval?: number }): Promise<FetcharyRunner>;
-  export(id: number, options?: { output?: string }): Promise<{ sourceId: number; directory: string; versions: number }>;
-  status(): Promise<{ sources: number; versions: number; fetchBytes: number; changedToday: number; lastFetch: string | null; database: string }>;
-  close(): Promise<void>;
-}
-
-export declare function createFetchary(options?: FetcharyOptions): Promise<Fetchary>;
-export declare function extract(url: string, options?: ExtractOptions): Promise<ExtractResult>;
+export type SocialInsightsResult = ExtractionResult<SocialInsightsData, 'social-insights'> & { vendor: Platform | null; followers: number | null };
+export type ResultMap = { text: ContentResult<'text'>; html: ContentResult<'html'>; favicon: FaviconResult; images: ImagesResult; avatar: ProfilePictureResult; selector: SelectorResult; 'social-links': SocialLinksResult; 'social-insights': SocialInsightsResult };
+export type OptionsMap = { text: ContentOptions; html: ContentOptions; favicon: ExtractionOptions; images: ImagesOptions; avatar: ExtractionOptions; selector: SelectorOptions; 'social-links': SocialLinksOptions; 'social-insights': ExtractionOptions };
+export declare function extract<K extends ExtractionType>(url: string, options: OptionsMap[K] & { type: K }): Promise<ResultMap[K]>;
+export declare function extract(url: string, options?: ContentOptions): Promise<ContentResult>;
+export declare function extractText(url: string, options?: ContentOptions): Promise<ContentResult<'text'>>;
+export declare function extractHtml(url: string, options?: ContentOptions): Promise<ContentResult<'html'>>;
 export declare function extractFavicon(url: string, options?: ExtractionOptions): Promise<FaviconResult>;
-export declare function extractProfilePicture(url: string, options?: ExtractionOptions): Promise<ProfilePictureResult>;
-export declare function extractText(url: string, options?: ExtractOptions): Promise<ExtractResult>;
-export declare function extractHtml(url: string, options?: ExtractOptions): Promise<ExtractResult>;
-export declare function extractImages(url: string, options?: ExtractionOptions): Promise<ImagesResult>;
-export declare function extractSelector(url: string, selector: string, options?: ExtractOptions): Promise<ExtractResult>;
-export declare function extractSocialLinks(url: string, options?: ExtractionOptions): Promise<SocialLinksResult>;
-export declare function extractSocialAvatar(url: string, options?: ExtractionOptions): Promise<ProfilePictureResult>;
+export declare function extractImages(url: string, options?: ImagesOptions): Promise<ImagesResult>;
+export declare function extractSelector(url: string, options: SelectorOptions): Promise<SelectorResult>;
+export declare function extractSelector(url: string, selector: string, options?: Omit<SelectorOptions, 'selector'>): Promise<SelectorResult>;
+export declare function extractSocialLinks(url: string, options?: SocialLinksOptions): Promise<SocialLinksResult>;
 export declare function extractSocialInsights(url: string, options?: ExtractionOptions): Promise<SocialInsightsResult>;
-/** Creates a lightweight client with its own cache and configuration. */
+export declare function extractSocialAvatar(url: string, options?: ExtractionOptions): Promise<ProfilePictureResult>;
+export declare const extractProfilePicture: typeof extractSocialAvatar;
+export type ExtractorOptions = ExtractionOptions & { maxEntries?: number; maxCacheBytes?: number };
+export type Extractor = { extract: typeof extract; extractText: typeof extractText; extractHtml: typeof extractHtml; extractFavicon: typeof extractFavicon; extractImages: typeof extractImages; extractSelector: typeof extractSelector; extractSocialLinks: typeof extractSocialLinks; extractSocialInsights: typeof extractSocialInsights; extractSocialAvatar: typeof extractSocialAvatar; extractProfilePicture: typeof extractProfilePicture; clearCache(): void };
 export declare function createExtractor(options?: ExtractorOptions): Extractor;
-/** Clears the process-local cache used by standalone extraction exports. */
 export declare function clearCache(): void;
-export declare function parseInterval(every: string): { every: string; intervalSeconds: number };
-
-export declare class FetcharyError extends Error {}
-export declare class FetcharyFetchError extends FetcharyError { sourceId?: number; url?: string; status?: number }
-export declare class FetcharyBrowserError extends FetcharyError { sourceId?: number; url?: string; phase?: 'launch' | 'navigation' | 'post-load-wait' | 'snapshot' }
-export declare class FetcharyNotFoundError extends FetcharyError { sourceId?: number; versionId?: number }
-export declare class FetcharyIntervalError extends FetcharyError { interval?: unknown }
-export declare class FetcharyStorageError extends FetcharyError {}
+export declare class FetcharyError extends Error { url?: string }
 export declare class FetcharyValidationError extends FetcharyError {}
-export declare class FetcharyRunnerError extends FetcharyError {}
+export declare class FetcharyFetchError extends FetcharyError { status?: number }
+export declare class FetcharyBrowserError extends FetcharyError { phase?: string }
+export declare class FetcharyNotFoundError extends FetcharyError {}

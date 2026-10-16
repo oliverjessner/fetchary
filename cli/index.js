@@ -1,979 +1,127 @@
 #!/usr/bin/env node
 'use strict';
-
-const path = require('node:path');
-const fs = require('node:fs');
-const os = require('node:os');
-const { spawn } = require('node:child_process');
-const { parseHTML } = require('linkedom');
+const api = require('../src');
 const pkg = require('../package.json');
-const { comparisonHash, comparisonHtml, comparisonText } = require('../src/diff');
-const {
-  createFetchary,
-  extract,
-  extractFavicon,
-  extractProfilePicture,
-  FetcharyFetchError,
-  FetcharyValidationError,
-  FetcharyIntervalError,
-} = require('../src');
+const types = ['text','html','favicon','images','avatar','selector','social-links','social-insights'];
+const HELP = `Fetchary ${pkg.version} — Extract what matters.
 
-class CliUsageError extends Error {
-  constructor(message, details = {}) {
-    super(message);
-    this.usage = details.usage;
-    this.example = details.example;
-  }
-}
+Usage: fetchary extract <type> <url> [options]
 
-const HELP = `Fetchary 👁️ — ${pkg.version}
+Types:
+  text             Readable page text
+  html             Raw or rendered HTML
+  favicon          Highest-resolution accessible icon URL
+  images           Referenced image URLs and metadata
+  avatar           A public social profile's avatar URL
+  selector         Elements matching a CSS selector
+  social-links     Public social URLs linked by a webpage
+  social-insights  Public profile and post metrics with availability
 
-Usage: fetchary <command> [arguments] [options]
+Options:
+  --json                         Structured extraction result
+  --mode auto|http|browser        Capture strategy (default: auto, HTTP first)
+  --timeout <ms>                 Request timeout (default: 30000)
+  --user-agent <text>            Request user agent
+  --wait-after-load <duration>   Browser wait, e.g. 500ms or 5s (default: 5s)
+  --max-response-bytes <bytes>   Maximum response/DOM size (default: 10485760)
+  --allow-private-network        Allow trusted local/internal targets
+  --include-selector <css>       Include first matching section (repeatable)
+  --ignore-selector <css>        Remove matching elements (repeatable)
+  --selector <css>               Required for selector extraction
+  --all                          Select all matching elements
+  --attribute <name>             Read an attribute instead of element content
+  --format text|html             Selector output format (default: text)
+  --platform <name>              Filter social links to one platform
+  --youtube                      Shortcut for --platform youtube
+  --urls-only                    Print image/social-link URLs, one per line
+  --exclude-metadata             Exclude Open Graph/Twitter image metadata
+  --source <name>                Filter image sources (repeatable)
+  --duplicates                   Keep duplicate image URLs
+  --quiet                        Suppress successful output
+  --verbose                      Diagnostics on stderr
+  --help                         Show help
+  --version                      Show version
 
-Commands:
-  extract <url>               Print page content without storing it
-  favicon <url>               Print the highest-resolution accessible icon URL
-  profile-picture <url>       Print a public social profile's image URL
-  add <url>                   Add and immediately capture a URL
-  list                        List monitored sources
-  follower [id]               Show a follower count or list all counts with a sum
-  vendors                     List vendors and their activation state
-  vendor <name> <enable|disable>  Enable or disable a vendor
-  fetch [id...]               Fetch one, several, or all enabled sources
-  status                      Show storage statistics
-  show <id>                   Show source details
-  history <id>                List archived versions
-  diff <id> [from] [to]       Compare archived versions
-  open <id> [version]         Open rendered HTML (use --raw for the response)
-  edit <id>                   Edit URL, name, tag, or comparison selectors
-  enable <id>                 Enable a source
-  disable <id>                Disable a source
-  remove <id>                 Remove a source (use --purge for its archive)
-  export <id>                 Export a source and all versions
-  schedule <id> <interval>    Schedule fetching (for example 15m, 2h, 3d)
-  unschedule <id>             Disable a source schedule
-  schedules                   List active schedules
-  run                         Run the persistent scheduler
+Examples:
+  fetchary extract text https://example.com
+  fetchary extract favicon https://example.com
+  fetchary extract selector https://example.com --selector h1
+  fetchary extract social-links https://example.com --youtube
+  fetchary extract social-insights https://www.youtube.com/watch?v=VIDEO_ID
 
-Global options:
-  --json                      Machine-readable output
-  --quiet                     Suppress normal output
-  --verbose                   Show diagnostic information
-  --no-color                  Disable colored terminal output
-  --data-dir <path>           Override the storage directory
-  --help                      Show help
-  --example                   Show common examples
-  --version                   Show version
-
-Comparison options for add and edit:
-  --include-selector <css>    Compare the first match per selector (repeatable)
-  --clear-include-selectors   Compare the whole page again when editing
-  --ignore-selector <css>     Ignore matching elements (repeatable)
-  --clear-ignore-selectors    Remove all ignored selectors when editing
-
-Capture options for add, edit, and extraction:
-  --mode <browser|http>       Capture rendered HTML or HTTP only (default: browser)
-  --wait-after-load <time>    Browser wait after load, for example 500ms or 5s
-  --text                      Print text instead of HTML (extract only)
-                             favicon defaults to HTTP mode
-
-Diff and open options:
-  --include-selector <css>     Filter diff to first match per selector (repeatable; diff only)
-  --show-include-selector      Print stored include-selector content (open only)
-  --show-external              Print external link URLs (open only)
-  --show-social-media          Check social platforms and print their links (open only)
-  --element-content           Show content changes with their HTML elements
-  --element-raw               Show raw changes grouped by HTML element
-  --raw                       Use the exact archived HTTP response
-  --html                      Render a diff, open HTML in an editor, or print selected HTML
-
-History options:
-  --content-change            Show only versions with content changes
-
-Follower list options:
-  --tag <tag>                 Only include sources with this tag
+Compatibility aliases:
+  fetchary extract <url> [--text]
+  fetchary favicon <url>
+  fetchary profile-picture <url>
 `;
-
-const EXAMPLES = `Fetchary examples
-
-Extract without creating an archive:
-  fetchary extract https://example.com --text
-  fetchary favicon https://example.com
-  fetchary profile-picture https://www.instagram.com/instagram/
-
-Add a page and check it every 15 minutes:
-  fetchary add https://example.com/news --name "Example News" --tag news --every 15m
-
-Ignore a dynamic element during comparison:
-  fetchary add https://github.com/owner/repo --ignore-selector "relative-time"
-
-Compare only a specific page section:
-  fetchary add https://example.com/news --include-selector "#main"
-
-List sources and fetch one of them:
-  fetchary list
-  fetchary fetch 1
-
-Read archived follower counts:
-  fetchary follower 3
-  fetchary follower
-  fetchary follower --tag personal
-
-Inspect and compare archived versions:
-  fetchary history 1
-  fetchary history 1 --content-change
-  fetchary diff 1
-  fetchary diff 1 --include-selector "#main" --element-content
-  fetchary diff 1 --include-selector "#main" --element-raw
-  fetchary open 1
-  fetchary open 1 --show-include-selector
-  fetchary open 1 --show-external
-  fetchary open 1 --show-social-media
-
-Export an archive:
-  fetchary export 1 --output ./research
-
-Run scheduled checks:
-  fetchary schedules
-  fetchary run
-
-Manage site integrations:
-  fetchary vendors
-  fetchary vendor instagram disable
-  fetchary vendor instagram enable
-`;
-
-const COMMAND_GUIDANCE = Object.freeze({
-  extract: { usage: 'fetchary extract <url> [--text] [--mode <browser|http>] [--wait-after-load <duration>] [--include-selector <css> ...] [--ignore-selector <css> ...] [--json]', example: 'fetchary extract https://example.com --text' },
-  favicon: { usage: 'fetchary favicon <url> [--mode <http|browser>] [--wait-after-load <duration>] [--json]', example: 'fetchary favicon https://example.com' },
-  'profile-picture': { usage: 'fetchary profile-picture <url> [--mode <browser|http>] [--wait-after-load <duration>] [--json]', example: 'fetchary profile-picture https://www.instagram.com/instagram/' },
-  add: { usage: 'fetchary add <url> [--name <name>] [--tag <tag>] [--every <interval>] [--mode <browser|http>] [--wait-after-load <duration>] [--include-selector <css> ...] [--ignore-selector <css> ...]', example: 'fetchary add https://github.com/owner/repo --mode browser --ignore-selector "relative-time"' },
-  list: { usage: 'fetchary list [--tag <tag>] [--json]', example: 'fetchary list --tag research' },
-  follower: { usage: 'fetchary follower [id] [--tag <tag>] [--json]', example: 'fetchary follower 3' },
-  vendors: { usage: 'fetchary vendors [--json]', example: 'fetchary vendors' },
-  vendor: { usage: 'fetchary vendor <name> <enable|disable> [--json]', example: 'fetchary vendor instagram disable' },
-  status: { usage: 'fetchary status', example: 'fetchary status' },
-  show: { usage: 'fetchary show <id> [--json]', example: 'fetchary show 1' },
-  history: { usage: 'fetchary history <id> [--content-change] [--json]', example: 'fetchary history 1' },
-  diff: { usage: 'fetchary diff <id> [from to] [--include-selector <css> ...] [--element-content|--element-raw|--raw] [--html]', example: 'fetchary diff 4 1 2' },
-  open: { usage: 'fetchary open <id> [version] [--show-include-selector|--show-external|--show-social-media] [--html] [--raw]', example: 'fetchary open 1 2 --raw' },
-  edit: { usage: 'fetchary edit <id> [--url <url>] [--name <name>] [--tag <tag>] [--mode <browser|http>] [--wait-after-load <duration>] [--include-selector <css> ... | --clear-include-selectors] [--ignore-selector <css> ... | --clear-ignore-selectors]', example: 'fetchary edit 1 --mode http' },
-  enable: { usage: 'fetchary enable <id>', example: 'fetchary enable 1' },
-  disable: { usage: 'fetchary disable <id>', example: 'fetchary disable 1' },
-  remove: { usage: 'fetchary remove <id> [--purge]', example: 'fetchary remove 1' },
-  export: { usage: 'fetchary export <id> [--output <directory>]', example: 'fetchary export 1 --output ./research' },
-  schedule: { usage: 'fetchary schedule <id> <interval> [--now]', example: 'fetchary schedule 1 15m' },
-  unschedule: { usage: 'fetchary unschedule <id>', example: 'fetchary unschedule 1' },
-  schedules: { usage: 'fetchary schedules [--json]', example: 'fetchary schedules' },
-  run: { usage: 'fetchary run [--poll-interval <milliseconds>]', example: 'fetchary run --poll-interval 2000' },
-});
-
-const VALUE_OPTIONS = new Set(['name', 'tag', 'url', 'output', 'data-dir', 'poll-interval', 'every', 'mode', 'wait-after-load']);
-const REPEATABLE_VALUE_OPTIONS = new Set(['ignore-selector', 'include-selector']);
-const FLAG_OPTIONS = new Set(['json', 'quiet', 'verbose', 'no-color', 'help', 'example', 'version', 'purge', 'raw', 'element-content', 'element-raw', 'html', 'text', 'now', 'clear-ignore-selectors', 'clear-include-selectors', 'show-include-selector', 'show-external', 'show-social-media', 'content-change']);
-const EXTRACTION_COMMANDS = new Set(['extract', 'favicon', 'profile-picture']);
-const SOCIAL_MEDIA_PLATFORMS = Object.freeze([
-  { platform: 'facebook', domains: ['facebook.com'] },
-  { platform: 'x', domains: ['x.com', 'twitter.com'] },
-  { platform: 'youtube', domains: ['youtube.com', 'youtu.be'] },
-  { platform: 'instagram', domains: ['instagram.com'] },
-  { platform: 'vimeo', domains: ['vimeo.com'] },
-  { platform: 'tiktok', domains: ['tiktok.com'] },
-  { platform: 'reddit', domains: ['reddit.com'] },
-  { platform: 'linkedin', domains: ['linkedin.com'] },
-]);
-const ANSI = Object.freeze({
-  red: '\x1b[31m',
-  green: '\x1b[32m',
-  yellow: '\x1b[33m',
-  blue: '\x1b[34m',
-  cyan: '\x1b[36m',
-  gray: '\x1b[90m',
-  reset: '\x1b[0m',
-});
-
-function colorize(value, color, enabled) {
-  return enabled ? `${ANSI[color]}${value}${ANSI.reset}` : value;
-}
-
-function terminalLink(value, url, enabled) {
-  return enabled ? `\x1b]8;;${url}\x1b\\${value}\x1b]8;;\x1b\\` : value;
-}
-
-function visibleLength(value) {
-  return String(value)
-    .replace(/\x1b\]8;;[^\x1b]*\x1b\\/g, '')
-    .replace(/\x1b\[[0-9;]*m/g, '')
-    .length;
-}
+const flags = new Set(['json','all','youtube','urls-only','exclude-metadata','duplicates','quiet','verbose','no-color','allow-private-network','help','version','text']);
+const values = new Set(['mode','timeout','user-agent','wait-after-load','max-response-bytes','selector','attribute','format','platform']);
+const repeated = new Set(['include-selector','ignore-selector','source']);
+function invalid(message) { throw new api.FetcharyValidationError(message); }
 
 function parseArgs(argv) {
-  const positionals = [];
-  const options = {};
+  const positionals = []; const options = {};
   for (let index = 0; index < argv.length; index++) {
-    const value = argv[index];
-    if (value === '--') {
-      positionals.push(...argv.slice(index + 1));
-      break;
-    }
-    if (!value.startsWith('--')) {
-      positionals.push(value);
-      continue;
-    }
-    const equalAt = value.indexOf('=');
-    const name = value.slice(2, equalAt === -1 ? undefined : equalAt);
-    if (FLAG_OPTIONS.has(name)) {
-      if (equalAt !== -1) throw new CliUsageError(`--${name} does not accept a value`);
-      options[name] = true;
-    } else if (VALUE_OPTIONS.has(name) || REPEATABLE_VALUE_OPTIONS.has(name)) {
-      const optionValue = equalAt === -1 ? argv[++index] : value.slice(equalAt + 1);
-      if (optionValue == null || optionValue.startsWith('--')) throw new CliUsageError(`--${name} requires a value`);
-      if (REPEATABLE_VALUE_OPTIONS.has(name)) {
-        (options[name] ||= []).push(optionValue);
-      } else {
-        options[name] = optionValue;
-      }
-    } else {
-      throw new CliUsageError(`unknown option --${name}`);
-    }
+    const argument = argv[index];
+    if (argument === '--') { positionals.push(...argv.slice(index+1)); break; }
+    if (!argument.startsWith('--')) { positionals.push(argument); continue; }
+    const equal = argument.indexOf('=');
+    const key = argument.slice(2, equal === -1 ? undefined : equal);
+    if (flags.has(key)) {
+      if (equal !== -1) invalid(`--${key} does not take a value`);
+      options[key] = true;
+    } else if (values.has(key) || repeated.has(key)) {
+      const value = equal === -1 ? argv[++index] : argument.slice(equal+1);
+      if (value === undefined || value.startsWith('--') || !value.trim()) invalid(`--${key} requires a value`);
+      if (repeated.has(key)) (options[key] ||= []).push(value); else options[key] = value;
+    } else invalid(`unknown option --${key}`);
   }
-  return { command: positionals.shift(), args: positionals, options };
-}
-
-function usageError(command, message = 'invalid number of arguments') {
-  return new CliUsageError(message, COMMAND_GUIDANCE[command]);
-}
-
-function requireArgs(args, command, minimum, maximum = minimum) {
-  if (args.length < minimum || args.length > maximum) throw usageError(command);
-}
-
-function relativeTime(value) {
-  if (!value) return 'never';
-  const seconds = Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 1000));
-  if (seconds < 60) return `${seconds}s ago`;
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes} min ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.floor(hours / 24)}d ago`;
-}
-
-function localDate(value) {
-  if (!value) return 'never';
-  return new Date(value).toISOString().replace('T', ' ').slice(0, 16);
-}
-
-function size(value) {
-  if (value < 1024) return `${value} B`;
-  if (value < 1024 * 1024) return `${Math.round(value / 1024)} KB`;
-  return `${(value / 1024 / 1024).toFixed(1)} MB`;
-}
-
-function duration(milliseconds) {
-  return milliseconds % 1_000 === 0 ? `${milliseconds / 1_000}s` : `${milliseconds}ms`;
-}
-
-function externalLinkUrls(html, pageUrl) {
-  const page = new URL(pageUrl);
-  const { document } = parseHTML(html);
-  let base = page;
-  const baseHref = document.querySelector('base[href]')?.getAttribute('href');
-  if (baseHref != null) {
-    try { base = new URL(baseHref, page); } catch {}
-  }
-  const urls = new Set();
-  for (const element of document.querySelectorAll('a[href], area[href]')) {
-    const href = element.getAttribute('href').trim();
-    if (!href) continue;
-    let url;
-    try { url = new URL(href, base); } catch { continue; }
-    if (['http:', 'https:'].includes(url.protocol) && url.hostname !== page.hostname) {
-      urls.add(url.href);
-    }
-  }
-  return [...urls];
-}
-
-function socialMediaLinks(urls) {
-  const links = urls.map(url => ({ url, hostname: new URL(url).hostname.replace(/\.$/, '') }));
-  return SOCIAL_MEDIA_PLATFORMS.map(({ platform, domains }) => {
-    const matches = links.filter(({ hostname }) => domains.some(domain => hostname === domain || hostname.endsWith(`.${domain}`)))
-      .map(({ url }) => url);
-    return { platform, found: matches.length > 0, urls: matches };
-  });
-}
-
-function table(rows, columns) {
-  if (!rows.length) return '';
-  const widths = columns.map(column => Math.max(column.label.length, ...rows.map(row => visibleLength(column.value(row)))));
-  const render = (values) => values.map((value, index) => {
-    const rendered = String(value);
-    return `${rendered}${' '.repeat(widths[index] - visibleLength(rendered))}`;
-  }).join('  ').trimEnd();
-  return [render(columns.map(column => column.label)), ...rows.map(row => render(columns.map(column => column.value(row))))].join('\n');
-}
-
-async function classifyVersions(versions, comparisonOptions = {}) {
-  const byId = new Map(versions.map(version => [version.id, version]));
-  const hashes = new Map(await Promise.all(versions.map(async version => [
-    version.id,
-    comparisonHash(await fs.promises.readFile(version.renderedFile && fs.existsSync(version.renderedFile) ? version.renderedFile : version.file, 'utf8'), comparisonOptions),
-  ])));
-  return versions.map(version => {
-    if (version.id === 1) return { ...version, change: 'initial', rawChanged: false, renderedChanged: false, contentChanged: null };
-    const previous = byId.get(version.id - 1);
-    const previousHash = hashes.get(version.id - 1);
-    const contentChanged = previousHash == null ? null : hashes.get(version.id) !== previousHash;
-    const rawChanged = previous == null ? null : version.rawHash !== previous.rawHash;
-    const renderedChanged = previous == null
-      ? null
-      : version.renderedHash == null ? false : version.renderedHash !== previous.renderedHash;
-    const change = contentChanged == null
-      ? 'unknown'
-      : contentChanged
-        ? 'content'
-        : rawChanged && renderedChanged
-          ? 'raw + rendered'
-          : renderedChanged
-            ? 'rendered only'
-            : 'raw only';
-    return {
-      ...version,
-      change,
-      rawChanged,
-      renderedChanged,
-      contentChanged,
-    };
-  });
-}
-
-function htmlEscape(value) {
-  return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
-}
-
-async function launchDetached(command, args) {
-  await new Promise((resolve, reject) => {
-    const child = spawn(command, args, { detached: true, stdio: 'ignore' });
-    child.once('error', reject);
-    child.once('spawn', () => {
-      child.unref();
-      resolve();
-    });
-  });
-}
-
-async function runCommand(command, args, stdio = 'ignore') {
-  await new Promise((resolve, reject) => {
-    const child = spawn(command, args, { stdio });
-    child.once('error', reject);
-    child.once('exit', code => code === 0 ? resolve() : reject(new Error(`${command} exited with code ${code}`)));
-  });
-}
-
-async function commandOutput(command, args) {
-  return await new Promise((resolve, reject) => {
-    const child = spawn(command, args, { stdio: ['ignore', 'pipe', 'ignore'] });
-    let output = '';
-    child.stdout.setEncoding('utf8');
-    child.stdout.on('data', chunk => { output += chunk; });
-    child.once('error', reject);
-    child.once('exit', code => code === 0 ? resolve(output) : reject(new Error(`${command} exited with code ${code}`)));
-  });
-}
-
-async function macLaunchHandlers() {
-  const plist = path.join(os.homedir(), 'Library', 'Preferences', 'com.apple.LaunchServices', 'com.apple.launchservices.secure.plist');
-  const value = JSON.parse(await commandOutput('plutil', ['-convert', 'json', '-o', '-', plist]));
-  return value.LSHandlers || [];
-}
-
-function macHandler(handlers, { contentType, scheme }) {
-  const entry = handlers.find(handler => (contentType && handler.LSHandlerContentType === contentType)
-    || (scheme && handler.LSHandlerURLScheme === scheme));
-  return entry?.LSHandlerRoleAll;
-}
-
-async function openFile(file) {
-  if (process.platform === 'darwin') {
-    let browser = 'com.apple.Safari';
-    try {
-      const handlers = await macLaunchHandlers();
-      browser = macHandler(handlers, { contentType: 'com.apple.default-app.web-browser' })
-        || macHandler(handlers, { scheme: 'https' })
-        || browser;
-    } catch {}
-    await launchDetached('open', ['-b', browser, file]);
-    return;
-  }
-  const command = process.platform === 'win32' ? 'cmd' : 'xdg-open';
-  const args = process.platform === 'win32' ? ['/c', 'start', '', file] : [file];
-  await launchDetached(command, args);
-}
-
-function editorCommand(value) {
-  return value.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g)?.map(part => {
-    const quoted = (part.startsWith('"') && part.endsWith('"')) || (part.startsWith("'") && part.endsWith("'"));
-    return quoted ? part.slice(1, -1) : part;
-  }) || [];
-}
-
-async function openInVSCode(file) {
-  const candidates = [
-    '/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code',
-    path.join(os.homedir(), 'Applications', 'Visual Studio Code.app', 'Contents', 'Resources', 'app', 'bin', 'code'),
-  ];
-  const command = candidates.find(candidate => fs.existsSync(candidate));
-  if (!command) return false;
-  await runCommand(command, ['--reuse-window', file]);
-  return true;
-}
-
-async function openEditor(file) {
-  const configured = process.env.VISUAL || process.env.EDITOR;
-  if (configured) {
-    const [command, ...editorArgs] = editorCommand(configured);
-    if (!command) throw new Error('VISUAL or EDITOR does not contain an editor command');
-    await new Promise((resolve, reject) => {
-      const child = spawn(command, [...editorArgs, file], { stdio: 'inherit' });
-      child.once('error', reject);
-      child.once('exit', code => code === 0 ? resolve() : reject(new Error(`editor exited with code ${code}`)));
-    });
-    return;
-  }
-
-  if (process.platform === 'darwin') {
-    try {
-      const handlers = await macLaunchHandlers();
-      const browser = macHandler(handlers, { contentType: 'com.apple.default-app.web-browser' })
-        || macHandler(handlers, { scheme: 'https' });
-      const editor = macHandler(handlers, { contentType: 'public.html' });
-      if (editor && editor !== browser) {
-        if (editor.toLowerCase() === 'com.microsoft.vscode' && await openInVSCode(file)) return;
-        await launchDetached('open', ['-b', editor, file]);
-        return;
-      }
-    } catch {}
-    if (await openInVSCode(file)) return;
-    await launchDetached('open', ['-a', 'TextEdit', file]);
-    return;
-  }
-
-  const command = process.platform === 'win32' ? 'notepad.exe' : 'sensible-editor';
-  await launchDetached(command, [file]);
-}
-
-async function execute(fetchary, parsed, write, format = {}) {
-  const { command, args, options } = parsed;
-  const color = (value, name) => colorize(value, name, format.color);
-  const link = (value, url = value) => terminalLink(value, url, format.hyperlinks);
-  const open = format.openFile || openFile;
-  const edit = format.openEditor || openEditor;
-  const waitForShutdown = format.waitForShutdown || (runner => new Promise(resolve => {
-    const stop = async () => {
-      process.off('SIGINT', stop);
-      process.off('SIGTERM', stop);
-      await runner.stop();
-      resolve();
-    };
-    process.on('SIGINT', stop);
-    process.on('SIGTERM', stop);
-  }));
-  const emit = value => { if (!options.quiet) write(value); };
-  const emitValue = (value, human) => emit(options.json ? `${JSON.stringify(value, null, 2)}\n` : `${human}\n`);
-
-  if (options['show-include-selector'] && command !== 'open') {
-    throw usageError(command, '--show-include-selector can only be used with open');
-  }
-  if (options['show-external'] && command !== 'open') {
-    throw usageError(command, '--show-external can only be used with open');
-  }
-  if (options['show-social-media'] && command !== 'open') {
-    throw usageError(command, '--show-social-media can only be used with open');
-  }
-  if (options['content-change'] && command !== 'history') {
-    throw usageError(command, '--content-change can only be used with history');
-  }
-  if (options.text && command !== 'extract') throw usageError(command, '--text can only be used with extract');
-
-  switch (command) {
-    case 'extract':
-    case 'favicon':
-    case 'profile-picture': {
-      requireArgs(args, command, 1);
-      const allowed = new Set(['json', 'quiet', 'verbose', 'no-color', 'data-dir', 'mode', 'wait-after-load']);
-      if (command === 'extract') for (const option of ['text', 'include-selector', 'ignore-selector']) allowed.add(option);
-      for (const option of Object.keys(options)) {
-        if (!allowed.has(option)) throw usageError(command, `--${option} cannot be used with ${command}`);
-      }
-      const settings = { mode: options.mode, waitAfterLoad: options['wait-after-load'] };
-      let result;
-      if (command === 'extract') {
-        result = await extract(args[0], {
-          ...settings, format: options.text ? 'text' : 'html',
-          includeSelectors: options['include-selector'], ignoreSelectors: options['ignore-selector'],
-        });
-        emit(options.json ? `${JSON.stringify(result, null, 2)}\n` : result.content);
-      } else {
-        result = await (command === 'favicon' ? extractFavicon : extractProfilePicture)(args[0], settings);
-        emitValue(result, result.image.url);
-      }
-      return 0;
-    }
-    case 'add': {
-      requireArgs(args, command, 1);
-      if (options['clear-ignore-selectors']) throw usageError(command, '--clear-ignore-selectors can only be used with edit');
-      if (options['clear-include-selectors']) throw usageError(command, '--clear-include-selectors can only be used with edit');
-      const source = await fetchary.add(args[0], {
-        name: options.name,
-        tag: options.tag,
-        every: options.every,
-        mode: options.mode,
-        waitAfterLoad: options['wait-after-load'],
-        ...(options['ignore-selector'] ? { ignoreSelectors: options['ignore-selector'] } : {}),
-        ...(options['include-selector'] ? { includeSelectors: options['include-selector'] } : {}),
-      });
-      emitValue(source, `${color('✓ Added', 'green')} ${color(`#${source.id}`, 'blue')} ${color(source.url, 'cyan')}\n${color('✓ Saved', 'green')} version ${color(String(source.version), 'blue')}`);
-      return 0;
-    }
-    case 'list': {
-      requireArgs(args, command, 0);
-      const sources = await fetchary.list({ tag: options.tag });
-      emitValue(sources, sources.length ? table(sources, [
-        { label: 'ID', value: row => row.id },
-        { label: 'NAME', value: row => row.name || '-' },
-        { label: 'TAG', value: row => row.tag || '-' },
-        { label: 'URL', value: row => link(row.url) },
-        { label: 'VERSION', value: row => row.currentVersionId ?? '-' },
-        { label: 'LAST CHECK', value: row => relativeTime(row.lastCheckedAt) },
-        { label: 'LAST CHANGE', value: row => relativeTime(row.lastChangedAt) },
-      ]) : 'No monitored sources.');
-      return 0;
-    }
-    case 'follower': {
-      requireArgs(args, command, 0, 1);
-      if (args.length) {
-        if (options.tag !== undefined) throw usageError(command, '--tag is only supported when listing followers without an id');
-        const count = await fetchary.followerCount(args[0]);
-        emitValue(count, String(count));
-        return 0;
-      }
-      const result = await fetchary.followers({ tag: options.tag });
-      const rows = result.followers;
-      const human = rows.length ? table(rows, [
-        { label: 'ID', value: row => row.id },
-        { label: 'FOLLOWER', value: row => row.follower },
-        { label: 'NAME', value: row => row.name },
-        { label: 'URL', value: row => link(row.url) },
-        { label: 'LAST CHECK', value: row => relativeTime(row.lastCheckedAt) },
-        { label: 'LAST CHANGE', value: row => relativeTime(row.lastChangedAt) },
-      ]) : 'No follower counts available.';
-      emitValue(result, `${human}\n------\nsum: ${result.sum.toLocaleString('de-DE')}`);
-      return 0;
-    }
-    case 'fetch': {
-      const target = args.length === 0 ? undefined : args.length === 1 ? args[0] : args;
-      const total = target == null
-        ? (await fetchary.list()).filter(source => source.enabled).length
-        : new Set(args.map(value => /^\d+$/.test(value) ? String(Number(value)) : value)).size;
-      let started = 0;
-      let completed = 0;
-      let current;
-      let animation;
-      let frame = 0;
-      const active = new Map();
-      const names = new Map();
-      const showProgress = !options.json && !options.quiet;
-      const renderProgressBar = () => {
-        const width = 24;
-        const filled = total === 0 ? width : Math.min(width, Math.round((completed / total) * width));
-        const remaining = width - filled;
-        const pulse = remaining > 0 ? frame % remaining : -1;
-        const bar = [
-          color('━'.repeat(filled), 'cyan'),
-          remaining > 0 ? color('─'.repeat(pulse), 'gray') : '',
-          remaining > 0 ? color('●', 'cyan') : '',
-          remaining > 0 ? color('─'.repeat(remaining - pulse - 1), 'gray') : '',
-        ].join('');
-        const page = current
-          ? `  ${color(`#${current.sourceId}`, 'blue')} ${current.name || current.url} ${color(`[${current.captureMode}]`, 'gray')}`
-          : '';
-        emit(`\r\x1b[2K  ${bar}  ${completed}/${total}${page}`);
-      };
-      const onFetchStart = event => {
-        names.set(event.sourceId, event.name);
-        if (!showProgress) return;
-        current = event;
-        active.set(event.sourceId, event);
-        if (started === 0) emit(`${color('Fetching now', 'cyan')}\n`);
-        started++;
-        if (format.interactive) {
-          renderProgressBar();
-          if (!animation) {
-            animation = setInterval(() => {
-              frame++;
-              renderProgressBar();
-            }, 80);
-            animation.unref?.();
-          }
-          return;
-        }
-        const name = event.name ? ` ${event.name}` : '';
-        emit(`  ${color('◉', 'cyan')} ${color(`#${event.sourceId}`, 'blue')}${name}\n`);
-        emit(`    ${color('↳', 'gray')} ${link(color(event.url, 'cyan'), event.url)} ${color(`[${event.captureMode}]`, 'gray')}\n`);
-      };
-      const onFetchComplete = event => {
-        if (!showProgress || !format.interactive) return;
-        completed++;
-        active.delete(event.sourceId);
-        current = [...active.values()].at(-1) || null;
-        renderProgressBar();
-      };
-      fetchary.on('fetch:start', onFetchStart);
-      fetchary.on('fetch', onFetchComplete);
-      fetchary.on('fetch:error', onFetchComplete);
-      let value;
-      try {
-        value = await fetchary.fetch(target);
-      } finally {
-        fetchary.off('fetch:start', onFetchStart);
-        fetchary.off('fetch', onFetchComplete);
-        fetchary.off('fetch:error', onFetchComplete);
-        if (animation) clearInterval(animation);
-        if (showProgress && format.interactive && started > 0) emit('\n');
-      }
-      const results = Array.isArray(value) ? value : [value];
-      const contentChanged = results.filter(result => result.contentChanged).length;
-      const rawOnly = results.filter(result => result.rawChanged && !result.renderedChanged && !result.contentChanged).length;
-      const renderedOnly = results.filter(result => !result.rawChanged && result.renderedChanged && !result.contentChanged).length;
-      const rawAndRenderedOnly = results.filter(result => result.rawChanged && result.renderedChanged && !result.contentChanged).length;
-      const unchanged = results.length - contentChanged - rawOnly - renderedOnly - rawAndRenderedOnly;
-      const summary = [
-        `${color(String(contentChanged), contentChanged ? 'yellow' : 'gray')} ${color('content changed', contentChanged ? 'yellow' : 'gray')}`,
-        `${color(String(rawOnly), rawOnly ? 'yellow' : 'gray')} ${color('raw only', rawOnly ? 'yellow' : 'gray')}`,
-        ...(renderedOnly ? [`${color(String(renderedOnly), 'yellow')} ${color('rendered only', 'yellow')}`] : []),
-        ...(rawAndRenderedOnly ? [`${color(String(rawAndRenderedOnly), 'yellow')} ${color('raw + rendered only', 'yellow')}`] : []),
-        `${color(String(unchanged), 'gray')} ${color('unchanged', 'gray')}`,
-      ].join(', ');
-      const human = [
-        started ? '\nResults' : `Fetching ${results.length} source${results.length === 1 ? '' : 's'}...`,
-        '',
-        table(results, [
-          { label: 'ID', value: result => color(String(result.id), 'blue') },
-          { label: 'NAME', value: result => names.get(result.id) || '-' },
-          { label: 'CHANGE', value: result => result.contentChanged
-            ? `${color('content changed', 'yellow')} → version ${color(String(result.version), 'blue')}`
-            : result.rawChanged && result.renderedChanged
-              ? `${color('raw and rendered changed', 'yellow')}, ${color('content unchanged', 'gray')} → version ${color(String(result.version), 'blue')}`
-              : result.rawChanged
-                ? `${color('raw changed', 'yellow')}, ${color('content unchanged', 'gray')} → version ${color(String(result.version), 'blue')}`
-                : result.renderedChanged
-                  ? `${color('rendered changed', 'yellow')}, ${color('content unchanged', 'gray')} → version ${color(String(result.version), 'blue')}`
-                  : color('unchanged', 'gray') },
-        ]),
-        '',
-        summary,
-      ].join('\n');
-      emitValue(value, human);
-      return contentChanged ? 10 : 0;
-    }
-    case 'vendors': {
-      requireArgs(args, command, 0);
-      const vendors = await fetchary.vendors();
-      emitValue(vendors, vendors.length ? table(vendors, [
-        { label: 'VENDOR', value: row => row.name },
-        { label: 'ACTIVE', value: row => color(row.active ? 'yes' : 'no', row.active ? 'green' : 'yellow') },
-      ]) : 'No vendors registered.');
-      return 0;
-    }
-    case 'vendor': {
-      requireArgs(args, command, 2);
-      if (!['enable', 'disable'].includes(args[1])) throw usageError(command, 'vendor action must be "enable" or "disable"');
-      const active = args[1] === 'enable';
-      const vendor = await fetchary.setVendorActive(args[0], active);
-      emitValue(vendor, `${color(`✓ ${active ? 'Enabled' : 'Disabled'}`, active ? 'green' : 'yellow')} vendor ${color(vendor.name, 'blue')}`);
-      return 0;
-    }
-    case 'status': {
-      requireArgs(args, command, 0);
-      const status = await fetchary.status();
-      emitValue(status, `Fetchary 👁️\n\nSources:        ${color(String(status.sources), 'blue')}\nVersions:       ${color(String(status.versions), 'blue')}\nFetch storage:  ${color(size(status.fetchBytes), 'blue')}\nChanged today:  ${color(String(status.changedToday), status.changedToday ? 'yellow' : 'gray')}\nLast fetch:     ${color(relativeTime(status.lastFetch), 'gray')}\nDatabase:       ${color(status.database, 'cyan')}`);
-      return 0;
-    }
-    case 'show': {
-      requireArgs(args, command, 1);
-      const source = await fetchary.get(args[0]);
-      emitValue(source, `ID:               ${color(String(source.id), 'blue')}\nName:             ${source.name || '-'}\nTag:              ${color(source.tag || '-', 'blue')}\nURL:              ${link(color(source.url, 'cyan'), source.url)}\nEnabled:          ${color(source.enabled ? 'yes' : 'no', source.enabled ? 'green' : 'yellow')}\nCapture mode:     ${color(source.captureMode, 'blue')}\nWait after load:  ${color(duration(source.waitAfterLoadMs), 'blue')}\nInclude selectors: ${source.includeSelectors.length ? source.includeSelectors.join(', ') : '-'}\nIgnore selectors: ${source.ignoreSelectors.length ? source.ignoreSelectors.join(', ') : '-'}\nCreated:          ${color(localDate(source.createdAt), 'gray')}\nLast checked:     ${color(localDate(source.lastCheckedAt), 'gray')}\nLast changed:     ${color(localDate(source.lastChangedAt), 'gray')}\nVersions:         ${color(String(source.versions), 'blue')}\nRaw hash:         ${color(source.currentRawHash || '-', 'gray')}\nRendered hash:    ${color(source.currentRenderedHash || '-', 'gray')}\nComparison hash:  ${color(source.currentComparisonHash || '-', 'gray')}`);
-      return 0;
-    }
-    case 'history': {
-      if (args.length !== 1) {
-        throw usageError(command);
-      }
-      const versions = await fetchary.history(args[0]);
-      const source = await fetchary.get(args[0], { includeRemoved: true });
-      const classified = await classifyVersions(versions, { includeSelectors: source.includeSelectors, ignoreSelectors: source.ignoreSelectors });
-      const visible = options['content-change'] ? classified.filter(version => version.contentChanged === true) : classified;
-      emitValue(visible, visible.length ? table(visible, [
-        { label: 'VERSION', value: row => row.id },
-        { label: 'CHANGE', value: row => row.change },
-        { label: 'FETCHED', value: row => localDate(row.fetchedAt) },
-        { label: 'STATUS', value: row => row.status === 200 ? color(String(row.status), 'green') : row.status },
-        { label: 'SIZE', value: row => size(row.contentLength) },
-      ]) : options['content-change'] ? 'No content changes.' : 'No archived versions.');
-      return 0;
-    }
-    case 'diff': {
-      if (args.length !== 1 && args.length !== 3) {
-        throw usageError(command, args.length === 2 ? 'diff requires both from and to versions' : 'invalid number of arguments');
-      }
-      const diffModes = ['raw', 'element-content', 'element-raw'].filter(option => options[option]);
-      if (diffModes.length > 1) throw usageError(command, `--${diffModes.join(' and --')} cannot be used together`);
-      if (options.raw && options['include-selector']) {
-        throw usageError(command, '--raw and --include-selector cannot be used together; use --element-raw to compare selected elements');
-      }
-      const result = await fetchary.diff(args[0], {
-        ...(args.length === 3 ? { from: args[1], to: args[2] } : {}),
-        ...(options['include-selector'] ? { includeSelectors: options['include-selector'] } : {}),
-        mode: options.raw ? 'raw' : options['element-content'] ? 'element-content' : options['element-raw'] ? 'element-raw' : 'text',
-      });
-      if (options.html && !options.json) {
-        const lines = result.diff.map(part => `<div class="${part.type}">${part.type === 'added' ? '+' : '-'} ${htmlEscape(part.value)}</div>`).join('\n');
-        emit(`<!doctype html><meta charset="utf-8"><title>Fetchary diff</title><style>body{font-family:monospace;white-space:pre-wrap}.added{color:#1d4ed8;background:#dbeafe}.removed{color:#b91c1c;background:#fee2e2}</style>${lines}\n`);
-      } else {
-        const humanDiff = result.diff.map(part => {
-          const line = `${part.type === 'added' ? '+' : '-'} ${part.value}`;
-          return color(line, part.type === 'added' ? 'blue' : 'red');
-        }).join('\n');
-        emitValue(result, humanDiff || 'No differences.');
-      }
-      return 0;
-    }
-    case 'open': {
-      requireArgs(args, command, 1, 2);
-      const views = ['show-include-selector', 'show-external', 'show-social-media'].filter(name => options[name]);
-      if (views.length > 1) {
-        throw usageError(command, `${views.map(name => `--${name}`).join(' and ')} cannot be used together`);
-      }
-      const showLinks = options['show-external'] || options['show-social-media'];
-      if (showLinks && options.html) {
-        throw usageError(command, `--${views[0]} prints links; --html cannot be used with it`);
-      }
-      const archived = await fetchary.version(args[0], args[1]);
-      const file = options.raw || !archived.renderedFile || !fs.existsSync(archived.renderedFile)
-        ? archived.file
-        : archived.renderedFile;
-      if (showLinks) {
-        const html = options.raw
-          ? await fetchary.read(archived.sourceId, archived.id)
-          : await fetchary.readRendered(archived.sourceId, archived.id);
-        const pageUrl = (file === archived.renderedFile && archived.browserFinalUrl) || archived.finalUrl || archived.requestedUrl;
-        const urls = externalLinkUrls(html, pageUrl);
-        if (options['show-social-media']) {
-          const socialMedia = socialMediaLinks(urls);
-          const rows = socialMedia.flatMap(result => (result.urls.length ? result.urls : ['-'])
-            .map(url => ({ platform: result.platform, found: result.found, url })));
-          emitValue({ sourceId: archived.sourceId, version: archived.id, socialMedia }, table(rows, [
-            { label: 'PLATFORM', value: row => row.platform },
-            { label: 'FOUND', value: row => color(row.found ? 'yes' : 'no', row.found ? 'green' : 'gray') },
-            { label: 'URL', value: row => row.url === '-' ? '-' : link(row.url) },
-          ]));
-        } else {
-          emitValue({ sourceId: archived.sourceId, version: archived.id, urls }, urls.join('\n'));
-        }
-        return 0;
-      }
-      if (options['show-include-selector']) {
-        const source = await fetchary.get(args[0], { includeRemoved: true });
-        if (!source.includeSelectors.length) {
-          throw usageError(command, `source ${source.id} has no include selectors; configure them with "fetchary edit ${source.id} --include-selector <css>"`);
-        }
-        const html = options.raw
-          ? await fetchary.read(source.id, archived.id)
-          : await fetchary.readRendered(source.id, archived.id);
-        const selection = { includeSelectors: source.includeSelectors };
-        const content = options.html ? comparisonHtml(html, selection) : comparisonText(html, selection);
-        emitValue({ sourceId: source.id, version: archived.id, includeSelectors: source.includeSelectors, content }, content);
-        return 0;
-      }
-      await (options.html ? edit(file) : open(file));
-      emitValue({ ...archived, openedFile: file }, `${color('✓ Opened', 'green')} ${color(file, 'cyan')}`);
-      return 0;
-    }
-    case 'edit': {
-      requireArgs(args, command, 1);
-      if (options['ignore-selector'] && options['clear-ignore-selectors']) {
-        throw usageError(command, '--ignore-selector and --clear-ignore-selectors cannot be used together');
-      }
-      if (options['include-selector'] && options['clear-include-selectors']) {
-        throw usageError(command, '--include-selector and --clear-include-selectors cannot be used together');
-      }
-      const changes = {};
-      for (const key of ['name', 'tag', 'url']) if (options[key] !== undefined) changes[key] = options[key];
-      if (options.mode !== undefined) changes.captureMode = options.mode;
-      if (options['wait-after-load'] !== undefined) changes.waitAfterLoadMs = options['wait-after-load'];
-      if (options['ignore-selector']) changes.ignoreSelectors = options['ignore-selector'];
-      if (options['clear-ignore-selectors']) changes.ignoreSelectors = [];
-      if (options['include-selector']) changes.includeSelectors = options['include-selector'];
-      if (options['clear-include-selectors']) changes.includeSelectors = [];
-      const source = await fetchary.edit(args[0], changes);
-      emitValue(source, `${color('✓ Updated', 'green')} ${color(`#${source.id}`, 'blue')}`);
-      return 0;
-    }
-    case 'enable':
-    case 'disable': {
-      requireArgs(args, command, 1);
-      const source = await fetchary[command](args[0]);
-      const stateColor = command === 'enable' ? 'green' : 'yellow';
-      emitValue(source, `${color(`✓ ${command === 'enable' ? 'Enabled' : 'Disabled'}`, stateColor)} ${color(`#${source.id}`, 'blue')}`);
-      return 0;
-    }
-    case 'remove': {
-      requireArgs(args, command, 1);
-      const versions = (await fetchary.history(args[0])).length;
-      const sourceId = Number(args[0]);
-      await fetchary.remove(sourceId, { purge: options.purge });
-      const result = { sourceId, purged: Boolean(options.purge), versions };
-      emitValue(result, options.purge
-        ? `${color('✓ Removed', 'red')} ${color(`#${sourceId}`, 'blue')} ${color(`and purged ${versions} archived version${versions === 1 ? '' : 's'}`, 'red')}`
-        : `${color('✓ Removed', 'yellow')} ${color(`#${sourceId}`, 'blue')} from monitoring\n  ${color(`${versions} archived version${versions === 1 ? '' : 's'} kept`, 'gray')}`);
-      return 0;
-    }
-    case 'export': {
-      requireArgs(args, command, 1);
-      const result = await fetchary.export(args[0], { output: options.output });
-      emitValue(result, `${color('✓ Exported', 'green')} ${color(String(result.versions), 'blue')} version${result.versions === 1 ? '' : 's'} to ${color(result.directory, 'cyan')}`);
-      return 0;
-    }
-    case 'schedule': {
-      requireArgs(args, command, 2);
-      const schedule = await fetchary.schedule(args[0], args[1], { now: options.now });
-      emitValue(schedule, `${color('✓ Scheduled', 'green')} ${color(`#${schedule.sourceId}`, 'blue')} every ${color(schedule.every, 'blue')}\n  Next run: ${color(localDate(schedule.nextRunAt), 'cyan')}`);
-      return 0;
-    }
-    case 'unschedule': {
-      requireArgs(args, command, 1);
-      await fetchary.unschedule(args[0]);
-      const result = { sourceId: Number(args[0]), enabled: false };
-      emitValue(result, `${color('✓ Unscheduled', 'yellow')} ${color(`#${args[0]}`, 'blue')}`);
-      return 0;
-    }
-    case 'schedules': {
-      requireArgs(args, command, 0);
-      const schedules = await fetchary.schedules();
-      emitValue(schedules, schedules.length ? table(schedules, [
-        { label: 'ID', value: row => row.sourceId },
-        { label: 'EVERY', value: row => row.every },
-        { label: 'LAST RUN', value: row => relativeTime(row.lastRunAt) },
-        { label: 'NEXT RUN', value: row => relativeTime(row.nextRunAt) },
-      ]) : 'No active schedules.');
-      return 0;
-    }
-    case 'run': {
-      requireArgs(args, command, 0);
-      const pollInterval = options['poll-interval'] == null ? undefined : Number(options['poll-interval']);
-      const schedules = await fetchary.schedules();
-      const scheduledPages = await Promise.all(schedules.map(async schedule => ({
-        schedule,
-        source: await fetchary.get(schedule.sourceId),
-      })));
-      const runner = await fetchary.run({ pollInterval });
-      const scheduleSummary = scheduledPages.length
-        ? [
-            'Scheduled pages:',
-            ...scheduledPages.flatMap(({ schedule, source }) => {
-              const label = source.name ? `${source.name} — ${link(source.url)}` : link(source.url);
-              const disabled = source.enabled ? '' : ` ${color('(source disabled)', 'yellow')}`;
-              return [`  ${color(`#${source.id}`, 'blue')} ${label} — every ${color(schedule.every, 'blue')}${disabled}`];
-            }),
-          ].join('\n')
-        : color('No pages scheduled.', 'gray');
-      emit(`${color('Fetchary scheduler running.', 'green')} ${color('Press Ctrl+C to stop.', 'gray')}\n${scheduleSummary}\n`);
-      await waitForShutdown(runner);
-      return 0;
-    }
-    default:
-      throw new CliUsageError(command ? `unknown command "${command}"` : 'a command is required');
-  }
+  return { positionals, options };
 }
 
 async function main(argv = process.argv.slice(2), io = {}) {
   const stdout = io.stdout || process.stdout;
   const stderr = io.stderr || process.stderr;
-  const stdoutColorSupport = io.color ?? Boolean(stdout.isTTY
-    && !Object.hasOwn(process.env, 'NO_COLOR')
-    && process.env.TERM !== 'dumb');
-  const stderrColorSupport = io.color ?? Boolean(stderr.isTTY
-    && !Object.hasOwn(process.env, 'NO_COLOR')
-    && process.env.TERM !== 'dumb');
-  const stdoutHyperlinkSupport = io.hyperlinks ?? Boolean(stdout.isTTY
-    && !Object.hasOwn(process.env, 'NO_COLOR')
-    && process.env.TERM !== 'dumb');
-  let color = Boolean(stdoutColorSupport && !argv.includes('--no-color'));
-  let errorColor = Boolean(stderrColorSupport && !argv.includes('--no-color'));
-  let parsed;
-  try { parsed = parseArgs(argv); } catch (error) {
-    stderr.write(`${colorize(`Error: ${error.message}`, 'red', errorColor)}\n${colorize('Run "fetchary --help" for usage.', 'gray', errorColor)}\n`);
-    return 2;
-  }
-  color = Boolean(stdoutColorSupport && !parsed.options['no-color']);
-  errorColor = Boolean(stderrColorSupport && !parsed.options['no-color']);
-  if (parsed.options.version) {
-    stdout.write(`${pkg.version}\n`);
-    return 0;
-  }
-  if (parsed.options.help) {
-    stdout.write(HELP);
-    return 0;
-  }
-  if (parsed.options.example) {
-    stdout.write(EXAMPLES);
-    return 0;
-  }
-  if (!parsed.command) {
-    stdout.write(HELP);
-    return 0;
-  }
-
-  let fetchary;
+  let options = {};
   try {
-    if (!EXTRACTION_COMMANDS.has(parsed.command)) {
-      fetchary = await createFetchary({ dataDir: parsed.options['data-dir'] || process.env.FETCHARY_DATA_DIR });
+    const parsed = parseArgs(argv); options = parsed.options;
+    const args = parsed.positionals;
+    if (options.version) { stdout.write(`${pkg.version}\n`); return 0; }
+    if (options.help || !args.length) { stdout.write(HELP); return 0; }
+    const command = args.shift();
+    let type;
+    if (command === 'extract') type = types.includes(args[0]) ? args.shift() : options.text ? 'text' : 'html';
+    else if (command === 'favicon') type = 'favicon';
+    else if (command === 'profile-picture') type = 'avatar';
+    else invalid(`unknown command "${command}"; use "fetchary extract <type> <url>"`);
+    if (args.length !== 1) invalid('exactly one URL is required');
+    for (const [key, allowed] of Object.entries({ selector:['selector'], all:['selector'], attribute:['selector'], format:['selector','text','html'], platform:['social-links'], youtube:['social-links'], 'urls-only':['images','social-links'], 'exclude-metadata':['images'], source:['images'], duplicates:['images'], 'include-selector':['text','html'], 'ignore-selector':['text','html'], text:['text','html'] })) {
+      if (Object.hasOwn(options, key) && !allowed.includes(type)) invalid(`--${key} is not supported for ${type}`);
     }
-    if (parsed.options.verbose && !parsed.options.quiet) {
-      stderr.write(fetchary ? `${colorize('Using', 'gray', errorColor)} ${colorize(fetchary.dataDir, 'cyan', errorColor)}\n` : 'Extracting without storage\n');
+    if (options.youtube && options.platform && options.platform !== 'youtube') invalid('--youtube conflicts with --platform');
+    const settings = { ...(io.options || {}), type };
+    for (const [key, name] of Object.entries({ mode:'mode', timeout:'timeout', 'user-agent':'userAgent', 'wait-after-load':'waitAfterLoad', 'max-response-bytes':'maxResponseBytes', selector:'selector', all:'all', attribute:'attribute', format:'format', platform:'platform', 'allow-private-network':'allowPrivateNetwork', 'include-selector':'includeSelectors', 'ignore-selector':'ignoreSelectors', source:'sources' })) {
+      if (options[key] !== undefined) settings[name] = ['timeout','maxResponseBytes'].includes(name) ? Number(options[key]) : options[key];
     }
-    const hyperlinks = Boolean(stdoutHyperlinkSupport && !parsed.options['no-color']);
-    return await execute(fetchary, parsed, value => stdout.write(value), {
-      color,
-      hyperlinks,
-      openFile: io.openFile,
-      openEditor: io.openEditor,
-      waitForShutdown: io.waitForShutdown,
-      interactive: Boolean(stdout.isTTY && color),
-    });
+    if (options.youtube) settings.platform = 'youtube';
+    if (options['exclude-metadata']) settings.includeMetadata = false;
+    if (options.duplicates) settings.unique = false;
+    if (options.verbose && !options.quiet) stderr.write(`Extracting ${type} (${settings.mode || 'auto'})\n`);
+    const result = await api.extract(args[0], settings);
+    if (options.quiet) return 0;
+    if (options.json || ['images','social-links','social-insights'].includes(type) && !options['urls-only']) stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    else if (options['urls-only']) { const urls = result.data.map(item => item.url); if (urls.length) stdout.write(`${urls.join('\n')}\n`); }
+    else if (type === 'favicon' || type === 'avatar') stdout.write(`${result.image.url}\n`);
+    else stdout.write(result.content);
+    return 0;
   } catch (error) {
-    const json = parsed.options.json;
-    const payload = { error: error.name, message: error.message };
-    if (json) {
-      stderr.write(`${JSON.stringify(payload)}\n`);
-    } else {
-      stderr.write(`${colorize(`Error: ${error.message}`, 'red', errorColor)}\n`);
-      if (error instanceof CliUsageError && error.usage) {
-        stderr.write(`\n${colorize('Usage:', 'gray', errorColor)}   ${error.usage}\n`);
-        if (error.example) stderr.write(`${colorize('Example:', 'gray', errorColor)} ${error.example}\n`);
-      }
-    }
-    if (error instanceof CliUsageError || error instanceof FetcharyValidationError || error instanceof FetcharyIntervalError) return 2;
-    if (error instanceof FetcharyFetchError) return 3;
+    stderr.write(options.json ? `${JSON.stringify({ error: error.name, message: error.message })}\n` : `Error: ${error.message}\n`);
+    if (error instanceof api.FetcharyValidationError) return 2;
+    if (error instanceof api.FetcharyFetchError) return 3;
+    if (error instanceof api.FetcharyBrowserError) return 4;
+    if (error instanceof api.FetcharyNotFoundError) return 5;
     return 1;
-  } finally {
-    if (fetchary) await fetchary.close().catch(() => {});
   }
 }
-
-if (require.main === module) {
-  main().then(code => { process.exitCode = code; });
-}
-
-module.exports = { main, parseArgs, execute, CliUsageError };
+if (require.main === module) main().then(code => { process.exitCode = code; });
+module.exports = { main, parseArgs };

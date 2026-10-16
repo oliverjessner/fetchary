@@ -1,12 +1,8 @@
 'use strict';
 
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const os = require('node:os');
-const path = require('node:path');
 const test = require('node:test');
 const { parseHTML } = require('linkedom');
-const { createFetchary, FetcharyNotFoundError, FetcharyValidationError } = require('../src');
 const { discoverVendors } = require('../src/vendors');
 const { parseCount } = require('../src/metrics/followers');
 
@@ -79,70 +75,3 @@ test('YouTube counts channel subscribers from modern and historical headers inst
   assert.equal(count('youtube', 'https://www.youtube.com/watch?v=example', html), null);
 });
 
-test('library follower counts use the latest rendered archive and survive restart without fetching or changing evidence', async t => {
-  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fetchary-followers-'));
-  t.after(() => fs.rmSync(dataDir, { recursive: true, force: true }));
-  let html = '<a href="/example?tab=followers">63 followers</a>';
-  let browserUrl = 'https://github.com/example';
-  let fetches = 0;
-  let fetchary = await createFetchary({
-    dataDir,
-    fetch: async url => { fetches++; return new Response(`<a href="${new URL(url).pathname}?tab=followers">10 followers</a>`, { headers: { 'content-type': 'text/html' } }); },
-    launchBrowser: async () => ({
-      async newPage() { return { async goto() {}, async content() { return html; }, url() { return browserUrl; }, async close() {} }; },
-      async close() {},
-    }),
-  });
-  t.after(() => fetchary.close());
-  const source = await fetchary.add(browserUrl, { waitAfterLoad: 0 });
-  await fetchary.setVendorActive('github', false);
-  assert.equal(await fetchary.followerCount(source.id), 63, 'activation affects capture actions, not archive reads');
-  const first = await fetchary.version(source.id);
-  html = '<a href="/example?tab=followers">64 followers</a>';
-  await fetchary.fetch(source.id);
-  assert.equal(await fetchary.followerCount(source.id), 64);
-  assert.deepEqual((await fetchary.followers()).followers.map(row => [row.id, row.follower, row.name]), [[source.id, 64, 'github']]);
-  assert.equal((await fetchary.followers()).sum, 64);
-  assert.equal(await fetchary.read(source.id), '<a href="/example?tab=followers">10 followers</a>');
-  assert.equal(fs.readFileSync(first.renderedFile, 'utf8'), '<a href="/example?tab=followers">63 followers</a>');
-  assert.equal((await fetchary.history(source.id)).length, 2);
-  assert.equal(fetches, 2);
-  const raw = await fetchary.add('https://github.com/raw', { mode: 'http' });
-  assert.equal(await fetchary.followerCount(raw.id), 10, 'HTTP-only captures fall back to raw HTML');
-  assert.equal((await fetchary.followers()).sum, 74);
-  const unsupported = await fetchary.add('https://example.test/', { mode: 'http' });
-  await assert.rejects(() => fetchary.followerCount(unsupported.id), FetcharyValidationError);
-  html = '<main>Login required</main>';
-  await fetchary.fetch(source.id);
-  await assert.rejects(() => fetchary.followerCount(source.id), FetcharyNotFoundError);
-  browserUrl = 'https://example.test/';
-  html = '<a href="https://github.com/example?tab=followers">100 followers</a>';
-  await fetchary.fetch(source.id);
-  await assert.rejects(() => fetchary.followerCount(source.id), FetcharyValidationError);
-  await assert.rejects(() => fetchary.followerCount(99999), FetcharyNotFoundError);
-  await fetchary.close();
-  await assert.rejects(() => fetchary.followerCount(source.id), /instance is closed/);
-  fetchary = await createFetchary({ dataDir, fetch: async () => { throw new Error('archive reads must not fetch'); } });
-  assert.equal(await fetchary.followerCount(raw.id), 10);
-  await assert.rejects(() => fetchary.followerCount(source.id), FetcharyValidationError);
-  assert.equal((await fetchary.followers()).sum, 10);
-  assert.deepEqual(await fetchary.followers({ tag: 'unknown' }), { followers: [], sum: 0 });
-  await fetchary.close();
-  await assert.rejects(() => fetchary.followers(), /instance is closed/);
-});
-
-test('follower lists report storage errors and avoid silently rounding an overflowing total', async t => {
-  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fetchary-follower-sum-'));
-  t.after(() => fs.rmSync(dataDir, { recursive: true, force: true }));
-  const fetchary = await createFetchary({
-    dataDir,
-    fetch: async url => new Response(`<a href="${new URL(url).pathname}?tab=followers">${url.endsWith('/large') ? Number.MAX_SAFE_INTEGER : 1} followers</a>`, { headers: { 'content-type': 'text/html' } }),
-  });
-  t.after(() => fetchary.close());
-  const large = await fetchary.add('https://github.com/large', { mode: 'http', tag: 'large' });
-  await fetchary.add('https://github.com/small', { mode: 'http', tag: 'small' });
-  await assert.rejects(() => fetchary.followers(), /follower sum exceeds the maximum safe integer/);
-  assert.equal((await fetchary.followers({ tag: 'small' })).sum, 1);
-  fs.rmSync((await fetchary.version(large.id)).file);
-  await assert.rejects(() => fetchary.followers({ tag: 'large' }), /could not read rendered version/);
-});

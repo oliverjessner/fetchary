@@ -1,4 +1,6 @@
 'use strict';
+const { jsonRoots, objects, insightBuilder, jsonLdMetrics, legacyFollower } = require('../metrics/insights');
+const { classifyUrl } = require('../utils/social');
 
 const { elementCount, labeledCount } = require('../metrics/followers');
 const { profilePictures } = require('../metrics/profile-pictures');
@@ -85,4 +87,32 @@ function profilePicture(document, url) {
   });
 }
 
-module.exports = { name: 'youtube', matches, overlays, followerCount, profilePicture };
+function socialInsights(document, url) {
+  const identity = classifyUrl(url);
+  const builder = insightBuilder(url, identity.kind === 'video' ? ['views','likes','comments'] : identity.kind === 'channel' ? ['subscribers'] : []);
+  if (identity.kind === 'channel') {
+    for (const root of jsonRoots(document, ['ytInitialData'])) for (const object of objects(root)) {
+      const header = object.header?.c4TabbedHeaderRenderer || object.header?.pageHeaderRenderer;
+      if (header?.channelId && identity.id !== header.channelId && !url.includes('/@')) continue;
+      if (header?.subscriberCountText) builder.set('subscribers', header.subscriberCountText, 'embedded-json', 'header.subscriberCountText');
+    }
+    legacyFollower(document, url, builder, followerCount, 'subscribers');
+  } else if (identity.kind === 'video') {
+    for (const root of jsonRoots(document, ['ytInitialPlayerResponse','ytInitialData'])) {
+      if (root.videoDetails?.videoId === identity.id) builder.set('views', root.videoDetails.viewCount, 'embedded-json', 'videoDetails.viewCount');
+      if (root.currentVideoEndpoint?.watchEndpoint?.videoId !== identity.id) continue;
+      const contents = root.contents?.twoColumnWatchNextResults?.results?.results?.contents || [];
+      for (const item of contents) for (const object of objects(item)) {
+        if (object.videoPrimaryInfoRenderer) for (const button of objects(object.videoPrimaryInfoRenderer)) {
+          const toggle = button.toggleButtonRenderer;
+          if (toggle?.defaultIcon?.iconType === 'LIKE') builder.set('likes', toggle.defaultText, 'embedded-json', 'videoPrimaryInfoRenderer.toggleButtonRenderer.defaultText');
+        }
+        if (object.commentsHeaderRenderer) builder.set('comments', object.commentsHeaderRenderer.countText, 'embedded-json', 'commentsHeaderRenderer.countText');
+      }
+    }
+    jsonLdMetrics(document, url, builder);
+  }
+  return builder.finish();
+}
+
+module.exports = { name: 'youtube', matches, classifyUrl, socialInsights, overlays, followerCount, profilePicture };

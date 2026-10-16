@@ -1,4 +1,6 @@
 'use strict';
+const { jsonRoots, objects, insightBuilder, jsonLdMetrics, legacyFollower } = require('../metrics/insights');
+const { classifyUrl } = require('../utils/social');
 
 const { linkCount, profileName } = require('../metrics/followers');
 const { profilePictures } = require('../metrics/profile-pictures');
@@ -14,15 +16,6 @@ function matches(url) {
   } catch {
     return false;
   }
-}
-
-async function prepare(page) {
-  if (typeof page.setUserAgent !== 'function' || typeof page.browser !== 'function') return;
-  const browser = page.browser();
-  if (!browser || typeof browser.userAgent !== 'function') return;
-  const browserUserAgent = await browser.userAgent();
-  const userAgent = browserUserAgent.replace(/\bHeadlessChrome\//, 'Chrome/');
-  if (userAgent !== browserUserAgent) await page.setUserAgent(userAgent);
 }
 
 const overlays = [
@@ -85,4 +78,11 @@ function profilePicture(document, url) {
   });
 }
 
-module.exports = { name: 'x', matches, prepare, overlays, followerCount, profilePicture };
+function socialInsights(document, url) {
+  const identity = classifyUrl(url);
+  const builder = insightBuilder(url, identity.kind === 'profile' ? ['followers'] : []);
+  if (identity.kind === 'profile') legacyFollower(document, url, builder, followerCount);
+  return builder.finish();
+}
+
+module.exports = { name: 'x', matches, classifyUrl, socialInsights, overlays, followerCount, profilePicture };

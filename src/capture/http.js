@@ -1,50 +1,139 @@
 'use strict';
 
-const { FetcharyFetchError } = require('../errors');
+const http = require('node:http');
+const https = require('node:https');
+const zlib = require('node:zlib');
+const { validateRemoteUrl } = require('../utils/url');
+const { FetcharyFetchError, FetcharyValidationError } = require('../errors');
 
-async function captureHttp(options) {
+function abortable(promise, signal) {
+  if (signal.aborted) return Promise.reject(signal.reason);
+  return new Promise((resolve, reject) => {
+    const abort = () => reject(signal.reason);
+    signal.addEventListener('abort', abort, { once: true });
+    Promise.resolve(promise).then(resolve, reject).finally(() => signal.removeEventListener('abort', abort));
+  });
+}
+
+async function readBody(response, maxBytes, signal) {
+  if (Number(response.headers.get('content-length')) > maxBytes) throw new Error('response exceeds maxResponseBytes');
+  const chunks = [];
+  let length = 0;
+  if (response.body?.getReader) {
+    const reader = response.body.getReader();
+    try {
+      while (true) {
+        const part = await abortable(reader.read(), signal);
+        if (part.done) break;
+        length += part.value.length;
+        if (length > maxBytes) throw new Error('response exceeds maxResponseBytes');
+        chunks.push(Buffer.from(part.value));
+      }
+    } finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
+  } else if (response.body) {
+    for await (const chunk of response.body) {
+      signal.throwIfAborted();
+      length += chunk.length;
+      if (length > maxBytes) throw new Error('response exceeds maxResponseBytes');
+      chunks.push(Buffer.from(chunk));
+    }
+  } else {
+    const body = Buffer.from(await abortable(response.arrayBuffer(), signal));
+    if (body.length > maxBytes) throw new Error('response exceeds maxResponseBytes');
+    chunks.push(body); length = body.length;
+  }
+  return Buffer.concat(chunks, length);
+}
+
+function nativeResponse(target, options, signal, addresses) {
+  return new Promise((resolve, reject) => {
+    const transport = target.protocol === 'https:' ? https : http;
+    const lookup = addresses && ((hostname, settings, callback) => settings.all
+      ? callback(null, addresses) : callback(null, addresses[0].address, addresses[0].family));
+    const request = transport.request(target, { method: options.method || 'GET', headers: options.headers, signal,
+      ...(lookup ? { lookup } : {}) }, response => {
+      const headers = new Headers();
+      for (let i = 0; i < response.rawHeaders.length; i += 2) headers.append(response.rawHeaders[i], response.rawHeaders[i+1]);
+      let body = response;
+      const encoding = headers.get('content-encoding');
+      if (/^(gzip|deflate|br)$/i.test(encoding || '')) {
+        const decoder = encoding.toLowerCase() === 'br' ? zlib.createBrotliDecompress() : encoding.toLowerCase() === 'gzip' ? zlib.createGunzip() : zlib.createInflate();
+        response.on('error', error => decoder.destroy(error));
+        body = response.pipe(decoder);
+      }
+      resolve({ status: response.statusCode, headers, body, url: target.href,
+        close: () => { body.destroy(); response.destroy(); } });
+    });
+    request.on('error', reject);
+    if (options.body) request.write(options.body);
+    request.end();
+  });
+}
+
+async function readResource(url, options, maxBytes = options.maxResponseBytes) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), options.timeout);
+  const timer = setTimeout(() => controller.abort(new Error('request timed out')), options.timeout);
+  const signal = options.signal ? AbortSignal.any([options.signal, controller.signal]) : controller.signal;
   let response;
   try {
-    response = await options.fetch(options.url, {
-      headers: { ...Object.fromEntries(new Headers(options.headers)), 'user-agent': options.userAgent },
-      redirect: 'follow',
-      signal: controller.signal,
-    });
-    if (!response || typeof response.arrayBuffer !== 'function') throw new TypeError('fetch returned an invalid response');
-    if (!response.ok) {
-      throw new FetcharyFetchError(`fetch failed with HTTP ${response.status}`, {
-        sourceId: options.sourceId,
-        url: options.url,
-        status: response.status,
-      });
+    let headers = new Headers(options.headers);
+    headers.set('user-agent', options.userAgent);
+    headers.set('accept-encoding', 'identity');
+    let target = url;
+    let method = options.method || 'GET';
+    let body = options.body;
+    for (let redirects = 0; redirects <= 10; redirects++) {
+      signal.throwIfAborted();
+      const checked = await abortable(validateRemoteUrl(target, options), signal);
+      response = await abortable(options.fetch
+        ? options.fetch(checked.url.href, { headers: Object.fromEntries(headers), redirect: 'manual', signal, method, ...(body ? { body } : {}) })
+        : nativeResponse(checked.url, { headers: Object.fromEntries(headers), method, body }, signal, checked.addresses), signal);
+      if (!response || !Number.isInteger(response.status)) throw new Error('fetch returned an invalid response');
+      if (response.url && response.url !== checked.url.href) await abortable(validateRemoteUrl(response.url, options), signal);
+      const location = response.headers?.get?.('location');
+      if (options.followRedirects !== false && [301,302,303,307,308].includes(response.status) && location) {
+        const next = new URL(location, checked.url);
+        if (next.origin !== checked.url.origin) {
+          for (const name of ['authorization','cookie','proxy-authorization']) headers.delete(name);
+        }
+        if (response.status === 303 || ([301,302].includes(response.status) && method === 'POST')) { method = 'GET'; body = undefined; }
+        response.close?.(); await response.body?.cancel?.().catch(() => {});
+        target = next.href;
+        continue;
+      }
+      if (options.followRedirects !== false && (response.status < 200 || response.status >= 300)) throw new FetcharyFetchError(`fetch failed with HTTP ${response.status}`, { url, status: response.status });
+      const responseHeaders = response.headers instanceof Headers ? response.headers : new Headers();
+      const payload = await abortable(readBody({ body: response.body, arrayBuffer: () => response.arrayBuffer(), headers: responseHeaders }, maxBytes, signal), signal);
+      signal.throwIfAborted();
+      return { body: payload, url: response.url || checked.url.href, status: response.status, headers: responseHeaders,
+        contentType: responseHeaders.get('content-type') || null };
     }
-    const rawBody = Buffer.from(await response.arrayBuffer());
-    if (controller.signal.aborted) throw new Error('capture timed out');
-    return {
-      requestedUrl: options.url,
-      rawFinalUrl: response.url || options.url,
-      status: Number(response.status),
-      contentType: response.headers?.get?.('content-type') || null,
-      rawBody,
-      rawCapturedAt: new Date().toISOString(),
-      etag: response.headers?.get?.('etag') || null,
-      lastModified: response.headers?.get?.('last-modified') || null,
-      cacheable: !response.headers?.get?.('set-cookie')
-        && !response.headers?.get?.('content-range')
-        && !/\b(?:private|no-store|no-cache)\b/i.test(response.headers?.get?.('cache-control') || ''),
-    };
+    throw new Error('too many redirects');
   } catch (cause) {
-    if (cause instanceof FetcharyFetchError) throw cause;
-    throw new FetcharyFetchError(`fetch failed for ${options.url}`, {
-      sourceId: options.sourceId,
-      url: options.url,
-      cause,
-    });
+    if (cause instanceof FetcharyFetchError || cause instanceof FetcharyValidationError) throw cause;
+    throw new FetcharyFetchError(`could not fetch ${url}: ${cause.message}`, { url, cause });
   } finally {
-    clearTimeout(timeout);
+    clearTimeout(timer);
+    response?.close?.();
+    await response?.body?.cancel?.().catch(() => {});
   }
 }
 
-module.exports = { captureHttp };
+function decodeBody(body, contentType) {
+  const charset = contentType?.match(/charset\s*=\s*["']?([^;\s"']+)/i)?.[1]
+    || body.toString('ascii', 0, 2048).match(/<meta\b[^>]*charset\s*=\s*["']?([^\s"'/>;]+)/i)?.[1] || 'utf-8';
+  try { return new TextDecoder(charset).decode(body); } catch { return body.toString('utf8'); }
+}
+
+async function captureHttp(options) {
+  const response = await readResource(options.url, options, options.maxResponseBytes);
+  return {
+    requestedUrl: options.url, rawFinalUrl: response.url, status: response.status, contentType: response.contentType,
+    rawBody: response.body, rawHtml: decodeBody(response.body, response.contentType), rawCapturedAt: new Date().toISOString(),
+    etag: response.headers.get('etag'), lastModified: response.headers.get('last-modified'),
+    cacheable: response.status !== 206 && !response.headers.get('content-range') && !response.headers.get('set-cookie')
+      && !/\b(?:private|no-store|no-cache)\b/i.test(response.headers.get('cache-control') || ''),
+  };
+}
+
+module.exports = { captureHttp, readResource, decodeBody, abortable };

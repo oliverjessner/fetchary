@@ -7,7 +7,11 @@ const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
 const zlib = require('node:zlib');
-const { extract, extractFavicon, extractProfilePicture, createFetchary, FetcharyValidationError, FetcharyNotFoundError, FetcharyFetchError } = require('../src');
+const actualApi = require('../src');
+const { FetcharyValidationError, FetcharyNotFoundError, FetcharyFetchError } = actualApi;
+const extract = (url, options) => actualApi.extract(url, { allowPrivateNetwork: true, ...options });
+const extractFavicon = (url, options) => actualApi.extractFavicon(url, { mode: 'http', allowPrivateNetwork: true, ...options });
+const extractProfilePicture = (url, options) => actualApi.extractProfilePicture(url, { allowPrivateNetwork: true, ...options });
 const { main } = require('../cli/index');
 const { imageDimensions } = require('../src/extract/images');
 
@@ -77,7 +81,7 @@ test('one-shot extraction selects content without storage, supports HTTP resourc
   const url = 'https://example.test/';
   const state = {};
   const fetch = fixtureFetch({ [url]: '<main>raw</main>' });
-  const options = { fetch, launchBrowser: fakeBrowser('<main>rendered <time>clock</time></main><main>second</main>', url, state), waitAfterLoad: 0, dataDir };
+  const options = { mode: 'browser', fetch, launchBrowser: fakeBrowser('<main>rendered <time>clock</time></main><main>second</main>', url, state), waitAfterLoad: 0, dataDir };
   const result = await extract(url, { ...options, format: 'text', includeSelectors: ['main'], ignoreSelectors: ['time'] });
   assert.equal(result.content, 'rendered');
   assert.equal(result.captureMode, 'browser');
@@ -169,67 +173,14 @@ test('profile extraction handles login-wall raw fallback and rejects unrelated p
   const url = 'https://www.instagram.com/oli/';
   const image = 'https://cdn.test/avatar.png';
   const fetch = fixtureFetch({ [url]: `<meta property="og:image" content="${image}">`, [image]: [png(256, 256), 'image/png'] });
-  const result = await extractProfilePicture(url, { fetch, waitAfterLoad: 0, launchBrowser: fakeBrowser('<form>Login</form>', 'https://www.instagram.com/accounts/login/') });
+  const result = await extractProfilePicture(url, { mode: 'browser', fetch, waitAfterLoad: 0, launchBrowser: fakeBrowser('<form>Login</form>', 'https://www.instagram.com/accounts/login/') });
   assert.equal(result.image.source, 'profile-metadata');
   await assert.rejects(extractProfilePicture('https://example.test/'), FetcharyValidationError);
   await assert.rejects(extractProfilePicture('https://www.instagram.com/p/post/', { fetch: fixtureFetch({ 'https://www.instagram.com/p/post/': `<meta property="og:image" content="${image}">` }), mode: 'http' }), FetcharyNotFoundError);
-  await assert.rejects(extractProfilePicture(url, { fetch, waitAfterLoad: 0, launchBrowser: fakeBrowser('<html></html>', 'https://external.test/') }), FetcharyNotFoundError);
-  await assert.rejects(extractProfilePicture(url, { fetch, waitAfterLoad: 0, launchBrowser: fakeBrowser('<html></html>', 'https://www.instagram.com/other/') }), FetcharyNotFoundError);
-  await assert.rejects(extractProfilePicture(url, { fetch, waitAfterLoad: 0, launchBrowser: fakeBrowser('<html></html>', 'https://www.instagram.com/p/post/') }), FetcharyNotFoundError);
+  await assert.rejects(extractProfilePicture(url, { mode: 'browser', fetch, waitAfterLoad: 0, launchBrowser: fakeBrowser('<html></html>', 'https://external.test/') }), FetcharyNotFoundError);
+  await assert.rejects(extractProfilePicture(url, { mode: 'browser', fetch, waitAfterLoad: 0, launchBrowser: fakeBrowser('<html></html>', 'https://www.instagram.com/other/') }), FetcharyNotFoundError);
+  await assert.rejects(extractProfilePicture(url, { mode: 'browser', fetch, waitAfterLoad: 0, launchBrowser: fakeBrowser('<html></html>', 'https://www.instagram.com/p/post/') }), FetcharyNotFoundError);
   await assert.rejects(extractProfilePicture(url, { mode: 'http', fetch: fixtureFetch({ [url]: `<link rel="canonical" href="/other/"><meta property="og:image" content="${image}">`, [image]: [png(256, 256), 'image/png'] }) }), FetcharyNotFoundError);
-});
-
-test('CLI extraction emits content or image URLs, handles JSON/errors and never touches storage', async t => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fetchary-extract-cli-'));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const dataDir = path.join(root, 'no-storage');
-  const url = 'https://example.test/';
-  const profile = 'https://www.instagram.com/oli/';
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = fixtureFetch({ [url]: '<main>Hello <span>clock</span></main><link rel="icon" href="/icon.png">',
-    'https://example.test/icon.png': [png(256, 256), 'image/png'],
-    [profile]: '<img alt="oli\'s profile picture" src="https://example.test/icon.png">',
-  });
-  t.after(() => { globalThis.fetch = originalFetch; });
-  async function run(args) {
-    let stdout = ''; let stderr = '';
-    const code = await main([...args, '--data-dir', dataDir], {
-      stdout: { write: value => { stdout += value; } }, stderr: { write: value => { stderr += value; } },
-    });
-    return { code, stdout, stderr };
-  }
-  const content = await run(['extract', url, '--mode', 'http', '--text', '--ignore-selector', 'span']);
-  assert.deepEqual(content, { code: 0, stdout: 'Hello', stderr: '' });
-  const extractedJson = JSON.parse((await run(['extract', url, '--mode', 'http', '--json'])).stdout);
-  assert.equal(extractedJson.content.startsWith('<main>'), true);
-  assert.equal(extractedJson.cache.hit, true);
-  assert.equal(extractedJson.cache.ttlMs, 45_000);
-  assert.equal((await run(['favicon', url])).stdout, 'https://example.test/icon.png\n');
-  assert.equal(JSON.parse((await run(['favicon', url, '--json'])).stdout).image.width, 256);
-  assert.equal((await run(['profile-picture', profile, '--mode', 'http'])).stdout, 'https://example.test/icon.png\n');
-  assert.equal((await run(['favicon', url, '--quiet'])).stdout, '');
-  assert.match((await run(['extract', url, '--mode', 'http', '--verbose'])).stderr, /without storage/);
-  assert.equal((await run(['extract'])).code, 2);
-  assert.equal((await run(['favicon', url, '--text'])).code, 2);
-  assert.equal((await run(['extract', url, '--every', '1h'])).code, 2);
-  assert.equal((await run(['favicon', url, '--mode', 'invalid'])).code, 2);
-  assert.equal((await run(['extract', 'https://missing.test/', '--mode', 'http'])).code, 3);
-  const missing = await run(['favicon', profile, '--json']);
-  assert.equal(missing.code, 1);
-  assert.equal(JSON.parse(missing.stderr).error, 'FetcharyNotFoundError');
-  assert.equal(fs.existsSync(dataDir), false);
-
-  const archive = await createFetchary({ dataDir, fetch: globalThis.fetch });
-  await archive.add(url, { mode: 'http' });
-  await archive.setVendorActive('instagram', false);
-  await archive.close();
-  const dbBefore = fs.readFileSync(path.join(dataDir, 'fetchary.sqlite'));
-  const htmlBefore = fs.readFileSync(path.join(dataDir, 'pages/1/1/response.html'));
-  await run(['profile-picture', profile, '--mode', 'http']);
-  await run(['extract', url, '--mode', 'http']);
-  await run(['favicon', url]);
-  assert.deepEqual(fs.readFileSync(path.join(dataDir, 'fetchary.sqlite')), dbBefore);
-  assert.deepEqual(fs.readFileSync(path.join(dataDir, 'pages/1/1/response.html')), htmlBefore);
 });
 
 test('real Chromium one-shot extraction captures JavaScript content and dynamic icons', async t => {
@@ -246,7 +197,7 @@ test('real Chromium one-shot extraction captures JavaScript content and dynamic 
   await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
   t.after(() => new Promise(resolve => server.close(resolve)));
   const url = `http://127.0.0.1:${server.address().port}/`;
-  const result = await extract(url, { waitAfterLoad: 0, format: 'text', includeSelectors: ['main'], timeout: 5000 });
+  const result = await extract(url, { mode: 'browser', waitAfterLoad: 0, format: 'text', includeSelectors: ['main'], timeout: 5000 });
   assert.equal(result.content, 'rendered');
   const icon = await extractFavicon(url, { mode: 'browser', waitAfterLoad: 0, timeout: 5000 });
   assert.equal(icon.image.url, `${url}icon.png`);

@@ -1,5 +1,7 @@
 'use strict';
 
+const { validateRemoteUrl } = require('../utils/url');
+const { readResource, abortable } = require('./http');
 const { FetcharyBrowserError } = require('../errors');
 const { discoverVendors, prepareVendorPage, dismissVendorOverlays } = require('../vendors');
 
@@ -17,6 +19,7 @@ async function waitAfterLoad(page, options, vendors) {
   const dismissedOverlays = [];
   const deadline = Date.now() + options.waitAfterLoadMs;
   do {
+    options.signal?.throwIfAborted();
     const currentUrl = typeof page.url === 'function' ? page.url() : options.url;
     const dismissed = await dismissVendorOverlays(page, currentUrl, dismissedOverlays, vendors);
     dismissedOverlays.push(...dismissed);
@@ -40,7 +43,7 @@ class BrowserCapture {
   async _getBrowser(options) {
     if (!this.browserPromise) {
       this.browserPromise = Promise.resolve()
-        .then(() => this.launch({ headless: true }))
+        .then(() => this.launch({ headless: true, args: ['--disable-background-networking', '--disable-quic', '--proxy-server=http://127.0.0.1:9', '--proxy-bypass-list=<-loopback>', '--force-webrtc-ip-handling-policy=disable_non_proxied_udp'] }))
         .catch(cause => {
           this.browserPromise = null;
           throw browserError('could not launch Chromium', options, cause, 'launch');
@@ -51,7 +54,16 @@ class BrowserCapture {
 
   async capture(options) {
     const vendors = this.getVendors();
+    await validateRemoteUrl(options.url, options);
     const browser = await this._getBrowser(options);
+    const controller = new AbortController();
+    const signal = options.signal ? AbortSignal.any([options.signal, controller.signal]) : controller.signal;
+    const timer = setTimeout(() => controller.abort(new Error('browser capture timed out')), options.timeout + options.waitAfterLoadMs);
+    const abort = () => { page?.close().catch(() => {}); };
+    signal.addEventListener('abort', abort, { once: true });
+    let requestError;
+    let transferred = 0;
+    const activeRequests = new Set();
     let page;
     let navigation;
     try {
@@ -63,6 +75,31 @@ class BrowserCapture {
           headers.delete('user-agent'); // setUserAgent (and vendor preparation) owns this header.
           await page.setExtraHTTPHeaders(Object.fromEntries(headers));
         }
+        if (typeof page.setRequestInterception === 'function') {
+          await page.setRequestInterception(true);
+          page.on('request', request => {
+            const task = (async () => {
+              try {
+                if (!/^https?:/.test(request.url())) {
+                  if (request.isNavigationRequest()) throw new Error('unsupported navigation scheme');
+                  return await request.abort();
+                }
+                const resource = await readResource(request.url(), { ...options, signal, followRedirects: false,
+                  headers: request.headers(), method: request.method(), body: request.postData() }, options.maxResponseBytes);
+                transferred += resource.body.length;
+                if (transferred > options.maxResponseBytes * 4) throw new Error('browser resource budget exceeded');
+                const headers = Object.fromEntries(resource.headers);
+                delete headers['content-encoding']; delete headers['content-length']; delete headers['transfer-encoding'];
+                await request.respond({ status: resource.status, headers, body: resource.body });
+              } catch (error) {
+                requestError ||= error;
+                await request.abort().catch(() => {});
+              }
+            })();
+            activeRequests.add(task);
+            task.finally(() => activeRequests.delete(task)).catch(() => {});
+          });
+        } else if (!options.allowPrivateNetwork) throw new Error('browser implementation must support guarded request interception');
         await prepareVendorPage(page, options.url, vendors);
         navigation = await page.goto(options.url, { waitUntil: 'load', timeout: options.timeout });
         if (navigation && navigation.status() >= 400) throw new Error(`HTTP ${navigation.status()}`);
@@ -70,9 +107,10 @@ class BrowserCapture {
         throw browserError(`browser navigation failed for ${options.url}`, options, cause, 'navigation');
       }
 
+      if (requestError) throw requestError;
       let dismissedOverlays;
       try {
-        dismissedOverlays = await waitAfterLoad(page, options, vendors);
+        dismissedOverlays = await waitAfterLoad(page, { ...options, signal }, vendors);
       } catch (cause) {
         throw browserError(`post-load wait failed for ${options.url}`, options, cause, 'post-load-wait');
       }
@@ -80,9 +118,13 @@ class BrowserCapture {
       let renderedHtml;
       let browserFinalUrl;
       try {
+        signal.throwIfAborted();
+        if (requestError) throw requestError;
         renderedHtml = await page.content();
+        if (Buffer.byteLength(renderedHtml) > options.maxResponseBytes) throw new Error('rendered HTML exceeds maxResponseBytes');
         if (typeof renderedHtml !== 'string' || !renderedHtml.trim()) throw new Error('invalid rendered HTML snapshot');
         browserFinalUrl = typeof page.url === 'function' ? page.url() : options.url;
+        await validateRemoteUrl(browserFinalUrl, options);
       } catch (cause) {
         throw browserError(`could not snapshot rendered DOM for ${options.url}`, options, cause, 'snapshot');
       }
@@ -95,9 +137,13 @@ class BrowserCapture {
           && !/\b(?:private|no-store|no-cache)\b/i.test(navigation?.headers?.()['cache-control'] || ''),
       };
     } finally {
+      clearTimeout(timer);
+      signal.removeEventListener('abort', abort);
+      controller.abort();
       if (page) {
         try { await page.close(); } catch {}
       }
+      await Promise.allSettled([...activeRequests]);
     }
   }
 

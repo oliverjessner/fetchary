@@ -3,7 +3,7 @@
 const { captureHttp } = require('./http');
 const { BrowserCapture } = require('./browser');
 const { createCaptureCache, validateCacheTtl } = require('./cache');
-const { FetcharyValidationError } = require('../errors');
+const { validateRemoteUrl } = require('../utils/url');
 
 const sharedCaptureCache = createCaptureCache();
 const identities = new WeakMap();
@@ -12,15 +12,6 @@ function identity(value) {
   if (value == null) return null;
   if (!identities.has(value)) identities.set(value, ++nextIdentity);
   return identities.get(value);
-}
-
-function validateCaptureUrl(value) {
-  let url;
-  try { url = new URL(value); } catch {
-    throw new FetcharyValidationError('capture URL must be an absolute HTTP(S) URL');
-  }
-  if (!['http:', 'https:'].includes(url.protocol)) throw new FetcharyValidationError('capture URL must use http or https');
-  return url;
 }
 
 function cacheableCapture(page) {
@@ -44,6 +35,7 @@ function shouldRender(contentType) {
 
 class CaptureManager {
   constructor(options) {
+    this.options = options;
     this.httpFetch = options.fetch;
     this.timeout = options.timeout;
     this.userAgent = options.userAgent;
@@ -57,32 +49,35 @@ class CaptureManager {
   }
 
   async capture(source) {
-    const url = validateCaptureUrl(source.url);
+    this.options.signal?.throwIfAborted();
+    const { url } = await validateRemoteUrl(source.url, this.options);
     const headers = new Headers(this.headers);
     headers.set('user-agent', this.userAgent);
     // Explicit credentials bypass the global cache. Private clients can retain
     // header-authenticated snapshots, keyed by their complete request headers.
     const sensitive = url.username || url.password || [...headers.keys()].some(name => ['authorization', 'cookie', 'proxy-authorization'].includes(name));
-    const ttlMs = sensitive && this.cache === sharedCaptureCache ? 0 : this.cacheTtlMs;
+    const ttlMs = this.options.signal ? 0 : sensitive && this.cache === sharedCaptureCache ? 0 : this.cacheTtlMs;
     const key = JSON.stringify([
       url.href, source.captureMode, [...headers.entries()].sort(), this.timeout,
       identity(this.httpFetch), identity(this.browserIdentity), identity(this.vendorIdentity),
+      this.options.maxResponseBytes, Boolean(this.options.allowPrivateNetwork), identity(this.options.lookup),
       source.captureMode === 'browser' ? [source.waitAfterLoadMs, this.browserUserAgent] : null,
     ]);
     const page = await this.cache.capture(key, ttlMs, async () => {
       const snapshot = await this._capture({ ...source, url: url.href });
-      validateCaptureUrl(snapshot.rawFinalUrl);
-      if (snapshot.browserFinalUrl) validateCaptureUrl(snapshot.browserFinalUrl);
+      await validateRemoteUrl(snapshot.rawFinalUrl, this.options);
+      if (snapshot.browserFinalUrl) await validateRemoteUrl(snapshot.browserFinalUrl, this.options);
       return { ...snapshot, cacheable: ttlMs > 0 && cacheableCapture(snapshot) };
     });
     // Validation is intentionally repeated on hits as well as network captures.
-    validateCaptureUrl(page.rawFinalUrl);
-    if (page.browserFinalUrl) validateCaptureUrl(page.browserFinalUrl);
+    await validateRemoteUrl(page.rawFinalUrl, this.options);
+    if (page.browserFinalUrl) await validateRemoteUrl(page.browserFinalUrl, this.options);
     return page;
   }
 
   async _capture(source) {
-    const http = await captureHttp({
+    const http = source.httpCapture || await captureHttp({
+      ...this.options,
       url: source.url,
       sourceId: source.id,
       fetch: this.httpFetch,
@@ -101,6 +96,7 @@ class CaptureManager {
       };
     }
     const rendered = await this.browser.capture({
+      ...this.options,
       url: source.url,
       sourceId: source.id,
       timeout: this.timeout,

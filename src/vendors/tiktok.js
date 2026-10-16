@@ -1,4 +1,6 @@
 'use strict';
+const { jsonRoots, objects, insightBuilder, jsonLdMetrics, legacyFollower } = require('../metrics/insights');
+const { classifyUrl } = require('../utils/social');
 const { profilePictures } = require('../metrics/profile-pictures');
 
 const { parseCount, elementCount, jsonObjects, profileName } = require('../metrics/followers');
@@ -100,4 +102,22 @@ function profilePicture(document, url) {
   });
 }
 
-module.exports = { name: 'tiktok', matches, overlays, followerCount, profilePicture };
+function socialInsights(document, url) {
+  const identity = classifyUrl(url);
+  const builder = insightBuilder(url, identity.kind === 'profile' ? ['followers','following','posts'] : identity.kind === 'video' ? ['likes','comments','views','shares','saves'] : []);
+  for (const root of jsonRoots(document)) for (const object of objects(root)) {
+    if (identity.kind === 'profile' && String(object.user?.uniqueId || '').toLowerCase() === identity.id) {
+      const stats = object.statsV2 || object.stats || {};
+      for (const [name, field] of Object.entries({ followers:'followerCount', following:'followingCount', posts:'videoCount' })) builder.set(name, stats[field], 'embedded-json', `userInfo.stats.${field}`);
+    }
+    if (identity.kind === 'video' && String(object.id || '') === identity.id) {
+      const stats = object.statsV2 || object.stats || {};
+      for (const [name, field] of Object.entries({ likes:'diggCount', comments:'commentCount', views:'playCount', shares:'shareCount', saves:'collectCount' })) builder.set(name, stats[field], 'embedded-json', `itemStruct.stats.${field}`);
+    }
+  }
+  if (identity.kind === 'profile') legacyFollower(document, url, builder, followerCount);
+  if (identity.kind === 'video') jsonLdMetrics(document, url, builder);
+  return builder.finish();
+}
+
+module.exports = { name: 'tiktok', matches, classifyUrl, socialInsights, overlays, followerCount, profilePicture };

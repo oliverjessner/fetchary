@@ -1,4 +1,6 @@
 'use strict';
+const { jsonRoots, objects, insightBuilder, jsonLdMetrics, legacyFollower } = require('../metrics/insights');
+const { classifyUrl } = require('../utils/social');
 const { profilePictures } = require('../metrics/profile-pictures');
 
 const { parseCount, elementCount, labeledCount, jsonObjects } = require('../metrics/followers');
@@ -157,4 +159,11 @@ function profilePicture(document, url) {
   });
 }
 
-module.exports = { name: 'linkedin', matches, overlays, followerCount, followerCountFromRaw, profilePicture };
+function socialInsights(document, url) {
+  const identity = classifyUrl(url);
+  const builder = insightBuilder(url, identity.kind === 'profile' ? ['followers'] : []);
+  if (identity.kind === 'profile') legacyFollower(document, url, builder, followerCount);
+  return builder.finish();
+}
+
+module.exports = { name: 'linkedin', matches, classifyUrl, socialInsights, overlays, followerCount, followerCountFromRaw, profilePicture };
