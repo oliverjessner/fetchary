@@ -17,6 +17,17 @@ export type FetcharyOptions = {
 
 export type CaptureMode = 'browser' | 'http';
 
+/** Minimal injectable browser contract; a Puppeteer Browser satisfies it. */
+export type CaptureBrowser = {
+  newPage(): Promise<{
+    goto(url: string, options: { waitUntil: 'load'; timeout: number }): Promise<unknown>;
+    content(): Promise<string>;
+    url(): string;
+    close(): Promise<void>;
+  }>;
+  close(): Promise<void>;
+};
+
 /** Standalone extraction never initializes Fetchary storage. */
 export type ExtractionOptions = {
   mode?: CaptureMode;
@@ -24,6 +35,10 @@ export type ExtractionOptions = {
   timeout?: number;
   userAgent?: string;
   fetch?: typeof globalThis.fetch;
+  headers?: HeadersInit;
+  launchBrowser?: (options: { headless: boolean }) => Promise<CaptureBrowser>;
+  /** Capture age limit in milliseconds; 45000 by default, 0 bypasses cache and deduplication. */
+  cacheTtlMs?: number;
 };
 
 export type ExtractOptions = ExtractionOptions & {
@@ -41,6 +56,7 @@ export type ExtractionMetadata = {
   contentType: string | null;
   captureMode: CaptureMode;
   dismissedOverlays: string[];
+  cache: { hit: boolean; ageMs: number; ttlMs: number };
 };
 
 export type ExtractResult = ExtractionMetadata & {
@@ -61,6 +77,30 @@ export type ExtractedImage = {
 
 export type FaviconResult = ExtractionMetadata & { image: ExtractedImage };
 export type ProfilePictureResult = FaviconResult & { vendor: string };
+export type ImagesResult = ExtractionMetadata & { images: Array<{ url: string; alt: string }> };
+export type SocialLinksResult = ExtractionMetadata & { links: Array<{ platform: string; url: string }> };
+export type SocialInsightsResult = ExtractionMetadata & { vendor: string; followers: number | null };
+
+export type ExtractorOptions = ExtractionOptions & {
+  /** Maximum retained captures; default 100. */
+  maxEntries?: number;
+  /** Approximate retained byte budget; default 50 * 1024 * 1024. */
+  maxCacheBytes?: number;
+};
+
+export type Extractor = {
+  extract: typeof extract;
+  extractText: typeof extractText;
+  extractHtml: typeof extractHtml;
+  extractFavicon: typeof extractFavicon;
+  extractImages: typeof extractImages;
+  extractSelector: typeof extractSelector;
+  extractSocialLinks: typeof extractSocialLinks;
+  extractSocialAvatar: typeof extractSocialAvatar;
+  extractProfilePicture: typeof extractProfilePicture;
+  extractSocialInsights: typeof extractSocialInsights;
+  clearCache(): void;
+};
 
 export type Vendor = {
   name: string;
@@ -215,6 +255,17 @@ export declare function createFetchary(options?: FetcharyOptions): Promise<Fetch
 export declare function extract(url: string, options?: ExtractOptions): Promise<ExtractResult>;
 export declare function extractFavicon(url: string, options?: ExtractionOptions): Promise<FaviconResult>;
 export declare function extractProfilePicture(url: string, options?: ExtractionOptions): Promise<ProfilePictureResult>;
+export declare function extractText(url: string, options?: ExtractOptions): Promise<ExtractResult>;
+export declare function extractHtml(url: string, options?: ExtractOptions): Promise<ExtractResult>;
+export declare function extractImages(url: string, options?: ExtractionOptions): Promise<ImagesResult>;
+export declare function extractSelector(url: string, selector: string, options?: ExtractOptions): Promise<ExtractResult>;
+export declare function extractSocialLinks(url: string, options?: ExtractionOptions): Promise<SocialLinksResult>;
+export declare function extractSocialAvatar(url: string, options?: ExtractionOptions): Promise<ProfilePictureResult>;
+export declare function extractSocialInsights(url: string, options?: ExtractionOptions): Promise<SocialInsightsResult>;
+/** Creates a lightweight client with its own cache and configuration. */
+export declare function createExtractor(options?: ExtractorOptions): Extractor;
+/** Clears the process-local cache used by standalone extraction exports. */
+export declare function clearCache(): void;
 export declare function parseInterval(every: string): { every: string; intervalSeconds: number };
 
 export declare class FetcharyError extends Error {}

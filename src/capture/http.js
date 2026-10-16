@@ -8,7 +8,7 @@ async function captureHttp(options) {
   let response;
   try {
     response = await options.fetch(options.url, {
-      headers: { 'user-agent': options.userAgent },
+      headers: { ...Object.fromEntries(new Headers(options.headers)), 'user-agent': options.userAgent },
       redirect: 'follow',
       signal: controller.signal,
     });
@@ -21,6 +21,7 @@ async function captureHttp(options) {
       });
     }
     const rawBody = Buffer.from(await response.arrayBuffer());
+    if (controller.signal.aborted) throw new Error('capture timed out');
     return {
       requestedUrl: options.url,
       rawFinalUrl: response.url || options.url,
@@ -30,6 +31,9 @@ async function captureHttp(options) {
       rawCapturedAt: new Date().toISOString(),
       etag: response.headers?.get?.('etag') || null,
       lastModified: response.headers?.get?.('last-modified') || null,
+      cacheable: !response.headers?.get?.('set-cookie')
+        && !response.headers?.get?.('content-range')
+        && !/\b(?:private|no-store|no-cache)\b/i.test(response.headers?.get?.('cache-control') || ''),
     };
   } catch (cause) {
     if (cause instanceof FetcharyFetchError) throw cause;

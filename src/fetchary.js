@@ -190,6 +190,7 @@ class Fetchary extends EventEmitter {
       this.vendorRegistry = new VendorRegistry(this.db);
       this.vendorRegistry.sync();
       this.capture = new CaptureManager({
+        cacheTtlMs: 0, // Monitoring must observe fresh content on every check.
         fetch: this.httpFetch,
         timeout: this.timeout,
         userAgent: this.userAgent,

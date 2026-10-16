@@ -54,6 +54,21 @@ writing an archive, or changing schedules and vendor settings. `--data-dir` and
 `FETCHARY_DATA_DIR` are ignored. Browser extraction uses the built-in vendor
 helpers; persisted vendor activation flags are not loaded.
 
+These commands use the same capture implementation as the Node.js library,
+including its default 45-second in-memory cache. The cache is process-local:
+separate CLI executions each start empty and never share entries through files
+or SQLite. There are no CLI cache flags; use the library's `cacheTtlMs`,
+`createExtractor()`, and `clearCache()` for cache control. The default limits are
+100 entries and 50 MiB, with lazy expiration and LRU eviction. Compatible
+simultaneous library calls share a capture; TTL zero bypasses that deduplication.
+HTTP and rendered browser captures remain separate. See
+[the library reference](LIBRARY.md#capture-cache) for TTL and compatibility rules.
+
+Plain output contains no cache diagnostics. Structured `--json` results include
+`cache: { hit, ageMs, ttlMs }`; misses report `hit: false` and `ageMs: 0`.
+`capturedAt` remains the original snapshot timestamp on a hit. The cache does not
+change the existing monitoring commands' fresh-fetch behavior.
+
 #### `fetchary extract`
 
 ```bash
@@ -90,6 +105,7 @@ With `--json`, stdout contains one object:
   contentType: string | null;
   captureMode: 'browser' | 'http';
   dismissedOverlays: string[];
+  cache: { hit: boolean; ageMs: number; ttlMs: number };
   format: 'html' | 'text';
   content: string;
 }

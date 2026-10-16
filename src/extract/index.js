@@ -1,24 +1,35 @@
 'use strict';
 
 const { parseHTML } = require('linkedom');
-const { CaptureManager, shouldRender } = require('../capture');
+const { CaptureManager, shouldRender, sharedCaptureCache } = require('../capture');
+const { createCaptureCache, validateCacheTtl } = require('../capture/cache');
 const { validateUrl, validateCaptureMode, parseWaitAfterLoad, validateSelectors } = require('../fetchary');
 const { comparisonHtml, comparisonText } = require('../diff');
 const { discoverVendors } = require('../vendors');
 const { FetcharyValidationError, FetcharyNotFoundError } = require('../errors');
 const { httpUrl, documentBase, readResource, selectImage } = require('./images');
 
+const clientCache = Symbol('captureCache');
+
 function extractionOptions(options, defaultMode = 'browser') {
   const settings = {
     fetch: options.fetch || globalThis.fetch,
     timeout: options.timeout ?? 30_000,
     userAgent: options.userAgent || 'fetchary/0.1',
+    browserUserAgent: options.userAgent || 'fetchary/0.1',
     captureMode: validateCaptureMode(options.mode ?? defaultMode),
     waitAfterLoadMs: parseWaitAfterLoad(options.waitAfterLoad),
     launchBrowser: options.launchBrowser,
+    headers: options.headers,
+    cacheTtlMs: validateCacheTtl(options.cacheTtlMs),
+    captureCache: options[clientCache],
   };
   if (typeof settings.fetch !== 'function') throw new FetcharyValidationError('a Fetch-compatible implementation is required');
   if (!Number.isFinite(settings.timeout) || settings.timeout <= 0) throw new FetcharyValidationError('timeout must be greater than zero');
+  if (settings.launchBrowser !== undefined && typeof settings.launchBrowser !== 'function') throw new FetcharyValidationError('launchBrowser must be a function');
+  try { if (settings.headers !== undefined) settings.headers = Object.fromEntries(new Headers(settings.headers)); } catch (cause) {
+    throw new FetcharyValidationError('headers must be valid request headers', { cause });
+  }
   return settings;
 }
 
@@ -40,6 +51,7 @@ function pageMetadata(page) {
     capturedAt: page.renderedCapturedAt || page.rawCapturedAt,
     status: page.status, contentType: page.contentType,
     captureMode: page.captureMode, dismissedOverlays: page.dismissedOverlays,
+    cache: { ...page.cache },
   };
 }
 
@@ -128,4 +140,88 @@ async function extractProfilePicture(url, options = {}) {
   });
 }
 
-module.exports = { extract, extractFavicon, extractProfilePicture };
+function extractText(url, options = {}) { return extract(url, { ...options, format: 'text' }); }
+function extractHtml(url, options = {}) { return extract(url, { ...options, format: 'html' }); }
+
+async function extractSelector(url, selector, options = {}) {
+  const [validated] = validateSelectors([selector], 'include');
+  return extract(url, { ...options, includeSelectors: [validated] });
+}
+
+function pageDocument(page) {
+  return parseHTML(page.renderedHtml ?? page.rawBody.toString('utf8')).document;
+}
+
+async function extractImages(url, options = {}) {
+  return withCapture(url, options, 'browser', page => {
+    const document = pageDocument(page);
+    const base = documentBase(document, pageMetadata(page).finalUrl);
+    const images = [];
+    const seen = new Set();
+    for (const image of document.querySelectorAll('img[src], img[data-src]')) {
+      const target = httpUrl(image.getAttribute('src') || image.getAttribute('data-src'), base);
+      if (!target || seen.has(target)) continue;
+      seen.add(target);
+      images.push({ url: target, alt: image.getAttribute('alt') || '' });
+    }
+    return { ...pageMetadata(page), images };
+  });
+}
+
+const socialDomains = {
+  facebook: ['facebook.com'], x: ['x.com', 'twitter.com'], youtube: ['youtube.com', 'youtu.be'],
+  instagram: ['instagram.com'], vimeo: ['vimeo.com'], tiktok: ['tiktok.com'], reddit: ['reddit.com'],
+  linkedin: ['linkedin.com'], threads: ['threads.com', 'threads.net'], twitch: ['twitch.tv'], github: ['github.com'],
+};
+
+async function extractSocialLinks(url, options = {}) {
+  return withCapture(url, options, 'browser', page => {
+    const document = pageDocument(page);
+    const base = documentBase(document, pageMetadata(page).finalUrl);
+    const links = [];
+    const seen = new Set();
+    for (const link of document.querySelectorAll('a[href], area[href]')) {
+      const target = httpUrl(link.getAttribute('href'), base);
+      if (!target || seen.has(target)) continue;
+      const host = new URL(target).hostname;
+      const platform = Object.keys(socialDomains).find(name => socialDomains[name].some(domain => host === domain || host.endsWith(`.${domain}`)));
+      if (!platform) continue;
+      seen.add(target);
+      links.push({ platform, url: target });
+    }
+    return { ...pageMetadata(page), links };
+  });
+}
+
+async function extractSocialInsights(url, options = {}) {
+  return withCapture(url, options, 'browser', async page => {
+    const finalUrl = pageMetadata(page).finalUrl;
+    const vendor = discoverVendors().find(vendor => vendor.matches(finalUrl) && typeof vendor.followerCount === 'function');
+    if (!vendor) throw new FetcharyValidationError('social insights require a supported social profile URL', { url: finalUrl });
+    let followers = await vendor.followerCount(pageDocument(page), finalUrl);
+    if (followers == null && page.renderedHtml != null && vendor.matches(page.rawFinalUrl) && typeof vendor.followerCountFromRaw === 'function') {
+      followers = await vendor.followerCountFromRaw(parseHTML(page.rawBody.toString('utf8')).document, page.rawFinalUrl, finalUrl);
+    }
+    return { ...pageMetadata(page), vendor: vendor.name, followers: Number.isSafeInteger(followers) && followers >= 0 ? followers : null };
+  });
+}
+
+const extractSocialAvatar = extractProfilePicture;
+
+function clearCache() { sharedCaptureCache.clear(); }
+
+function createExtractor(options = {}) {
+  const settings = extractionOptions(options);
+  const cache = createCaptureCache({ maxEntries: options.maxEntries, maxCacheBytes: options.maxCacheBytes });
+  // Copy mutable configuration. Per-call settings never change these defaults.
+  const defaults = { ...options, headers: settings.headers, [clientCache]: cache };
+  const client = { clearCache: () => cache.clear() };
+  for (const [name, method] of Object.entries({ extract, extractText, extractHtml, extractFavicon, extractImages, extractSocialLinks, extractSocialAvatar, extractProfilePicture, extractSocialInsights })) {
+    client[name] = (url, overrides = {}) => method(url, { ...defaults, ...overrides, [clientCache]: cache });
+  }
+  client.extractSelector = (url, selector, overrides = {}) => extractSelector(url, selector, { ...defaults, ...overrides, [clientCache]: cache });
+  return client;
+}
+
+module.exports = { extract, extractText, extractHtml, extractFavicon, extractImages, extractSelector, extractSocialLinks,
+  extractSocialAvatar, extractProfilePicture, extractSocialInsights, createExtractor, clearCache };

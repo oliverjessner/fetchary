@@ -163,6 +163,26 @@ Need the current page content without starting a monitor or keeping an archive?
 fetchary extract https://example.com --text
 ```
 
+Need text, images, and social links from the same page in your Node.js app?
+Compatible calls reuse the captured webpage for 45 seconds:
+
+```js
+const { extractText, extractImages, extractSocialLinks } = require('fetchary');
+
+async function main() {
+  const url = 'https://example.com';
+  const text = await extractText(url);
+  const images = await extractImages(url);
+  const socials = await extractSocialLinks(url);
+  console.log(text.content, images.images, socials.links);
+}
+main().catch(console.error);
+```
+
+The cache lives in memory in the current process. Separate CLI executions each
+start fresh. See the [library guide](docs/LIBRARY.md#capture-cache) to adjust the
+TTL, disable caching, or use a client with its own cache.
+
 You can also get a website's largest available icon or a public profile's image URL:
 
 ```bash

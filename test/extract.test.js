@@ -200,7 +200,10 @@ test('CLI extraction emits content or image URLs, handles JSON/errors and never 
   }
   const content = await run(['extract', url, '--mode', 'http', '--text', '--ignore-selector', 'span']);
   assert.deepEqual(content, { code: 0, stdout: 'Hello', stderr: '' });
-  assert.equal(JSON.parse((await run(['extract', url, '--mode', 'http', '--json'])).stdout).content.startsWith('<main>'), true);
+  const extractedJson = JSON.parse((await run(['extract', url, '--mode', 'http', '--json'])).stdout);
+  assert.equal(extractedJson.content.startsWith('<main>'), true);
+  assert.equal(extractedJson.cache.hit, true);
+  assert.equal(extractedJson.cache.ttlMs, 45_000);
   assert.equal((await run(['favicon', url])).stdout, 'https://example.test/icon.png\n');
   assert.equal(JSON.parse((await run(['favicon', url, '--json'])).stdout).image.width, 256);
   assert.equal((await run(['profile-picture', profile, '--mode', 'http'])).stdout, 'https://example.test/icon.png\n');

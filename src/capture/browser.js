@@ -53,11 +53,19 @@ class BrowserCapture {
     const vendors = this.getVendors();
     const browser = await this._getBrowser(options);
     let page;
+    let navigation;
     try {
       try {
         page = await browser.newPage();
+        if (options.userAgent && typeof page.setUserAgent === 'function') await page.setUserAgent(options.userAgent);
+        if (options.headers && typeof page.setExtraHTTPHeaders === 'function') {
+          const headers = new Headers(options.headers);
+          headers.delete('user-agent'); // setUserAgent (and vendor preparation) owns this header.
+          await page.setExtraHTTPHeaders(Object.fromEntries(headers));
+        }
         await prepareVendorPage(page, options.url, vendors);
-        await page.goto(options.url, { waitUntil: 'load', timeout: options.timeout });
+        navigation = await page.goto(options.url, { waitUntil: 'load', timeout: options.timeout });
+        if (navigation && navigation.status() >= 400) throw new Error(`HTTP ${navigation.status()}`);
       } catch (cause) {
         throw browserError(`browser navigation failed for ${options.url}`, options, cause, 'navigation');
       }
@@ -73,6 +81,7 @@ class BrowserCapture {
       let browserFinalUrl;
       try {
         renderedHtml = await page.content();
+        if (typeof renderedHtml !== 'string' || !renderedHtml.trim()) throw new Error('invalid rendered HTML snapshot');
         browserFinalUrl = typeof page.url === 'function' ? page.url() : options.url;
       } catch (cause) {
         throw browserError(`could not snapshot rendered DOM for ${options.url}`, options, cause, 'snapshot');
@@ -82,6 +91,8 @@ class BrowserCapture {
         browserFinalUrl,
         renderedCapturedAt: new Date().toISOString(),
         dismissedOverlays,
+        cacheable: navigation?.status?.() !== 206 && !navigation?.headers?.()['set-cookie']
+          && !/\b(?:private|no-store|no-cache)\b/i.test(navigation?.headers?.()['cache-control'] || ''),
       };
     } finally {
       if (page) {

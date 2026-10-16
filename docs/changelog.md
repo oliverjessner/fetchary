@@ -1,5 +1,8 @@
 # Unreleased
 
+- Reuse compatible webpage captures in a bounded, process-local memory cache for 45 seconds by default, with in-flight deduplication and per-call TTL overrides.
+- Add isolated `createExtractor()` clients, cache clearing, capture cache metadata, and shared semantic extraction methods for text, HTML, selectors, images, social links, avatars, and follower insights.
+
 - `fetch` displays results in an aligned `ID`, `NAME`, and `CHANGE` table
 
 # 1.3.0

@@ -136,8 +136,135 @@ This means the CLI and library can work with the same sources and archived versi
 
 Use the standalone exports when you only need the current content or an image
 URL. They do not require `createFetchary()`, open a database, register a source,
-write an archive, or emit monitoring events and hooks. Each call closes its own
-Chromium instance before it resolves or rejects.
+write an archive, or emit monitoring events and hooks. Calls share a short-lived
+capture cache. A fresh browser capture closes Chromium when its owning operation
+finishes; cached calls do not launch a browser.
+
+### Capture cache
+
+All standalone extraction methods share a process-local, RAM-only page cache by
+default. No files, cache directories, or databases are created. The default TTL
+is **45,000 milliseconds**. The cache holds raw response bytes and, for browser
+captures, rendered HTML and their original capture metadata. Extraction results
+and DOM instances are never cached.
+
+```js
+const {
+  extractText,
+  extractImages,
+  extractSocialLinks,
+  createExtractor,
+  clearCache,
+} = require('fetchary');
+
+async function main() {
+  const url = 'https://example.com';
+  const text = await extractText(url);
+  const images = await extractImages(url);
+  const socials = await extractSocialLinks(url);
+  // Compatible calls within 45 seconds reuse the same captured webpage.
+  console.log(text.content, images.images, socials.links);
+
+  await extractText(url, { cacheTtlMs: 120_000 });
+  await extractText(url, { cacheTtlMs: 0 }); // Fresh capture, no deduplication
+  clearCache(); // Standalone functions' shared cache
+
+  const extractor = createExtractor({ cacheTtlMs: 120_000 });
+  await extractor.extractText(url);
+  await extractor.extractImages(url);
+  await extractor.extractSocialLinks(url);
+  await extractor.extractText(url, { cacheTtlMs: 0 }); // This call only
+  extractor.clearCache();
+}
+main().catch(console.error);
+```
+
+`createExtractor(options?)` is synchronous and lightweight. It accepts the common
+extraction options as defaults and returns all standalone extraction methods plus
+`clearCache()`. Every client owns an independent cache. Per-call settings override
+the client's defaults without changing another call or client. Per-call `headers`
+replace the default headers; configuration headers are copied at construction.
+
+Cache limits default to **100 entries** and **50 MiB** of approximate retained
+memory, including response buffers, rendered strings, URLs, and metadata. Clients
+can set `maxEntries` and `maxCacheBytes` to non-negative safe integers. Zero keeps
+no completed captures. Least recently used entries are evicted when either limit
+is reached. Oversized captures still work but are not retained. Expiration and
+eviction happen lazily during access and insertion, with no cleanup timer or
+background refresh.
+
+Age is measured from completion of the original capture. Every caller compares
+that age against its own effective TTL; an earlier caller's TTL is not attached
+to the entry. Hits never reset its age. For example, an entry captured with a
+one-second TTL can still satisfy a later two-minute request if it remains in the
+cache. Expired entries are removed during cache use according to the current
+request's TTL. Eviction or clearing can always cause an earlier miss. Negative,
+non-numeric, and non-finite TTLs are rejected. `cacheTtlMs: 0` bypasses both lookup
+and in-flight deduplication and does not replace any existing cached snapshot.
+
+Simultaneous compatible requests share one pending capture. Their results report
+`hit: false`, since no completed cached page existed. Failures leave no entry or
+pending promise; an expired page is never served when its refresh fails. Clearing
+detaches active captures without cancelling them. They still return to their
+callers, but cannot refill the cleared cache. New calls capture again.
+
+Compatibility requires the same normalized requested URL (including query and
+fragment), capture mode, request headers, user agent, timeout, fetch implementation,
+and browser implementation. Browser mode also keys the post-load wait. Extraction
+selectors and output formats do not affect the capture key. HTTP and browser
+entries are separate: requesting `mode: 'http'` always uses raw response HTML,
+never previously rendered HTML. The cache does not upgrade HTTP captures or reuse
+browser entries for HTTP calls, even though a browser entry also retains raw bytes.
+
+Explicit Authorization/Cookie/Proxy-Authorization headers and URL credentials
+bypass the shared global cache. Use a separate client for each authenticated
+context; its complete request headers isolate entries within that client. A
+custom fetch or browser function must have a stable identity for reuse and must
+not change its hidden session or security context while cached entries exist;
+clear the cache or create a new client when switching sessions.
+Responses marked `private`, `no-store`, or `no-cache`, responses setting cookies,
+partial HTTP responses, recognizable CAPTCHA/login interstitials, invalid HTML,
+and unsuccessful or incomplete captures are never retained. URL and final redirect
+URL validation still runs on hits. Each extraction gets independent buffer and
+metadata copies and builds its own DOM. Favicon and avatar resource checks still
+make separate requests; only their primary page capture is cached.
+
+Structured extraction results include:
+
+```js
+cache: { hit: true, ageMs: 1200, ttlMs: 45000 }
+// Miss: { hit: false, ageMs: 0, ttlMs: 45000 }
+```
+
+`capturedAt` keeps the original chosen HTTP or rendered snapshot timestamp,
+including on hits. It is not the time the extraction method ran. There is no
+`extractedAt` field. The CLI uses these same extraction methods; separate CLI
+executions run in separate processes and cannot share cache entries. Normal CLI
+output contains no cache diagnostics; JSON includes the metadata. Existing
+monitoring operations always fetch fresh captures.
+
+### Semantic extraction methods
+
+- `extractText(url, options?)` and `extractHtml(url, options?)` return the same
+  shape as `extract()`, fixing `format` to `text` or `html` respectively.
+- `extractSelector(url, selector, options?)` uses one validated CSS selector as
+  the include selection, with the same first-match behavior as `extract()`.
+- `extractImages(url, options?)` returns metadata plus `images: [{ url, alt }]`.
+  It resolves `img` source URLs (falling back to `data-src`) against the document
+  base, deduplicates them in page order, and skips non-HTTP(S) URLs. It does not
+  download images or inspect CSS backgrounds or srcset alternatives.
+- `extractSocialLinks(url, options?)` returns metadata plus
+  `links: [{ platform, url }]`, deduplicated in page order. Hyperlink domains
+  recognize Facebook, X/Twitter, YouTube, Instagram, Vimeo, TikTok, Reddit,
+  LinkedIn, Threads, Twitch, and GitHub, including their subdomains.
+- `extractSocialAvatar(url, options?)` is an alias for `extractProfilePicture()`.
+- `extractSocialInsights(url, options?)` returns metadata, `vendor`, and
+  `followers: number | null` from the existing social vendor parsers. Unknown
+  counts remain `null`; unsupported platforms raise `FetcharyValidationError`.
+  Insights are derived anew from the page snapshot, with no separate result cache.
+
+All these methods default to browser mode except `extractFavicon()`, which
+defaults to HTTP. Pass the same `mode` and capture settings to share a page.
 
 ```js
 import { extract, extractFavicon, extractProfilePicture } from 'fetchary';
@@ -171,8 +298,11 @@ type ExtractionOptions = {
     mode?: 'browser' | 'http';
     waitAfterLoad?: string | number; // Duration string or milliseconds; default 5000
     timeout?: number;               // Positive milliseconds per request; default 30000
-    userAgent?: string;             // HTTP requests; default 'fetchary/0.1'
+    userAgent?: string;             // HTTP and browser requests; default 'fetchary/0.1'
     fetch?: typeof globalThis.fetch;
+    headers?: HeadersInit;          // Applied to the primary HTTP and browser requests
+    launchBrowser?: (options: { headless: boolean }) => Promise<CaptureBrowser>;
+    cacheTtlMs?: number;            // Default 45000; 0 bypasses cache and deduplication
 };
 
 type ExtractOptions = ExtractionOptions & {
@@ -190,6 +320,7 @@ type ExtractionMetadata = {
     contentType: string | null;
     captureMode: 'browser' | 'http';
     dismissedOverlays: string[];
+    cache: { hit: boolean; ageMs: number; ttlMs: number };
 };
 
 type ExtractResult = ExtractionMetadata & {
