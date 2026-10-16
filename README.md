@@ -39,6 +39,18 @@ Fetchary tries HTTP first. When the extractor needs content added by JavaScript,
 it can fall back to bundled Chromium. Use `--mode browser` to request rendering
 or `--mode http` to read only the server response.
 
+### Read metadata and structured data
+
+Get a page's title, description, canonical URL, language, and publication dates,
+or inspect its embedded Schema.org data:
+
+```bash
+fetchary extract metadata https://example.com
+fetchary extract structured-data https://example.com
+```
+
+Structured data includes JSON-LD objects and Microdata with nested properties.
+
 ### Find images and icons
 
 ```bash

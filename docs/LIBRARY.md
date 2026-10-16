@@ -66,6 +66,8 @@ retains metric sources and availability reasons.
 | `telephone` | `extractTelephone(url, options?)` | Array of international phone strings |
 | `links` | `extractLinks(url, options?)` | Array of link occurrences |
 | `documents` | `extractDocuments(url, options?)` | Array of document link occurrences |
+| `metadata` | `extractMetadata(url, options?)` | Page metadata fields, with nulls for missing values |
+| `structured-data` | `extractStructuredData(url, options?)` | JSON-LD objects, Microdata items, and diagnostics |
 
 Without `type`, `extract(url)` returns HTML. `extract(url, { format: 'text' })`
 remains a compatibility path. `extractProfilePicture` aliases
@@ -104,6 +106,26 @@ declared supported HTTP charsets and simple HTML meta charset declarations use
 `TextDecoder`, with UTF-8 fallback for unsupported labels.
 
 ### Operation-specific options
+
+`metadata` and `structured-data` accept the common extraction options and inspect
+the whole page. Their dispatcher and client methods use the same implementations.
+
+```js
+const { extractMetadata, extractStructuredData } = require('fetchary');
+
+async function main() {
+    const url = 'https://example.com';
+    const metadata = await extractMetadata(url);
+    const structured = await extractStructuredData(url);
+    console.log(metadata.data.title, metadata.data.publishedAt);
+    console.log(structured.data.jsonLd, structured.data.microdata);
+}
+main().catch(console.error);
+```
+
+See [record schemas and precedence](#metadata-and-structured-data-records) and the
+[CLI reference](CLI.md#metadata-and-structured-data) for list output, parsing
+limits, diagnostics, standalone JSON-LD, and browser fallback behavior.
 
 `links` and `documents` accept `includeSelectors` and `ignoreSelectors`, following
 the text/HTML selection rules. Discovery keeps the original document base and
@@ -230,7 +252,7 @@ type ExtractionMetadata = {
     extractedAt: string;
     type: 'text' | 'html' | 'favicon' | 'images' | 'avatar'
         | 'selector' | 'social-links' | 'social-insights' | 'emails' | 'telephone'
-        | 'links' | 'documents';
+        | 'links' | 'documents' | 'metadata' | 'structured-data';
     captureMode: 'http' | 'browser';
     status: number;
     contentType: string | null;
@@ -258,6 +280,9 @@ data: string[];
 
 // links / documents (types detailed below)
 data: ExtractedLink[] | DocumentLink[];
+
+// metadata / structured-data (types detailed below)
+data: PageMetadata | StructuredData;
 
 // favicon (binary omitted or false)
 data: {
@@ -314,7 +339,70 @@ have `links`; email results have `emails`; telephone results have `numbers`;
 favicon/avatar have `image`; avatars also have `platform`, `profile`,
 and `vendor`; insights have `vendor` and `followers` (falling back to YouTube
 subscribers). Link results also have `links`; document results have `documents`.
+Metadata results have `metadata`; structured-data results have `structuredData`.
 Prefer `data` for new integrations.
+
+### Metadata and structured-data records
+
+```ts
+type PageMetadata = {
+    title: string | null;
+    description: string | null;
+    canonical: string | null;
+    language: string | null;
+    publishedAt: string | null;
+    modifiedAt: string | null;
+};
+type JsonValue = string | number | boolean | null | JsonValue[] | JsonObject;
+type JsonObject = { [key: string]: JsonValue };
+type MicrodataItem = {
+    types: string[];
+    id: string | null;
+    properties: Record<string, Array<string | MicrodataItem | null>>;
+};
+type StructuredDataIssue = {
+    source: 'json-ld' | 'microdata';
+    index: number;
+    message: string;
+};
+type StructuredData = {
+    jsonLd: JsonObject[];
+    microdata: MicrodataItem[];
+    errors: StructuredDataIssue[];
+};
+```
+
+Metadata precedence uses the first non-empty value in these groups:
+
+| Field | Sources, in priority order |
+| --- | --- |
+| `title` | HTML title (excluding SVG/inert content), `og:title`, `twitter:title`, eligible Schema.org `headline`/`name` |
+| `description` | `description`, `og:description`, `twitter:description`, eligible Schema.org `description` |
+| `canonical` | First valid HTTP(S) link whose rel tokens include `canonical` |
+| `language` | HTML `lang`, `xml:lang`, meta Content-Language, `og:locale`, eligible Schema.org `inLanguage` |
+| `publishedAt` | Meta `article:published_time`, `datepublished`, `pubdate`, `publishdate`, `publish-date`, `publication_date`, `dcterms.issued`, `dc.date.issued`, `parsely-pub-date`, `date`; eligible Schema.org `datePublished`; explicit `time[pubdate][datetime]` |
+| `modifiedAt` | Meta `article:modified_time`, `og:updated_time`, `datemodified`, `last-modified`, `lastmodified`, `dcterms.modified`, `dc.date.modified`; eligible Schema.org `dateModified` |
+
+Eligible Schema.org objects are page/article types, BlogPosting, CreativeWork,
+or Report at the JSON-LD root, in `@graph`/`mainEntity`, or top-level Microdata.
+Objects explicitly identifying another page are excluded. Identity matching
+ignores fragments and accepts the final page or declared canonical URL. Explicitly
+matching objects precede unidentified objects; JSON-LD precedes Microdata within
+those groups. Nested author/recommendation objects are not scanned for page dates.
+Language uses the first comma-separated declaration and normalizes `_` to `-`.
+Dates retain their original trimmed strings; no timezone or missing date is inferred.
+
+JSON-LD objects retain their authored structure and context declarations; parsing
+does not perform remote-context loading, vocabulary validation, or RDF expansion.
+Microdata follows the HTML [item/property model](https://html.spec.whatwg.org/multipage/microdata.html),
+with nested scopes, itemref lookup, repeated property arrays, and element-specific
+values. Numeric property values remain strings. Top-level items have no `itemprop`
+attribute. JSON-LD diagnostics index usable JSON-LD script blocks (or zero for a
+standalone response); Microdata diagnostics index all non-inert scopes, including
+nested items, in DOM order. Malformed/deep JSON-LD blocks are skipped; non-object
+array entries produce diagnostics. Cyclic/deep Microdata values become null;
+roots exceeding the property/text budget are skipped. These are inspectable data
+issues rather than transport failures. See [CLI limits](CLI.md#metadata-and-structured-data).
 
 ### Link and document records
 

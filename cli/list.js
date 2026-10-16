@@ -38,6 +38,8 @@ function listItems(result, options = {}) {
     case 'images': case 'social-links': return result.data.map(item => item.url);
     case 'links': case 'documents': return [...new Set(result.data.map(item => item.url))];
     case 'emails': case 'telephone': return result.data;
+    case 'metadata': return Object.values(result.data).filter(value => value !== null);
+    case 'structured-data': return [...result.data.jsonLd, ...result.data.microdata].map(value => JSON.stringify(value));
     case 'favicon': case 'avatar': return [result.image.url];
     case 'selector': return result.data.values.filter(value => value !== null).map(value => value.replace(/[\r\n]+/g, ' ').trim()).filter(Boolean);
     case 'social-insights': return [result.data.url];

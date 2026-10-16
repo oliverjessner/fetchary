@@ -21,7 +21,7 @@ async function run(args,options=settings()) {
 }
 
 test('semantic CLI calls the same dispatcher as the library for every extraction type',async()=>{
-  for(const type of ['text','html','favicon','images','selector','social-links','social-insights','avatar','emails','telephone','links','documents']) {
+  for(const type of ['text','html','favicon','images','selector','social-links','social-insights','avatar','emails','telephone','links','documents','metadata','structured-data']) {
     const url=type==='avatar'||type==='social-insights'?profile:page;
     const extra=type==='selector'?['--selector','h1']:[];
     const options=settings();
@@ -40,7 +40,7 @@ test('plain content/URLs stay clean; list and insight operations default to JSON
   assert.equal((await run(['extract','favicon',page])).stdout,'https://example.test/icon.svg\n');
   assert.equal((await run(['extract','images',page,'--urls-only'])).stdout,'https://example.test/image.png\n');
   assert.equal((await run(['extract','social-links',page,'--youtube','--urls-only'])).stdout,'https://youtube.com/@example\n');
-  for(const type of ['images','social-links','social-insights','emails','telephone','links','documents']) assert.equal(JSON.parse((await run(['extract',type,type==='social-insights'?profile:page])).stdout).type,type);
+  for(const type of ['images','social-links','social-insights','emails','telephone','links','documents','metadata','structured-data']) assert.equal(JSON.parse((await run(['extract',type,type==='social-insights'?profile:page])).stdout).type,type);
   assert.equal((await run(['extract','selector',page,'--selector','h1','--all','--format','html'])).stdout,'<h1>Title</h1>');
   assert.equal((await run(['extract','selector',page,'--selector','a','--attribute','href','--all'])).stdout,'https://youtube.com/@example');
   assert.equal((await run(['extract','text',page,'--quiet'])).stdout,'');
@@ -136,6 +136,8 @@ test('--list and --urls-only give one URL/value per line for every extraction ty
     ['telephone',page,[],''],
     ['links',page,[],'https://example.test/icon.svg\nhttps://youtube.com/@example\n'],
     ['documents',page,[],''],
+    ['metadata',page,[],''],
+    ['structured-data',page,[],''],
   ];
   for(const [type,url,extra,expected] of cases) {
     for(const flag of ['--list','--urls-only']) {
@@ -193,7 +195,7 @@ test('list output preserves image duplicates on request and emits nothing for em
   const options={...settings(),fetch:async()=>new Response('<img src="/same.png"><img src="/same.png">',{headers:{'content-type':'text/html'}})};
   assert.equal((await run(['extract','images',page,'--list'],options)).stdout,'https://example.test/same.png\n');
   assert.equal((await run(['extract','images',page,'--list','--duplicates'],options)).stdout,'https://example.test/same.png\nhttps://example.test/same.png\n');
-  for(const type of ['text','html','images','social-links','selector','emails','telephone','links','documents']) {
+  for(const type of ['text','html','images','social-links','selector','emails','telephone','links','documents','metadata','structured-data']) {
     const extra=type==='selector'?['--selector','missing']:[];
     const result=await run(['extract',type,page,'--list',...extra],{...settings(),fetch:async()=>new Response('<p>No links</p>',{headers:{'content-type':'text/html'}})});
     assert.equal(result.code,0,result.stderr);assert.equal(result.stdout,'');assert.equal(result.stderr,'');
@@ -203,7 +205,7 @@ test('list output preserves image duplicates on request and emits nothing for em
 });
 
 test('JSON takes precedence over lists; binary conflicts and invalid list flags fail before requests',async()=>{
-  for(const type of ['text','html','favicon','images','social-links','selector','social-insights','avatar','emails','telephone','links','documents']) {
+  for(const type of ['text','html','favicon','images','social-links','selector','social-insights','avatar','emails','telephone','links','documents','metadata','structured-data']) {
     const url=['avatar','social-insights'].includes(type)?profile:page;
     const extra=type==='selector'?['--selector','a']:[];
     const standard=JSON.parse((await run(['extract',type,url,'--json',...extra])).stdout);

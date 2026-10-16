@@ -2,7 +2,7 @@ import type { LookupAddress } from 'node:dns';
 import type { Buffer } from 'node:buffer';
 import type { CountryCode } from 'libphonenumber-js';
 
-export type ExtractionType = 'text' | 'html' | 'favicon' | 'images' | 'avatar' | 'selector' | 'social-links' | 'social-insights' | 'emails' | 'telephone' | 'links' | 'documents';
+export type ExtractionType = 'text' | 'html' | 'favicon' | 'images' | 'avatar' | 'selector' | 'social-links' | 'social-insights' | 'emails' | 'telephone' | 'links' | 'documents' | 'metadata' | 'structured-data';
 export type CaptureMode = 'auto' | 'http' | 'browser';
 export type Platform = 'youtube' | 'tiktok' | 'instagram' | 'facebook' | 'x' | 'threads' | 'linkedin' | 'twitch' | 'reddit' | 'github' | 'vimeo' | 'bluesky';
 export type SocialKind = 'profile' | 'channel' | 'post' | 'video' | 'unknown';
@@ -71,6 +71,14 @@ export type DocumentLink = Omit<ExtractedLink, 'source'> & {
 };
 export type LinksResult = ExtractionResult<ExtractedLink[], 'links'> & { links: ExtractedLink[] };
 export type DocumentsResult = ExtractionResult<DocumentLink[], 'documents'> & { documents: DocumentLink[] };
+export type PageMetadata = { title: string | null; description: string | null; canonical: string | null; language: string | null; publishedAt: string | null; modifiedAt: string | null };
+export type JsonValue = string | number | boolean | null | JsonValue[] | JsonObject;
+export type JsonObject = { [key: string]: JsonValue };
+export type MicrodataItem = { types: string[]; id: string | null; properties: Record<string, Array<string | MicrodataItem | null>> };
+export type StructuredDataIssue = { source: 'json-ld' | 'microdata'; index: number; message: string };
+export type StructuredData = { jsonLd: JsonObject[]; microdata: MicrodataItem[]; errors: StructuredDataIssue[] };
+export type MetadataResult = ExtractionResult<PageMetadata, 'metadata'> & { metadata: PageMetadata };
+export type StructuredDataResult = ExtractionResult<StructuredData, 'structured-data'> & { structuredData: StructuredData };
 export type Metric = 'likes' | 'comments' | 'views' | 'shares' | 'saves' | 'followers' | 'following' | 'posts' | 'subscribers';
 export type InsightStatus = 'available' | 'partial' | 'unavailable' | 'unsupported' | 'login_required' | 'blocked' | 'extraction_error';
 export type SocialInsightsData = {
@@ -81,8 +89,8 @@ export type SocialInsightsData = {
   unavailable: Partial<Record<Metric, string>>;
 };
 export type SocialInsightsResult = ExtractionResult<SocialInsightsData, 'social-insights'> & { vendor: Platform | null; followers: number | null };
-export type ResultMap = { text: ContentResult<'text'>; html: ContentResult<'html'>; favicon: FaviconResult<boolean>; images: ImagesResult; avatar: ProfilePictureResult; selector: SelectorResult; 'social-links': SocialLinksResult; 'social-insights': SocialInsightsResult; emails: EmailsResult; telephone: TelephoneResult; links: LinksResult; documents: DocumentsResult };
-export type OptionsMap = { text: ContentOptions; html: ContentOptions; favicon: FaviconOptions; images: ImagesOptions; avatar: ExtractionOptions; selector: SelectorOptions; 'social-links': SocialLinksOptions; 'social-insights': ExtractionOptions; emails: ContactOptions; telephone: TelephoneOptions; links: LinksOptions; documents: LinksOptions };
+export type ResultMap = { text: ContentResult<'text'>; html: ContentResult<'html'>; favicon: FaviconResult<boolean>; images: ImagesResult; avatar: ProfilePictureResult; selector: SelectorResult; 'social-links': SocialLinksResult; 'social-insights': SocialInsightsResult; emails: EmailsResult; telephone: TelephoneResult; links: LinksResult; documents: DocumentsResult; metadata: MetadataResult; 'structured-data': StructuredDataResult };
+export type OptionsMap = { text: ContentOptions; html: ContentOptions; favicon: FaviconOptions; images: ImagesOptions; avatar: ExtractionOptions; selector: SelectorOptions; 'social-links': SocialLinksOptions; 'social-insights': ExtractionOptions; emails: ContactOptions; telephone: TelephoneOptions; links: LinksOptions; documents: LinksOptions; metadata: ExtractionOptions; 'structured-data': ExtractionOptions };
 export declare function extract<Binary extends boolean = false>(url: string, options: FaviconOptions<Binary> & { type: 'favicon' }): Promise<FaviconResult<Binary>>;
 export declare function extract<K extends ExtractionType>(url: string, options: OptionsMap[K] & { type: K }): Promise<ResultMap[K]>;
 export declare function extract(url: string, options?: ContentOptions): Promise<ContentResult>;
@@ -90,6 +98,8 @@ export declare function extractText(url: string, options?: ContentOptions): Prom
 export declare function extractHtml(url: string, options?: ContentOptions): Promise<ContentResult<'html'>>;
 export declare function extractLinks(url: string, options?: LinksOptions): Promise<LinksResult>;
 export declare function extractDocuments(url: string, options?: LinksOptions): Promise<DocumentsResult>;
+export declare function extractMetadata(url: string, options?: ExtractionOptions): Promise<MetadataResult>;
+export declare function extractStructuredData(url: string, options?: ExtractionOptions): Promise<StructuredDataResult>;
 export declare function extractEmails(url: string, options?: ContactOptions): Promise<EmailsResult>;
 export declare function extractTelephone(url: string, options?: TelephoneOptions): Promise<TelephoneResult>;
 export declare function extractFavicon<Binary extends boolean = false>(url: string, options?: FaviconOptions<Binary>): Promise<FaviconResult<Binary>>;
@@ -101,7 +111,7 @@ export declare function extractSocialInsights(url: string, options?: ExtractionO
 export declare function extractSocialAvatar(url: string, options?: ExtractionOptions): Promise<ProfilePictureResult>;
 export declare const extractProfilePicture: typeof extractSocialAvatar;
 export type ExtractorOptions = ExtractionOptions & { maxEntries?: number; maxCacheBytes?: number };
-export type Extractor = { extract: typeof extract; extractText: typeof extractText; extractHtml: typeof extractHtml; extractLinks: typeof extractLinks; extractDocuments: typeof extractDocuments; extractEmails: typeof extractEmails; extractTelephone: typeof extractTelephone; extractFavicon: typeof extractFavicon; extractImages: typeof extractImages; extractSelector: typeof extractSelector; extractSocialLinks: typeof extractSocialLinks; extractSocialInsights: typeof extractSocialInsights; extractSocialAvatar: typeof extractSocialAvatar; extractProfilePicture: typeof extractProfilePicture; clearCache(): void };
+export type Extractor = { extract: typeof extract; extractText: typeof extractText; extractHtml: typeof extractHtml; extractLinks: typeof extractLinks; extractDocuments: typeof extractDocuments; extractMetadata: typeof extractMetadata; extractStructuredData: typeof extractStructuredData; extractEmails: typeof extractEmails; extractTelephone: typeof extractTelephone; extractFavicon: typeof extractFavicon; extractImages: typeof extractImages; extractSelector: typeof extractSelector; extractSocialLinks: typeof extractSocialLinks; extractSocialInsights: typeof extractSocialInsights; extractSocialAvatar: typeof extractSocialAvatar; extractProfilePicture: typeof extractProfilePicture; clearCache(): void };
 export declare function createExtractor(options?: ExtractorOptions): Extractor;
 export declare function clearCache(): void;
 export declare class FetcharyError extends Error { url?: string }

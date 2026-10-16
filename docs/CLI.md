@@ -30,6 +30,8 @@ Running without arguments or with `--help` prints help and exits successfully.
 | `telephone`       | `fetchary extract telephone https://example.com/contact`           | JSON result        |
 | `links`           | `fetchary extract links https://example.com`                       | JSON result        |
 | `documents`       | `fetchary extract documents https://example.com`                   | JSON result        |
+| `metadata`        | `fetchary extract metadata https://example.com`                    | JSON result        |
+| `structured-data` | `fetchary extract structured-data https://example.com`             | JSON result        |
 
 Text and HTML contain exactly the extracted string, with no extra newline or
 status message. Image URLs end with a newline. Unfiltered JSON results are objects with
@@ -60,6 +62,8 @@ fetchary extract selector https://example.com --selector a --attribute href --li
 | `emails` | Found email addresses |
 | `telephone` | Found phone numbers in international form, retaining extensions |
 | `links`, `documents` | Unique discovered URLs in first-occurrence order; JSON retains every occurrence |
+| `metadata` | Present values in title, description, canonical, language, publishedAt, modifiedAt order; nulls omitted |
+| `structured-data` | One compact JSON object per line, JSON-LD first and Microdata items second |
 
 Text/HTML link lists resolve relative URLs against the document base and final
 page URL, remove duplicates in discovery order, and ignore non-HTTP schemes and
@@ -92,6 +96,55 @@ first match per selector in page order; overlapping subtrees appear once. Ignore
 remove every matching element, including selected roots and ancestors. Missing
 include matches return empty content. These options apply to `text`, `html`,
 `emails`, `telephone`, `links`, and `documents`.
+
+### Metadata and structured data
+
+```bash
+fetchary extract metadata https://example.com --json
+fetchary extract structured-data https://example.com
+fetchary extract structured-data https://example.com --list
+```
+
+Both types inspect the entire captured document and accept the shared capture
+options. `metadata` returns `data: { title, description, canonical, language,
+publishedAt, modifiedAt }`. Values are strings or `null`. Title and description
+prefer HTML/meta tags, then Open Graph/Twitter values, then eligible Schema.org
+page/article objects. Canonical comes from a valid HTTP(S) `rel=canonical` link
+and resolves against the document base/final page URL. Language prefers HTML
+`lang`/`xml:lang`, then Content-Language/OG locale metadata and Schema.org values;
+locale underscores become hyphens. Date meta tags and matching Schema.org dates
+retain their declared strings, including date-only values and timezone offsets.
+Generic event times and unrelated article/author dates are not substituted.
+
+`structured-data` returns `data: { jsonLd, microdata, errors }`. JSON-LD blocks
+are parsed as JSON; root arrays become individual objects and `@graph`,
+`@context`, vocabulary names, and values remain intact. A standalone response
+with MIME type `application/ld+json` is also supported. Remote contexts are not
+requested and JSON-LD is not expanded into RDF. Schema.org data is retained in
+both JSON-LD and Microdata; RDFa is outside these two parsers.
+
+Microdata uses `itemscope`, `itemtype`, `itemid`, `itemprop`, and `itemref`.
+Top-level items contain `types`, `id`, and a `properties` object whose values are
+arrays of strings, nested items, or `null` for a cyclic/deep reference. Repeated
+properties retain DOM order. URL-valued HTML properties resolve against the
+document base; `meta`, `time`, `data`, and `meter` use their typed attributes.
+Ordinary property text and numeric-looking values remain strings.
+
+Malformed JSON-LD and Microdata issues are returned in `errors` with `source`,
+zero-based `index`, and `message`, while other valid records remain available.
+JSON-LD depth is limited to 128 levels. Microdata allows 64 nested levels and
+10000 expanded property values, with a text budget based on `maxResponseBytes`;
+an over-budget root is omitted with a diagnostic. Empty results succeed: metadata
+has six null fields; structured data has empty arrays. Non-HTML content produces
+empty results except for standalone JSON-LD.
+
+Both default to the full extraction JSON. `--list`/`--urls-only` emit the values
+listed above; diagnostics remain available in full JSON. `--json` takes precedence
+over list mode. Auto capture renders only when all metadata fields or both data
+collections are empty and the HTML contains executable scripts; valid data-only
+JSON-LD scripts do not trigger rendering. Use `--mode browser` to inspect metadata
+or structured data changed by JavaScript even when initial values already exist.
+See [library schemas and precedence](LIBRARY.md#metadata-and-structured-data-records).
 
 ### Links and documents
 

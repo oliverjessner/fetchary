@@ -77,7 +77,7 @@ test('insight count selection preserves quiet, stderr diagnostics and transport 
 test('count flags are social-insights-only booleans and fail before fetching when invalid', async () => {
   let requests = 0;
   const options = { ...settings(''), fetch: async () => { requests++; throw new Error('must not fetch'); } };
-  for (const type of ['text', 'html', 'favicon', 'images', 'avatar', 'selector', 'social-links', 'emails', 'telephone', 'links', 'documents']) {
+  for (const type of ['text', 'html', 'favicon', 'images', 'avatar', 'selector', 'social-links', 'emails', 'telephone', 'links', 'documents', 'metadata', 'structured-data']) {
     for (const flag of ['--follower', '--posts']) {
       let stdout = ''; let stderr = '';
       const code = await main(['extract', type, tiktok, flag], { options, stdout: { write: value => { stdout += value; } }, stderr: { write: value => { stderr += value; } } });
