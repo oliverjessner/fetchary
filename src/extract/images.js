@@ -84,14 +84,17 @@ function imageDimensions(body) {
   return null;
 }
 
-async function selectImage(candidates, options) {
+async function selectImage(candidates, options, includeBody = false) {
   const byUrl = new Map();
   for (const candidate of candidates) {
     const existing = byUrl.get(candidate.url);
     if (!existing || (candidate.priority || 0) < (existing.priority || 0)) byUrl.set(candidate.url, candidate);
   }
   const unique = [...byUrl.values()].slice(0, 64);
-  const images = [];
+  const compare = (a, b) => a.priority - b.priority || Number(b.scalable) - Number(a.scalable)
+    || (b.width || 0) * (b.height || 0) - (a.width || 0) * (a.height || 0) || a.index - b.index;
+  let selected = null;
+  let selectedBody;
   let next = 0;
   // Bound concurrent requests while checking all advertised resolutions.
   await Promise.all(Array.from({ length: Math.min(4, unique.length) }, async () => {
@@ -107,22 +110,25 @@ async function selectImage(candidates, options) {
         const dimensions = actual || declaredDimensions(candidate.sizes);
         if (!actual?.scalable && (dimensions.width === 0 || dimensions.height === 0)) continue;
         if (candidate.square && (!actual || actual.width !== actual.height || !actual.width)) continue;
-        images.push({
+        const image = {
           index, priority: candidate.priority || 0,
           url: resource.url, width: dimensions.width, height: dimensions.height,
           scalable: actual?.scalable || false, resolutionVerified: Boolean(actual),
           contentType: actual?.type || resource.contentType, source: candidate.source,
-        });
+        };
+        if (!selected || compare(image, selected) < 0) {
+          selected = image;
+          // Keep only the winning payload; reuse the bytes already validated.
+          if (includeBody) selectedBody = resource.body;
+        }
       } catch {
         // One broken icon or CDN URL must not hide another usable candidate.
       }
     }
   }));
-  images.sort((a, b) => a.priority - b.priority || Number(b.scalable) - Number(a.scalable)
-    || (b.width || 0) * (b.height || 0) - (a.width || 0) * (a.height || 0) || a.index - b.index);
-  if (!images.length) return null;
-  const { index, priority, ...image } = images[0];
-  return image;
+  if (!selected) return null;
+  const { index, priority, ...image } = selected;
+  return includeBody ? { ...image, body: selectedBody } : image;
 }
 
 module.exports = { httpUrl, documentBase, declaredDimensions, imageDimensions, readResource, selectImage };

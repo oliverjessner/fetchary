@@ -1,3 +1,8 @@
+# Unreleased
+
+- Add optional favicon binary output: CLI `extract favicon <url> --binary` and `favicon <url> --binary` write original image bytes to stdout. Library `binary: true` returns a Buffer in `data` alongside image metadata, reusing the validated image response without another download.
+- Keep URL/JSON output as the default; reject CLI binary/JSON conflicts and binary output for other extraction types. Add TypeScript inference, binary regression tests, and CLI/library examples.
+
 # 2.0.0
 
 - Breaking: Fetchary is now a stateless semantic extraction toolkit. Remove SQLite, saved sources, monitoring, archives, history, diffs, hashing, scheduling, stored vendor activation, the `Fetchary` class and `createFetchary()` API. Existing user directories are never accessed or deleted.

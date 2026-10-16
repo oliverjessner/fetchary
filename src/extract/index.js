@@ -33,7 +33,7 @@ function extractionOptions(options = {}) {
   if (!Number.isFinite(settings.timeout) || settings.timeout <= 0) throw new FetcharyValidationError('timeout must be greater than zero');
   if (!Number.isSafeInteger(settings.maxResponseBytes) || settings.maxResponseBytes < 1) throw new FetcharyValidationError('maxResponseBytes must be a positive safe integer');
   if (typeof settings.userAgent !== 'string' || !settings.userAgent.trim()) throw new FetcharyValidationError('userAgent must be a non-empty string');
-  for (const name of ['allowPrivateNetwork','unique','includeMetadata','all']) if (options[name] !== undefined && typeof options[name] !== 'boolean') throw new FetcharyValidationError(`${name} must be a boolean`);
+  for (const name of ['allowPrivateNetwork','unique','includeMetadata','all','binary']) if (options[name] !== undefined && typeof options[name] !== 'boolean') throw new FetcharyValidationError(`${name} must be a boolean`);
   if (settings.signal !== undefined && !(settings.signal instanceof AbortSignal)) throw new FetcharyValidationError('signal must be an AbortSignal');
   try { if (settings.headers !== undefined) settings.headers = Object.fromEntries(new Headers(settings.headers)); } catch (cause) { throw new FetcharyValidationError('invalid request headers', { cause }); }
   return settings;
@@ -139,9 +139,10 @@ async function extractFavicon(url, options = {}) {
       } catch {}
     }
     candidates.push({ url: new URL('/favicon.ico', pageMetadata(page).finalUrl).href, source: 'fallback' });
-    const image = await selectImage(candidates, settings);
-    if (!image) throw new FetcharyNotFoundError('no accessible favicon found', { url: page.requestedUrl });
-    return { data: image, image };
+    const selected = await selectImage(candidates, settings, options.binary === true);
+    if (!selected) throw new FetcharyNotFoundError('no accessible favicon found', { url: page.requestedUrl });
+    const { body, ...image } = selected;
+    return { data: options.binary ? body : image, image };
   });
 }
 

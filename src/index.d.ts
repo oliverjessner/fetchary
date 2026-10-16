@@ -1,4 +1,5 @@
 import type { LookupAddress } from 'node:dns';
+import type { Buffer } from 'node:buffer';
 
 export type ExtractionType = 'text' | 'html' | 'favicon' | 'images' | 'avatar' | 'selector' | 'social-links' | 'social-insights';
 export type CaptureMode = 'auto' | 'http' | 'browser';
@@ -27,6 +28,7 @@ export type ExtractionOptions = {
   cacheTtlMs?: number;
 };
 export type ContentOptions = ExtractionOptions & { includeSelectors?: string[]; ignoreSelectors?: string[]; format?: 'html' | 'text' };
+export type FaviconOptions<Binary extends boolean = boolean> = ExtractionOptions & { binary?: Binary };
 export type SelectorOptions = ExtractionOptions & { selector: string; all?: boolean; format?: 'text' | 'html'; attribute?: string };
 export type ImageSource = 'img' | 'srcset' | 'lazy' | 'metadata' | 'link' | 'background';
 export type ImagesOptions = ExtractionOptions & { unique?: boolean; includeMetadata?: boolean; sources?: ImageSource[] };
@@ -46,7 +48,7 @@ export type ContentResult<K extends 'text' | 'html' = 'text' | 'html'> = Extract
 export type ExtractResult = ContentResult;
 export type ExtractOptions = ContentOptions;
 export type ExtractedImage = { url: string; width: number | null; height: number | null; scalable: boolean; resolutionVerified: boolean; contentType: string | null; source: string };
-export type FaviconResult = ExtractionResult<ExtractedImage, 'favicon'> & { image: ExtractedImage };
+export type FaviconResult<Binary extends boolean = false> = ExtractionResult<Binary extends true ? Buffer : ExtractedImage, 'favicon'> & { image: ExtractedImage };
 export type AvatarData = { platform: Platform; profile: string | null; image: ExtractedImage };
 export type ProfilePictureResult = ExtractionResult<AvatarData, 'avatar'> & AvatarData & { vendor: string };
 export type ImageLink = { url: string; alt: string; width: number | null; height: number | null; source: ImageSource; originalAttribute: string; resolutionVerified: false };
@@ -64,13 +66,14 @@ export type SocialInsightsData = {
   unavailable: Partial<Record<Metric, string>>;
 };
 export type SocialInsightsResult = ExtractionResult<SocialInsightsData, 'social-insights'> & { vendor: Platform | null; followers: number | null };
-export type ResultMap = { text: ContentResult<'text'>; html: ContentResult<'html'>; favicon: FaviconResult; images: ImagesResult; avatar: ProfilePictureResult; selector: SelectorResult; 'social-links': SocialLinksResult; 'social-insights': SocialInsightsResult };
-export type OptionsMap = { text: ContentOptions; html: ContentOptions; favicon: ExtractionOptions; images: ImagesOptions; avatar: ExtractionOptions; selector: SelectorOptions; 'social-links': SocialLinksOptions; 'social-insights': ExtractionOptions };
+export type ResultMap = { text: ContentResult<'text'>; html: ContentResult<'html'>; favicon: FaviconResult<boolean>; images: ImagesResult; avatar: ProfilePictureResult; selector: SelectorResult; 'social-links': SocialLinksResult; 'social-insights': SocialInsightsResult };
+export type OptionsMap = { text: ContentOptions; html: ContentOptions; favicon: FaviconOptions; images: ImagesOptions; avatar: ExtractionOptions; selector: SelectorOptions; 'social-links': SocialLinksOptions; 'social-insights': ExtractionOptions };
+export declare function extract<Binary extends boolean = false>(url: string, options: FaviconOptions<Binary> & { type: 'favicon' }): Promise<FaviconResult<Binary>>;
 export declare function extract<K extends ExtractionType>(url: string, options: OptionsMap[K] & { type: K }): Promise<ResultMap[K]>;
 export declare function extract(url: string, options?: ContentOptions): Promise<ContentResult>;
 export declare function extractText(url: string, options?: ContentOptions): Promise<ContentResult<'text'>>;
 export declare function extractHtml(url: string, options?: ContentOptions): Promise<ContentResult<'html'>>;
-export declare function extractFavicon(url: string, options?: ExtractionOptions): Promise<FaviconResult>;
+export declare function extractFavicon<Binary extends boolean = false>(url: string, options?: FaviconOptions<Binary>): Promise<FaviconResult<Binary>>;
 export declare function extractImages(url: string, options?: ImagesOptions): Promise<ImagesResult>;
 export declare function extractSelector(url: string, options: SelectorOptions): Promise<SelectorResult>;
 export declare function extractSelector(url: string, selector: string, options?: Omit<SelectorOptions, 'selector'>): Promise<SelectorResult>;

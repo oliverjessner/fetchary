@@ -3,6 +3,9 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
 const test=require('node:test');
+const http=require('node:http');
+const {spawn}=require('node:child_process');
+const zlib=require('node:zlib');
 const {main}=require('../cli');
 const api=require('../src');
 const page='https://example.test/';
@@ -69,4 +72,52 @@ test('CLI validates options and input, keeps diagnostics on stderr and uses docu
   const verbose=await run(['extract','text',page,'--json','--verbose']);
   assert.match(verbose.stderr,/Extracting text/);assert.equal(JSON.parse(verbose.stdout).data,'Title\nBody\nYouTube');
   assert.equal((await run(['--version'])).stdout,'2.0.0\n');
+});
+
+test('favicon binary CLI writes Buffers for both command forms and isolates diagnostics',async()=>{
+  const body=Buffer.from(svg);
+  for(const args of [['extract','favicon',page,'--binary'],['favicon',page,'--binary']]) {
+    const chunks=[];let stderr='';
+    const code=await main([...args,'--verbose'],{options:settings(),stdout:{write:value=>chunks.push(value)},stderr:{write:value=>{stderr+=value;}}});
+    assert.equal(code,0,stderr);
+    assert.equal(chunks.length,1);
+    assert.ok(Buffer.isBuffer(chunks[0]));
+    assert.deepEqual(chunks[0],body);
+    assert.match(stderr,/^Extracting favicon \(http\)\n$/);
+    assert.equal((await run([...args,'--quiet'])).stdout,'');
+  }
+  let requests=0;
+  const options={...settings(),fetch:async()=>{requests++;throw new Error('must not fetch');}};
+  for(const args of [['extract','favicon',page,'--binary','--json'],['favicon',page,'--json','--binary'],['extract','images',page,'--binary'],['extract','text',page,'--binary'],['profile-picture',profile,'--binary'],['favicon',page,'--binary=true']]) {
+    const result=await run(args,options);
+    assert.equal(result.code,2,args.join(' '));
+    assert.equal(result.stdout,'');
+    assert.match(result.stderr,/binary/);
+  }
+  assert.equal(requests,0);
+  const missing=await run(['favicon',page,'--binary'],{...settings(),fetch:async()=>new Response('<html></html>',{headers:{'content-type':'text/html'}})});
+  assert.equal(missing.code,5);assert.equal(missing.stdout,'');assert.match(missing.stderr,/no accessible favicon/);
+});
+
+test('real favicon CLI preserves binary PNG bytes through redirects and HTTP decompression',async t=>{
+  const body=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aD1sAAAAASUVORK5CYII=','base64');
+  const compressed=zlib.gzipSync(body);
+  let imageRequests=0;
+  const server=http.createServer((request,response)=>{
+    if(request.url==='/icon') {response.writeHead(302,{location:'/image.png'});response.end();}
+    else if(request.url==='/image.png') {imageRequests++;response.writeHead(200,{'content-type':'image/png','content-encoding':'gzip','content-length':compressed.length});response.end(compressed);}
+    else if(request.url==='/favicon.ico') {response.writeHead(404);response.end();}
+    else {response.writeHead(200,{'content-type':'text/html'});response.end('<link rel="icon" href="/icon">');}
+  });
+  await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(0,'127.0.0.1',resolve);});
+  t.after(()=>new Promise(resolve=>server.close(resolve)));
+  const child=spawn(process.execPath,[path.resolve(__dirname,'../cli/index.js'),'extract','favicon',`http://127.0.0.1:${server.address().port}/`,'--mode','http','--allow-private-network','--binary','--verbose']);
+  t.after(()=>{if(child.exitCode===null) child.kill();});
+  const stdout=[];const stderr=[];
+  child.stdout.on('data',chunk=>stdout.push(chunk));child.stderr.on('data',chunk=>stderr.push(chunk));
+  const code=await new Promise((resolve,reject)=>{child.once('error',reject);child.once('close',resolve);});
+  assert.equal(code,0,Buffer.concat(stderr).toString());
+  assert.deepEqual(Buffer.concat(stdout),body);
+  assert.equal(imageRequests,1);
+  assert.equal(Buffer.concat(stderr).toString(),'Extracting favicon (http)\n');
 });

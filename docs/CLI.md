@@ -55,8 +55,18 @@ include matches return empty content. These options apply to `text` and `html`.
 
 ```bash
 fetchary extract favicon https://example.com --json
+fetchary extract favicon https://example.com --binary > favicon.bin
 fetchary extract avatar https://github.com/oliverjessner --mode http
 ```
+
+Favicons print the selected URL by default. `--binary` writes the selected image's
+original bytes to stdout, with no newline, JSON wrapper, or base64 encoding.
+It also works with `fetchary favicon <url>`. The format is preserved (including
+SVG and ICO); there is no conversion to PNG. Use `--json` separately to inspect
+`image.contentType` and choose a suitable file extension. The top-level
+`contentType` describes the webpage. Binary output cannot be combined with
+`--json` or used with another extraction type (exit 2). `--quiet` suppresses
+successful binary output; diagnostics and errors still use stderr.
 
 Favicon candidates include icon and Apple touch links, Web App Manifest icons,
 and `/favicon.ico`. Relative URLs use the document base; manifest icons use the
@@ -69,6 +79,8 @@ This checks headers, not full image decoding or visual quality.
 At most eight manifests (1 MiB each) and 64 unique image candidates (16 MiB each,
 four concurrent requests) are checked, also subject to `--max-response-bytes`.
 These requests do not write files and are not independently cached.
+Binary output reuses the bytes downloaded for validation without requesting the
+selected image again. A shell redirection such as `> favicon.bin` saves the output.
 
 Avatar extraction uses account-specific adapters for GitHub, Instagram, Threads,
 X, TikTok, Twitch, LinkedIn, and YouTube. It rejects unrelated accounts, post

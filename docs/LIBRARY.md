@@ -44,7 +44,7 @@ dispatches to exactly the same implementation as the explicit functions.
 | --- | --- | --- |
 | `text` | `extractText(url, options?)` | String |
 | `html` | `extractHtml(url, options?)` | String |
-| `favicon` | `extractFavicon(url, options?)` | Selected image |
+| `favicon` | `extractFavicon(url, options?)` | Selected image, or a Buffer with `binary: true` |
 | `images` | `extractImages(url, options?)` | Array of image references |
 | `avatar` | `extractSocialAvatar(url, options?)` | Platform, profile, selected image |
 | `selector` | `extractSelector(url, { selector, ...options })` | Match state and values |
@@ -123,6 +123,30 @@ files. Limits are eight manifests (1 MiB each) and 64 images (16 MiB each, four
 concurrent), capped further by `maxResponseBytes`. See [CLI details](CLI.md#favicon-and-avatar)
 and [platform limitations](SOCIAL_SUPPORT.md).
 
+`favicon` also accepts `binary: boolean` (default `false`). With `binary: true`,
+`data` is a Node.js `Buffer` containing the selected image's original bytes;
+`image` still contains its URL, dimensions, MIME type, and source. The top-level
+`contentType` describes the webpage; use `image.contentType` for the image.
+There is no format conversion, base64 encoding, or extra image request. The same
+selection, request limits, redirect checks, and cancellation apply. Image bytes
+are not retained in the page cache or written to disk by Fetchary.
+
+```js
+const { extractFavicon } = require('fetchary');
+
+async function main() {
+    const icon = await extractFavicon('https://github.com', { binary: true });
+    process.stdout.write(icon.data);
+}
+main().catch(console.error);
+```
+
+The dispatcher supports `extract(url, { type: 'favicon', binary: true })`, as
+does `extractor.extractFavicon(url, { binary: true })` on an isolated client.
+TypeScript infers `FaviconResult<true>` with Buffer data for `binary: true` and
+`FaviconResult` with image metadata when omitted or false. A boolean variable
+produces `FaviconResult<boolean>` with `Buffer | ExtractedImage` data.
+
 ## Result schemas
 
 Every result includes the following common fields:
@@ -158,12 +182,15 @@ Operation data shapes:
 // text / html
 data: string;
 
-// favicon
+// favicon (binary omitted or false)
 data: {
     url: string; width: number | null; height: number | null;
     scalable: boolean; resolutionVerified: boolean;
     contentType: string | null; source: string;
 };
+
+// favicon with binary: true (image retains the metadata shape above)
+data: Buffer;
 
 // avatar
 data: { platform: string; profile: string | null; image: /* favicon image shape */ unknown };

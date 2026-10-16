@@ -10,7 +10,7 @@ Usage: fetchary extract <type> <url> [options]
 Types:
   text             Readable page text
   html             Raw or rendered HTML
-  favicon          Highest-resolution accessible icon URL
+  favicon          Highest-resolution accessible icon URL or bytes
   images           Referenced image URLs and metadata
   avatar           A public social profile's avatar URL
   selector         Elements matching a CSS selector
@@ -19,6 +19,7 @@ Types:
 
 Options:
   --json                         Structured extraction result
+  --binary                       Write favicon bytes to stdout (favicon only)
   --mode auto|http|browser        Capture strategy (default: auto, HTTP first)
   --timeout <ms>                 Request timeout (default: 30000)
   --user-agent <text>            Request user agent
@@ -45,6 +46,7 @@ Options:
 Examples:
   fetchary extract text https://example.com
   fetchary extract favicon https://example.com
+  fetchary extract favicon https://example.com --binary > favicon.bin
   fetchary extract selector https://example.com --selector h1
   fetchary extract social-links https://example.com --youtube
   fetchary extract social-insights https://www.youtube.com/watch?v=VIDEO_ID
@@ -54,7 +56,7 @@ Compatibility aliases:
   fetchary favicon <url>
   fetchary profile-picture <url>
 `;
-const flags = new Set(['json','all','youtube','urls-only','exclude-metadata','duplicates','quiet','verbose','no-color','allow-private-network','help','version','text']);
+const flags = new Set(['json','binary','all','youtube','urls-only','exclude-metadata','duplicates','quiet','verbose','no-color','allow-private-network','help','version','text']);
 const values = new Set(['mode','timeout','user-agent','wait-after-load','max-response-bytes','selector','attribute','format','platform']);
 const repeated = new Set(['include-selector','ignore-selector','source']);
 function invalid(message) { throw new api.FetcharyValidationError(message); }
@@ -95,13 +97,14 @@ async function main(argv = process.argv.slice(2), io = {}) {
     else if (command === 'profile-picture') type = 'avatar';
     else invalid(`unknown command "${command}"; use "fetchary extract <type> <url>"`);
     if (args.length !== 1) invalid('exactly one URL is required');
-    for (const [key, allowed] of Object.entries({ selector:['selector'], all:['selector'], attribute:['selector'], format:['selector'], platform:['social-links'], youtube:['social-links'], 'urls-only':['images','social-links'], 'exclude-metadata':['images'], source:['images'], duplicates:['images'], 'include-selector':['text','html'], 'ignore-selector':['text','html'], text:['text','html'] })) {
+    for (const [key, allowed] of Object.entries({ binary:['favicon'], selector:['selector'], all:['selector'], attribute:['selector'], format:['selector'], platform:['social-links'], youtube:['social-links'], 'urls-only':['images','social-links'], 'exclude-metadata':['images'], source:['images'], duplicates:['images'], 'include-selector':['text','html'], 'ignore-selector':['text','html'], text:['text','html'] })) {
       if (Object.hasOwn(options, key) && !allowed.includes(type)) invalid(`--${key} is not supported for ${type}`);
     }
     if (options.text && type !== 'text') invalid('--text conflicts with the selected extraction type');
     if (options.youtube && options.platform && options.platform !== 'youtube') invalid('--youtube conflicts with --platform');
+    if (options.binary && options.json) invalid('--binary conflicts with --json');
     const settings = { ...(io.options || {}), type };
-    for (const [key, name] of Object.entries({ mode:'mode', timeout:'timeout', 'user-agent':'userAgent', 'wait-after-load':'waitAfterLoad', 'max-response-bytes':'maxResponseBytes', selector:'selector', all:'all', attribute:'attribute', format:'format', platform:'platform', 'allow-private-network':'allowPrivateNetwork', 'include-selector':'includeSelectors', 'ignore-selector':'ignoreSelectors', source:'sources' })) {
+    for (const [key, name] of Object.entries({ binary:'binary', mode:'mode', timeout:'timeout', 'user-agent':'userAgent', 'wait-after-load':'waitAfterLoad', 'max-response-bytes':'maxResponseBytes', selector:'selector', all:'all', attribute:'attribute', format:'format', platform:'platform', 'allow-private-network':'allowPrivateNetwork', 'include-selector':'includeSelectors', 'ignore-selector':'ignoreSelectors', source:'sources' })) {
       if (options[key] !== undefined) settings[name] = ['timeout','maxResponseBytes'].includes(name) ? Number(options[key]) : options[key];
     }
     if (options.youtube) settings.platform = 'youtube';
@@ -110,7 +113,8 @@ async function main(argv = process.argv.slice(2), io = {}) {
     if (options.verbose && !options.quiet) stderr.write(`Extracting ${type} (${settings.mode || 'auto'})\n`);
     const result = await api.extract(args[0], settings);
     if (options.quiet) return 0;
-    if (options.json || ['images','social-links','social-insights'].includes(type) && !options['urls-only']) stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    if (options.binary) stdout.write(result.data);
+    else if (options.json || ['images','social-links','social-insights'].includes(type) && !options['urls-only']) stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     else if (options['urls-only']) { const urls = result.data.map(item => item.url); if (urls.length) stdout.write(`${urls.join('\n')}\n`); }
     else if (type === 'favicon' || type === 'avatar') stdout.write(`${result.image.url}\n`);
     else stdout.write(result.content);

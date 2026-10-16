@@ -49,6 +49,13 @@ fetchary extract avatar https://github.com/oliverjessner
 
 These commands return image URLs. They don't save image files.
 
+To get the favicon itself, use `--binary`. You can pipe it to another tool or
+save it in its original format:
+
+```bash
+fetchary extract favicon https://github.com --binary > favicon.bin
+```
+
 ### Select an element
 
 When you know exactly which element you need:

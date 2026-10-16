@@ -143,6 +143,90 @@ test('favicon prefers scalable SVG, reads ICO entries and supports root fallback
   await assert.rejects(extractFavicon(url, { fetch: fixtureFetch({ [url]: '<link rel="icon" href="/invalid.png">', 'https://example.test/invalid.png': ['not an image', 'image/png'] }) }), FetcharyNotFoundError);
 });
 
+test('favicon binary output preserves PNG, ICO and SVG bytes without a second download', async () => {
+  const url = 'https://example.test/binary';
+  const formats = [
+    [png(32, 32), 'image/png'],
+    [ico(png(16, 16), png(64, 64)), 'image/x-icon'],
+    [Buffer.from('<?xml version="1.0"?><svg viewBox="0 0 24 24"><title>Grüße</title></svg>'), 'image/svg+xml'],
+  ];
+  for (const [body, contentType] of formats) {
+    const requests = [];
+    const fetch = fixtureFetch({ [url]: '<link rel="icon" href="/icon">', 'https://example.test/icon': [body, 'application/octet-stream'] }, requests);
+    const result = await extractFavicon(url, { fetch, binary: true });
+    assert.ok(Buffer.isBuffer(result.data));
+    assert.deepEqual(result.data, body);
+    assert.equal(result.image.contentType, contentType);
+    assert.equal(result.contentType, 'text/html');
+    assert.equal(result.image.url, 'https://example.test/icon');
+    assert.equal(Object.hasOwn(result.image, 'body'), false);
+    assert.equal(requests.filter(request => request.endsWith('/icon')).length, 1);
+    for (const options of [{}, { binary: false }]) {
+      const standard = await extractFavicon(url, { fetch, ...options });
+      assert.equal(standard.data, standard.image);
+      assert.deepEqual(standard.image, result.image);
+      assert.equal(Buffer.isBuffer(standard.data), false);
+    }
+  }
+});
+
+test('favicon binary output follows the same ranking regardless of download completion order', async () => {
+  const url = 'https://example.test/ranking';
+  const bodies = { '/first.png': png(128, 128), '/second.png': png(128, 128), '/small.png': png(16, 16) };
+  // Different payloads at the same dimensions detect mismatched winning metadata/bytes.
+  bodies['/second.png'] = Buffer.concat([bodies['/second.png'], Buffer.from([0, 255, 128])]);
+  const baseFetch = fixtureFetch({
+    [url]: '<link rel="icon" href="/first.png"><link rel="icon" href="/second.png"><link rel="icon" href="/small.png" sizes="4096x4096">',
+    ...Object.fromEntries(Object.entries(bodies).map(([path, body]) => [`https://example.test${path}`, [body, 'image/png']])),
+  });
+  const fetch = async target => {
+    if (target.endsWith('/first.png')) await new Promise(resolve => setImmediate(resolve));
+    return baseFetch(target);
+  };
+  const result = await extractFavicon(url, { fetch, binary: true });
+  assert.equal(result.image.url, 'https://example.test/first.png');
+  assert.equal(result.image.width, 128);
+  assert.deepEqual(result.data, bodies['/first.png']);
+  assert.deepEqual((await extractFavicon(url, { fetch })).image, result.image);
+});
+
+test('favicon binary option works through the dispatcher and clients without caching result buffers', async () => {
+  const url = 'https://example.test/cache-binary';
+  const body = png(32, 32);
+  const requests = [];
+  const fetch = fixtureFetch({ [url]: '<link rel="icon" href="/icon.png">', 'https://example.test/icon.png': [body, 'image/png'] }, requests);
+  const options = { mode: 'http', allowPrivateNetwork: true, fetch };
+  for (const api of [actualApi, actualApi.createExtractor(options)]) {
+    const first = await api.extract(url, { ...options, type: 'favicon', binary: true });
+    first.data.fill(0);
+    first.image.url = 'https://changed.test/';
+    const second = await api.extractFavicon(url, { ...options, binary: true });
+    assert.equal(second.cache.hit, true);
+    assert.deepEqual(second.data, body);
+    assert.equal(second.image.url, 'https://example.test/icon.png');
+    const standard = await api.extractFavicon(url, options);
+    assert.equal(standard.data, standard.image);
+    assert.deepEqual(standard.image, second.image);
+  }
+  assert.equal(requests.filter(request => request === url).length, 2);
+  assert.equal(requests.filter(request => request.endsWith('/icon.png')).length, 6);
+});
+
+test('favicon validates binary options before requesting and retains image limits and cancellation', async () => {
+  const url = 'https://example.test/binary-errors';
+  let requests = 0;
+  const fetch = async () => { requests++; return new Response('<html></html>'); };
+  for (const binary of ['true', 1, null, {}, []]) {
+    await assert.rejects(extractFavicon(url, { fetch, binary }), { name: 'FetcharyValidationError', message: 'binary must be a boolean' });
+  }
+  assert.equal(requests, 0);
+  const body = png(128, 128);
+  const large = fixtureFetch({ [url]: '<link rel="icon" href="/icon.png">', 'https://example.test/icon.png': [body, 'image/png'] });
+  await assert.rejects(extractFavicon(url, { fetch: large, binary: true, maxResponseBytes: 64 }), FetcharyNotFoundError);
+  await assert.rejects(extractFavicon(url, { fetch, binary: true }), FetcharyNotFoundError);
+  await assert.rejects(extractFavicon(url, { fetch, binary: true, signal: AbortSignal.abort() }), FetcharyFetchError);
+});
+
 test('profile pictures use the target account on all eight vendors and exclude larger preview cards', async () => {
   const image = 'https://cdn.test/avatar.png';
   const thumb = 'https://cdn.test/small.png';
