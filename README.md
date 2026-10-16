@@ -4,167 +4,95 @@
   <img src="assets/images/logo/logo_raw_trans_250.webp" alt="Fetchary logo" width="250">
 </p>
 
-> **Watch changes. Keep the proof.**
+> **Extract what you need from the web.**
 
-Fetchary watches public web pages from your terminal.
+Fetchary extracts text, HTML, image URLs, and social information from public web pages.
 
-It tells you when something changed, keeps the previous versions locally, and lets you inspect exactly what was there before.
+Use it from your terminal for a quick result, or in a Node.js app when you need
+several things from the same page. Extraction works without setting up a database
+or saving an archive.
 
-Think of it as a small, local `git diff` for the public web.
+## Install
+
+Node.js 26 or newer is required.
+
+For the command line:
+
+```bash
+npm install --global fetchary
+```
+
+On macOS, you can also use Homebrew:
 
 ```bash
 brew tap oliverjessner/tap
 brew install fetchary
 ```
 
-Or:
+For a Node.js project:
 
 ```bash
-npm install --global fetchary
+npm install fetchary
 ```
 
 ## Examples
 
-### Watch a whole page
+### Get a page's text or HTML
 
-Want to know when a pricing page, press release, terms page, or public document changes?
-
-```bash
-fetchary add https://example.com/pricing \
-  --name "Pricing" \
-  --every 1h
-```
-
-Then run the scheduler:
-
-```bash
-fetchary run
-```
-
-Fetchary checks the page every hour and stores new versions when something changes.
-
-### Watch only one part of a page
-
-Maybe you don't care about the whole page.
-
-Watch only the element you're interested in:
-
-```bash
-fetchary add https://example.com/pricing \
-  --name "Pro Plan Price" \
-  --include-selector ".pro-plan .price" \
-  --every 30m
-```
-
-Fetchary still archives the complete page.
-
-`--include-selector` only controls **what counts as a relevant change**.
-
-### Ignore noisy elements
-
-Timestamps, counters, rotating banners, and similar elements can create useless changes.
-
-Ignore them:
-
-```bash
-fetchary add https://example.com/news \
-  --ignore-selector ".timestamp" \
-  --ignore-selector ".live-counter"
-```
-
-The original page is still archived unchanged. The selectors only affect comparison.
-
-### Watch social media followers
-
-Fetchary can read follower counts from supported public profiles.
-
-```bash
-fetchary add https://www.instagram.com/instagram/ \
-  --name "Instagram" \
-  --tag social
-
-fetchary add https://www.youtube.com/@YouTube \
-  --name "YouTube" \
-  --tag social
-```
-
-Refresh the profiles:
-
-```bash
-fetchary fetch
-```
-
-Then read the latest saved counts:
-
-```bash
-fetchary follower --tag social
-```
-
-Example:
-
-```text
-ID  FOLLOWER   NAME
-1   68500  Instagram
-2   45200   YouTube
-
-sum: 113.700
-```
-
-Supported platforms currently include
-
-- GitHub
-- Threads
-- X
-- Instagram
-- TikTok
-- Twitch
-- LinkedIn
-- YouTube
-
-You can schedule the profiles like any other source:
-
-```bash
-fetchary schedule 1 1h
-fetchary schedule 2 1h
-fetchary run
-```
-
-### See what changed
-
-Check the archived versions:
-
-```bash
-fetchary history 1
-```
-
-Just want to see when the content changed?
-
-```bash
-fetchary history 1 --content-change
-```
-
-Compare the latest two versions:
-
-```bash
-fetchary diff 1
-```
-
-Or compare two specific versions:
-
-```bash
-fetchary diff 1 3 7
-```
-
-### Extract something once
-
-Need the current page content without starting a monitor or keeping an archive?
+Read the text without the markup:
 
 ```bash
 fetchary extract https://example.com --text
 ```
 
-Need text, images, and social links from the same page in your Node.js app?
-Compatible calls reuse the captured webpage for 45 seconds:
+Leave out `--text` to get HTML:
+
+```bash
+fetchary extract https://example.com
+```
+
+### Extract just one part
+
+Only need the heading? Select it with CSS:
+
+```bash
+fetchary extract https://example.com --include-selector "h1" --text
+```
+
+You can also leave out elements you don't need:
+
+```bash
+fetchary extract https://example.com --ignore-selector "script" --ignore-selector "style"
+```
+
+### Find an icon or profile picture
+
+Get a website's highest-resolution accessible icon:
+
+```bash
+fetchary favicon https://github.com
+```
+
+Or a public social profile's avatar:
+
+```bash
+fetchary profile-picture https://github.com/oliverjessner --mode http
+```
+
+Both commands print an image URL. They don't save the image.
+
+### Use the results in a script
+
+Add `--json` for structured output, including the page URL and capture timestamp:
+
+```bash
+fetchary extract https://example.com --text --json
+fetchary favicon https://github.com --json
+```
+
+## Use Fetchary in Node.js
+
+Need text, images, and social links from the same page?
 
 ```js
 const { extractText, extractImages, extractSocialLinks } = require('fetchary');
@@ -174,112 +102,40 @@ async function main() {
   const text = await extractText(url);
   const images = await extractImages(url);
   const socials = await extractSocialLinks(url);
-  console.log(text.content, images.images, socials.links);
+
+  console.log(text.content);
+  console.log(images.images);
+  console.log(socials.links);
 }
+
 main().catch(console.error);
 ```
 
-The cache lives in memory in the current process. Separate CLI executions each
-start fresh. See the [library guide](docs/LIBRARY.md#capture-cache) to adjust the
-TTL, disable caching, or use a client with its own cache.
+Compatible calls reuse the captured webpage for **45 seconds** by default.
+The cache stays in memory in the current process; separate CLI executions each
+start fresh.
 
-You can also get a website's largest available icon or a public profile's image URL:
-
-```bash
-fetchary favicon https://github.com
-fetchary profile-picture https://github.com/oliverjessner --mode http
-```
-
-These commands print the result without adding a source or saving it locally.
-
-### Open an old version
-
-Want to see what the page looked like before it changed?
-
-```bash
-fetchary open 1
-```
-
-Or open a specific archived version:
-
-```bash
-fetchary open 1 4
-```
-
-See which other websites an archived page links to:
-
-```bash
-fetchary open 1 --show-external
-```
-
-Find social media pages linked from the archive:
-
-```bash
-fetchary open 1 --show-social-media
-```
-
-### Keep evidence
-
-Export everything Fetchary has stored for a source:
-
-```bash
-fetchary export 1 --output ./evidence
-```
-
-The export contains the archived responses, rendered pages, metadata, and SHA-256 hashes.
-
-You can verify the files without Fetchary:
-
-```bash
-shasum -a 256 evidence/fetchary-export-1/versions/001-response.html
-```
-
-## The basic workflow
-
-Most Fetchary workflows are just:
-
-```bash
-# Add something
-fetchary add https://example.com
-
-# Check it
-fetchary fetch
-
-# See previous versions
-fetchary history 1
-
-# See what changed
-fetchary diff 1
-```
-
-That's it.
+You can change the TTL, request a fresh capture, or use `createExtractor()` for
+a client with its own cache. The library also extracts selected elements,
+favicons, social avatars, and public follower counts. See the
+[library guide](docs/LIBRARY.md#one-time-extraction-without-storage) for examples.
 
 ## Browser or HTTP?
 
-For normal websites, you usually don't need to think about this.
+By default, page extraction uses bundled Chromium to include content added by
+JavaScript. You don't need a separate browser installation.
 
-Fetchary uses its bundled Chromium for HTML pages so JavaScript-rendered content can be captured.
-
-For APIs, feeds, or other resources you can explicitly use HTTP mode:
+If the content is already in the server response, use HTTP mode to skip the browser:
 
 ```bash
-fetchary add https://example.com/api/status --mode http
+fetchary extract https://example.com --mode http --text
 ```
 
-## Common commands
+The same choice is available in the library through `{ mode: 'http' }`.
+Favicon extraction uses HTTP mode by default.
 
-For the complete command reference: [docs/CLI.md](docs/CLI.md)
+## Documentation
 
-For using Fetchary as a Node.js library: [docs/LIBRARY.md](docs/LIBRARY.md)
-
-For publishing a new version: [docs/PUBLISHING.md](docs/PUBLISHING.md)
-
-## What Fetchary is not
-
-Fetchary isn't a crawler or a general browser automation framework.
-
-It doesn't try to crawl entire websites, log into accounts, or click through applications.
-
-Use it to watch a page over time or extract what you need once.
-
-**Watch changes. Keep the proof.**
+- [CLI reference](docs/CLI.md) — commands, flags, and output formats.
+- [Library guide](docs/LIBRARY.md) — extraction methods, cache settings, and TypeScript.
+- [Changelog](docs/changelog.md) — release changes.
