@@ -341,7 +341,7 @@ async function waitForPublishedTarball(version, expectedSha256, options = {}) {
 
 function renderFormula(version, sha256) {
   return `class Fetchary < Formula
-  desc "Archive exact web responses and rendered DOM changes"
+  desc "Stateless semantic web extraction for Node.js"
   homepage "https://github.com/oliverjessner/fetchary"
   url "https://registry.npmjs.org/fetchary/-/fetchary-${version}.tgz"
   sha256 "${sha256}"

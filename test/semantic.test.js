@@ -168,3 +168,23 @@ test('LinkedIn retains the public HTTP follower fallback while reporting a rende
   assert.equal(result.data.status,'login_required');assert.equal(result.data.metrics.followers,1234);
   assert.equal(result.data.sources.followers.field,'followerCountFromRaw');
 });
+
+for(const [target,html,platform,count] of [
+  ['https://x.com/example','<a href="/example/followers">1.2K Followers</a>','x',1200],
+  ['https://threads.com/@example','<script type="application/json">{"username":"example","follower_count":42}</script>','threads',42],
+  ['https://linkedin.com/company/example/','<h3 class="top-card-layout__first-subline">42 followers</h3>','linkedin',42],
+  ['https://twitch.tv/example/about','<script type="application/json">{"login":"example","followers":{"totalCount":42}}</script>','twitch',42],
+  ['https://github.com/example','<a href="/example?tab=followers">42 followers</a>','github',42],
+]) test(`${platform} existing follower parser is integrated into direct stateless insights`,async()=>{
+  const result=await api.extractSocialInsights(target,options(html));
+  assert.equal(result.data.platform,platform);assert.equal(result.data.metrics.followers,count);assert.equal(result.data.status,'available');
+  assert.equal(result.data.sources.followers.field,'followerCount');
+  assert.equal(result.data.sources.followers.approximate,platform==='x'?true:null);
+});
+
+test('link-only adapters explicitly leave profile and post metrics unsupported',async()=>{
+  for(const target of ['https://facebook.com/example','https://reddit.com/user/example','https://vimeo.com/123','https://bsky.app/profile/example.test/post/123']) {
+    const result=await api.extractSocialInsights(target,options('<p>Public reference</p>'));
+    assert.equal(result.data.status,'unsupported');assert.ok(Object.values(result.data.unavailable).every(reason=>reason==='unsupported'));
+  }
+});

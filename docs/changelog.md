@@ -1,9 +1,13 @@
-# Unreleased
+# 2.0.0
 
+- Breaking: Fetchary is now a stateless semantic extraction toolkit. Remove SQLite, saved sources, monitoring, archives, history, diffs, hashing, scheduling, stored vendor activation, the `Fetchary` class and `createFetchary()` API. Existing user directories are never accessed or deleted.
+- Add `extract <type> <url>` for text, HTML, favicon, images, avatar, selector, social-links and social-insights, backed by the same public Node.js dispatcher and explicit functions. Keep standalone extraction aliases.
+- Default to HTTP-first auto capture with one optional browser fallback. Add cancellation, bounded decoded responses, declared charset handling, redirect checks, DNS/address validation, private-network opt-in and guarded Chromium resource loading.
+- Expand image URL discovery, first/all CSS selection and attribute output, and social link discovery/filtering across twelve platforms.
+- Add fixture-backed YouTube, TikTok and Instagram profile/post metrics with identity checks, sources, approximation flags and explicit metric availability; preserve other existing profile follower parsers.
+- Document the actual platform capabilities in `docs/SOCIAL_SUPPORT.md`, rewrite CLI/library guides, and align package metadata and declarations with 2.0.0.
 - Reuse compatible webpage captures in a bounded, process-local memory cache for 45 seconds by default, with in-flight deduplication and per-call TTL overrides.
 - Add isolated `createExtractor()` clients, cache clearing, capture cache metadata, and shared semantic extraction methods for text, HTML, selectors, images, social links, avatars, and follower insights.
-
-- `fetch` displays results in an aligned `ID`, `NAME`, and `CHANGE` table
 
 # 1.3.0
 

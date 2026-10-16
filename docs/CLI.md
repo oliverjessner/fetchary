@@ -1,1443 +1,246 @@
-# fetchary CLI
+# Fetchary CLI
 
-> **fetchary 👁️ — Watch changes. Keep the proof.**
+Fetchary — Extract what matters.
 
-fetchary is a local command-line monitor that archives exact HTTP responses and, for HTML pages, the DOM rendered by bundled Chromium.
+The CLI calls the same stateless extraction implementation as the Node.js library.
+It writes extracted results to stdout and errors or requested diagnostics to
+stderr. It never creates a database, saved sources, archives, or schedules.
 
-The core workflow is intentionally simple:
+## Installation and usage
 
-1. Add a URL.
-2. Fetch the page.
-3. Store the exact HTTP response bytes.
-4. In browser mode, wait for `load`, wait another five seconds by default, and store `page.content()` separately.
-5. Select configured comparison sections, remove ignored elements from a temporary comparison DOM, and report meaningful changes separately.
-
-fetchary is designed for research, journalism, investigations, documentation, and any workflow where it matters to know **what a web page looked like at a specific point in time**.
-
-## Installation
-
-Node.js 26.0 or newer is required.
+Requires Node.js 26 or newer. Puppeteer supplies Chrome for Testing; no separate
+browser installation is required.
 
 ```bash
-npm install -g fetchary
-```
-
-The package installs Puppeteer and its bundled Chrome for Testing. No separate
-browser installation or executable-path configuration is required.
-
-Check the installed version:
-
-```bash
+npm install --global fetchary
 fetchary --version
-```
-
-Show help:
-
-```bash
 fetchary --help
+fetchary extract <type> <url> [options]
 ```
 
-Running `fetchary` without a command shows the same help.
+Running without arguments or with `--help` prints help and exits successfully.
+`--version` prints the package version. Help can also follow a command.
 
-## Usage
+## Extraction types
+
+| Type | Example | Default output |
+| --- | --- | --- |
+| `text` | `fetchary extract text https://example.com` | Readable text |
+| `html` | `fetchary extract html https://example.com` | HTML |
+| `favicon` | `fetchary extract favicon https://example.com` | Selected image URL |
+| `images` | `fetchary extract images https://example.com` | JSON result |
+| `avatar` | `fetchary extract avatar https://github.com/oliverjessner` | Selected image URL |
+| `selector` | `fetchary extract selector https://example.com --selector h1` | Selected text |
+| `social-links` | `fetchary extract social-links https://example.com` | JSON result |
+| `social-insights` | `fetchary extract social-insights https://www.youtube.com/@YouTube` | JSON result |
+
+Text and HTML contain exactly the extracted string, with no extra newline or
+status message. Image URLs end with a newline. JSON results are objects with
+common metadata and a `data` field, followed by a newline. An empty URL-only list
+produces no output. Standard output is never colorized.
+
+### Text and HTML
 
 ```bash
-fetchary <command> [arguments] [options]
+fetchary extract text https://example.com --include-selector h1
+fetchary extract html https://example.com --ignore-selector script
+fetchary extract text https://example.com --mode http --json
 ```
 
-## Commands
+Text removes scripts, styles, comments, and markup, decodes entities, normalizes
+whitespace, and preserves block/paragraph separation. HTML keeps the captured
+markup, except for explicitly requested selection or removal. Non-HTML resources
+are returned as decoded text without DOM conversion. This is not a binary
+file downloader.
 
-### One-time extraction
+`--include-selector` and `--ignore-selector` are repeatable. Includes select the
+first match per selector in page order; overlapping subtrees appear once. Ignores
+remove every matching element, including selected roots and ancestors. Missing
+include matches return empty content. These options apply to `text` and `html`.
 
-These commands fetch a URL directly without registering a source, opening SQLite,
-writing an archive, or changing schedules and vendor settings. `--data-dir` and
-`FETCHARY_DATA_DIR` are ignored. Browser extraction uses the built-in vendor
-helpers; persisted vendor activation flags are not loaded.
-
-These commands use the same capture implementation as the Node.js library,
-including its default 45-second in-memory cache. The cache is process-local:
-separate CLI executions each start empty and never share entries through files
-or SQLite. There are no CLI cache flags; use the library's `cacheTtlMs`,
-`createExtractor()`, and `clearCache()` for cache control. The default limits are
-100 entries and 50 MiB, with lazy expiration and LRU eviction. Compatible
-simultaneous library calls share a capture; TTL zero bypasses that deduplication.
-HTTP and rendered browser captures remain separate. See
-[the library reference](LIBRARY.md#capture-cache) for TTL and compatibility rules.
-
-Plain output contains no cache diagnostics. Structured `--json` results include
-`cache: { hit, ageMs, ttlMs }`; misses report `hit: false` and `ageMs: 0`.
-`capturedAt` remains the original snapshot timestamp on a hit. The cache does not
-change the existing monitoring commands' fresh-fetch behavior.
-
-#### `fetchary extract`
+### Favicon and avatar
 
 ```bash
-fetchary extract <url> [--text] [--mode <browser|http>] [--wait-after-load <duration>] [--include-selector <css> ...] [--ignore-selector <css> ...] [--json]
+fetchary extract favicon https://example.com --json
+fetchary extract avatar https://github.com/oliverjessner --mode http
 ```
 
-Print the captured page content to stdout. Browser mode is the default, with
-the same `load` event and five-second post-load wait as `add`. `--mode http`
-returns the UTF-8-decoded HTTP response without Chromium. Non-HTML responses
-automatically use HTTP capture and are returned as UTF-8 text unchanged by
-selectors or `--text`; this command is not a binary downloader.
+Favicon candidates include icon and Apple touch links, Web App Manifest icons,
+and `/favicon.ico`. Relative URLs use the document base; manifest icons use the
+manifest's final URL. Broken or inaccessible candidates are skipped. SVG is
+preferred as scalable; other candidates are ordered by measured pixel area.
+PNG, JPEG, GIF, WebP, ICO, and SVG headers are inspected. ICO uses its largest
+embedded image. Other image MIME types may retain unverified declared dimensions.
+This checks headers, not full image decoding or visual quality.
+
+At most eight manifests (1 MiB each) and 64 unique image candidates (16 MiB each,
+four concurrent requests) are checked, also subject to `--max-response-bytes`.
+These requests do not write files and are not independently cached.
+
+Avatar extraction uses account-specific adapters for GitHub, Instagram, Threads,
+X, TikTok, Twitch, LinkedIn, and YouTube. It rejects unrelated accounts, post
+previews, and banners. A verified square metadata image is a fallback on adapters
+which support it. Public HTTP avatar data can be used when the same platform's
+browser capture reaches a recognizable login wall; a different profile or
+external redirect cannot supply that fallback. See [Social support](SOCIAL_SUPPORT.md).
+An unsupported avatar platform is an argument error; a supported profile without
+an accessible avatar is a not-found error.
+
+### Images
+
+```bash
+fetchary extract images https://example.com --urls-only
+fetchary extract images https://example.com --exclude-metadata
+fetchary extract images https://example.com --source lazy --source srcset
+```
+
+Discover URLs from image `src`, `srcset`, picture sources, `data-src`,
+`data-original`, `data-lazy-src`, `data-lazy`, `data-url`, `data-srcset`, Open Graph
+and Twitter image metadata, image-file hyperlinks, and inline background URLs.
+External CSS files and computed styles are not inspected. Relative and
+protocol-relative URLs resolve against the document's valid first base URL.
+Only HTTP(S) URLs without embedded credentials are returned.
+
+URLs are unique by default, retaining deterministic page/source order.
+`--duplicates` keeps repeated image references. `--exclude-metadata` omits metadata
+images. Repeat `--source` to include only `img`, `srcset`, `lazy`, `metadata`,
+`link`, or `background`. This extractor never downloads binary images. Dimensions
+from HTML attributes are hints, with `resolutionVerified: false`.
+
+### Selector
+
+```bash
+fetchary extract selector https://example.com --selector h1 --format text
+fetchary extract selector https://example.com --selector p --format html --all
+fetchary extract selector https://example.com --selector a --attribute href --all
+```
+
+`--selector` is required and validated by linkedom. By default only the first
+matching element is returned, as text. `--all` selects all matches in document
+order. `--format html` returns outer HTML. `--attribute` instead returns the raw
+attribute value, without resolving relative URLs; absent attributes are `null`
+in JSON and omitted from plain output. `--format` applies only to selector output.
+No matches succeeds with `data: { matched: false, values: [] }` in JSON and empty
+plain output. Invalid CSS is an argument error. Multiple plain values are joined
+with a newline, without an extra trailing newline.
+
+### Social links
+
+```bash
+fetchary extract social-links https://example.com --youtube
+fetchary extract social-links https://example.com --platform youtube --urls-only
+```
+
+Discover supported social URLs in hyperlinks, `rel="me"` links, JSON-LD `sameAs`,
+`og:url`, `og:see_also`, and `twitter:url`. Exact domain/subdomain rules avoid
+lookalikes such as `fake-youtube.com`. Account and post identities, URL query
+parameters, and fragments are preserved. Deduplication uses the resolved absolute
+URL; equivalent platform aliases may remain separate URLs.
+
+`--platform` accepts `youtube`, `tiktok`, `instagram`, `facebook`, `x`, `threads`,
+`linkedin`, `twitch`, `reddit`, `github`, `vimeo`, and `bluesky`. `twitter` aliases
+`x`. `--youtube` is exactly `--platform youtube`; conflicting filters are rejected.
+Each link includes `platform`, `url`, `kind`, and discovery `source`. Kinds are
+`profile`, `channel`, `post`, `video`, or `unknown`; recognition makes no request
+to that social URL and does not prove the account/post exists.
+
+### Social insights
+
+```bash
+fetchary extract social-insights 'https://www.youtube.com/watch?v=VIDEO_ID'
+fetchary extract social-insights https://www.tiktok.com/@example
+fetchary extract social-insights https://www.instagram.com/example/
+```
+
+Return public metrics scoped to the requested profile/channel/post/video.
+YouTube, TikTok, and Instagram have additional structured metric parsers; existing
+adapters retain profile follower extraction. Every missing metric remains `null`
+with an availability reason. Abbreviated counts carry approximation metadata.
+Unsupported platforms produce an explicit `unsupported` result, not invented
+metrics. HTML login/CAPTCHA walls and HTTP 401/403/429 return explicit availability.
+Other transport failures use a nonzero exit code. An inspectable unavailable or
+blocked insight result is a successful command (exit 0).
+
+See [Social support](SOCIAL_SUPPORT.md) for implemented patterns and fixtures and
+[Library schemas](LIBRARY.md#result-schemas) for the exact result format.
+
+## Shared options
+
+| Option | Behavior |
+| --- | --- |
+| `--json` | Full structured result for any extraction; takes precedence over `--urls-only` |
+| `--mode auto\|http\|browser` | Default `auto`: HTTP first, optional browser fallback |
+| `--timeout <ms>` | Positive milliseconds per request/phase; default 30000 |
+| `--user-agent <text>` | HTTP and browser user agent; default `fetchary/2.0` |
+| `--wait-after-load <duration>` | Browser post-load wait; default `5s`; accepts `500ms`, `5s`, or `0ms` |
+| `--max-response-bytes <bytes>` | Positive safe integer; default 10485760 (10 MiB) |
+| `--allow-private-network` | Explicitly allow trusted local/internal targets |
+| `--quiet` | Suppress successful output, keeping errors on stderr |
+| `--verbose` | Print operation/mode diagnostics on stderr |
+| `--no-color` | Accepted for compatibility; output already has no ANSI colors |
+| `--help`, `--version` | Print help/version without extracting |
+
+Value options support both `--option value` and `--option=value`. Use `--` to
+end option parsing. Unknown options and operation-specific options used with the
+wrong type are rejected. There is no data-directory or monitoring configuration.
+
+## Capture, network access, and cache
+
+`http` uses only the server response. `browser` performs HTTP capture and renders
+HTML through Chromium; non-HTML responses skip rendering. `auto` starts with HTTP
+and falls back for JavaScript shells, missing selectors/lists on scripted pages,
+missing favicon/avatar candidates, or incomplete insights on scripted pages.
+It does not launch Chromium for usable static content or to bypass access walls.
+A fallback reuses the original HTTP capture and launches at most one browser.
+The browser waits for `load`, then the post-load wait, rather than network idle.
+
+Private, loopback, link-local, reserved/internal targets and embedded URL
+credentials are rejected by default. DNS answers, redirect targets, browser
+navigation, and browser resources are checked. Native HTTP connections use
+validated DNS addresses. Browser requests are fulfilled by the guarded transport;
+direct browser networking is disabled through a deny proxy. Local opt-in is for
+trusted inputs and also applies to resources and redirects. No proxy rotation,
+authentication, CAPTCHA solving, or headless user-agent disguise is performed.
+
+Timeouts, cancellation (library `signal`), response limits, and redirect limits
+also apply to auxiliary requests. Up to ten redirects are followed; cross-origin
+redirects strip Authorization, Cookie, and Proxy-Authorization headers. The
+rendered DOM has the same byte limit; total fetched browser resources are limited
+to four times that limit. Invalid or incomplete captures are not retained.
+
+Compatible page captures share a process-local, RAM-only cache, with a default
+45-second TTL, 100 entries, and approximately 50 MiB of retained payload memory.
+Expiration is lazy; LRU eviction bounds memory, with no background refresh or
+cleanup timer. Simultaneous compatible calls share in-flight work. HTTP and
+browser cache entries remain separate. Separate CLI executions start empty.
+`cache: { hit, ageMs, ttlMs }` appears in JSON; plain output has no cache diagnostics.
+`capturedAt` preserves the snapshot time, while `extractedAt` is the result time.
+The [library](LIBRARY.md#capture-cache) exposes TTL overrides, disabling, clients,
+and clearing. There are no CLI cache flags or disk cache.
+
+## Compatibility and exit codes
+
+These standalone aliases remain:
 
 ```bash
 fetchary extract https://example.com --text
-fetchary extract https://example.com/news --include-selector main --ignore-selector time
-fetchary extract https://example.com/api/status --mode http
+fetchary favicon https://example.com
+fetchary profile-picture https://github.com/oliverjessner
 ```
 
-HTML is printed by default. `--text` strips markup, scripts, styles, and comments
-using Fetchary's existing text conversion. Include and ignore selectors have the
-same first-match, page-order, and overlap behavior as comparison selectors.
-Unmatched include selectors return empty content. Plain output contains exactly
-the extracted string, without a status message or an added newline.
-
-With `--json`, stdout contains one object:
-
-```ts
-{
-  requestedUrl: string;
-  finalUrl: string;       // Browser final URL when rendered, HTTP final URL otherwise
-  rawFinalUrl: string;
-  capturedAt: string;    // ISO timestamp for the chosen capture
-  status: number;        // HTTP response status
-  contentType: string | null;
-  captureMode: 'browser' | 'http';
-  dismissedOverlays: string[];
-  cache: { hit: boolean; ageMs: number; ttlMs: number };
-  format: 'html' | 'text';
-  content: string;
-}
-```
-
-#### `fetchary favicon`
-
-```bash
-fetchary favicon <url> [--mode <http|browser>] [--wait-after-load <duration>] [--json]
-```
-
-Print the URL of the highest-resolution accessible icon found on the page.
-HTTP mode is the default. Use `--mode browser` for icons inserted by JavaScript.
-
-```bash
-fetchary favicon https://github.com
-fetchary favicon https://example.com --mode browser --json
-```
-
-Candidates include HTML `rel="icon"` links (including `shortcut icon`),
-Apple touch icons, Web App Manifest icons, and `/favicon.ico` on the final
-page's origin. Relative links use the document's first base URL when it is valid HTTP(S);
-manifest icon URLs use the manifest's final URL after redirects. Only HTTP(S)
-image URLs are requested; inline data URLs are excluded.
-
-Fetchary reads image headers for PNG, JPEG, GIF, WebP, and ICO dimensions. For
-ICO, the largest embedded size is used. SVG is considered scalable and preferred
-over raster images. Raster candidates are ranked by pixel area, with discovery
-order breaking ties. Measured dimensions override declared `sizes`, so a
-16-pixel icon claiming `512x512` does not outrank an actual 512-pixel image.
-Other image MIME types can use declared dimensions, or have unknown dimensions;
-`resolutionVerified` is false for those candidates. This is header inspection,
-not a full image decode or a quality measurement.
-
-Broken resources and HTML error pages are skipped. Up to eight manifests
-(1 MiB each) and 64 unique image URLs (16 MiB each, four concurrent requests)
-are checked. Each request has a 30-second timeout. No image file is saved.
-The result describes candidates exposed by this capture; it does not search
-unlinked assets or invent larger CDN URLs.
-
-#### `fetchary profile-picture`
-
-```bash
-fetchary profile-picture <url> [--mode <browser|http>] [--wait-after-load <duration>] [--json]
-```
-
-Print a public profile's image URL. Browser mode and a five-second post-load wait
-are the defaults. `--mode http` can read avatars already exposed in server HTML.
-
-```bash
-fetchary profile-picture https://github.com/oliverjessner --mode http
-fetchary profile-picture https://www.instagram.com/instagram/ --json
-```
-
-Supported profile pages:
-
-| Vendor | Profile URL paths | Avatar sources |
-| --- | --- | --- |
-| GitHub | `/<username>` | Profile avatar elements, matching account JSON |
-| Instagram | `/<username>` | Matching profile JSON, named profile images, square metadata fallback |
-| Threads | `/@<username>` | Matching profile JSON, named profile images, square metadata fallback |
-| X / Twitter | `/<username>` | Profile photo links, matching account JSON |
-| TikTok | `/@<username>` | Matching account JSON, profile avatar, square metadata fallback |
-| Twitch | `/<username>`, `/<username>/about` | Matching account JSON, channel profile avatar |
-| LinkedIn | `/in/`, `/company/`, `/school/`, `/showcase/` profiles and their supported tabs | Profile header images, matching Person/Organization JSON |
-| YouTube | `/@<handle>`, `/channel/<id>`, `/c/<name>`, `/user/<name>` and channel tabs | Channel header avatars, embedded header JSON, square metadata fallback |
-
-Profile-specific DOM and account JSON take priority over metadata. Within that
-group the highest available image resolution is selected using the same checks
-as `favicon`. Recommendations, non-profile pages, and rectangular preview cards
-are excluded. A public profile from this capture's HTTP response can supply the
-avatar when the browser reaches a same-platform login wall. A different rendered
-profile or an external redirect does not use that raw fallback. Existing login
-and access requirements still apply; no authentication is performed.
-
-Both image commands print a plain URL followed by a newline. With `--json`,
-they return the extraction metadata above (without `format` or `content`) plus:
-
-```ts
-{
-  vendor?: string;       // Present only for profile-picture
-  image: {
-    url: string;        // Final image URL after redirects
-    width: number | null;
-    height: number | null;
-    scalable: boolean;
-    resolutionVerified: boolean;
-    contentType: string | null;
-    source: string;     // e.g. icon, manifest, fallback, profile-json, profile-image
-  };
-}
-```
-
-All three commands support `--json`, `--quiet`, `--verbose`, and `--no-color`.
-`--quiet` suppresses successful output while errors remain on stderr. `--verbose`
-reports that storage is disabled. Archiving and scheduling options such as
-`--every`, `--output`, or `--name` are rejected. They exit with 0 on success,
-2 for invalid arguments or unsupported profile platforms, 3 for a failed page
-HTTP request, and 1 when no accessible image is found or Chromium fails.
-JSON errors use the usual `{ "error": "...", "message": "..." }` shape on stderr.
-
-Icon discovery follows the [HTML icon link convention](https://html.spec.whatwg.org/multipage/links.html#rel-icon)
-and [Web App Manifest icons](https://www.w3.org/TR/appmanifest/#icons-member).
-
-### `fetchary add`
-
-Add a URL to fetchary.
-
-```bash
-fetchary add <url> [--name <name>] [--tag <tag>] [--every <interval>] [--mode <browser|http>] [--wait-after-load <duration>] [--include-selector <css> ...] [--ignore-selector <css> ...]
-```
-
-Example:
-
-```bash
-fetchary add https://example.com/news
-```
-
-fetchary immediately performs the first fetch and stores the initial version.
-HTML sources use browser mode by default. Clearly non-HTML responses such as
-JSON, XML, images, or archives automatically use HTTP-only capture semantics.
-
-YouTube pages automatically reject optional cookies in English and German
-consent dialogs when using browser mode, including redirects through
-`consent.youtube.com` and short `youtu.be` links:
-
-```bash
-fetchary add https://www.youtube.com/@YouTube --name "YouTube channel"
-```
-
-Instagram pages automatically decline optional cookies and close dismissible
-login dialogs in English and German when using browser mode:
-
-```bash
-fetchary add https://www.instagram.com/instagram/ --name "Instagram profile"
-```
-
-Login requirements still apply when Instagram does not offer a dismiss control.
-
-TikTok and Twitch pages also decline optional cookies and close recognized,
-dismissible login dialogs in English and German:
-
-```bash
-fetchary add https://www.tiktok.com/@tiktok --name "TikTok profile"
-fetchary add https://www.twitch.tv/twitch --name "Twitch channel"
-```
-
-Both vendors are registered automatically. Use `fetchary vendor tiktok disable`
-or `fetchary vendor twitch disable` to turn off their actions. TikTok consent
-controls in open shadow DOM are supported. CAPTCHA prompts and content gates
-remain part of the captured page.
-
-LinkedIn pages reject optional cookies and close recognized, dismissible sign-in
-dialogs. The vendor is registered automatically and can be disabled with
-`fetchary vendor linkedin disable`.
-
-```bash
-fetchary add https://www.linkedin.com/company/linkedin/ --name "LinkedIn company"
-```
-
-Public personal, company, school, and showcase pages can supply follower counts
-to `fetchary follower`. Connections and post reactions are excluded. Full login
-walls and verification pages remain in the capture; counts are unavailable when
-neither the rendered page nor the archived HTTP response exposes the profile.
-If Chromium reaches an authentication wall but the HTTP response in the same
-capture contains the public profile, its follower count is used. Both archived
-files are preserved and no additional request is made.
-
-Optional metadata:
-
-```bash
-fetchary add https://example.com/news --name "Example News"
-```
-
-Add a tag:
-
-```bash
-fetchary add https://example.com/news --tag research
-```
-
-Combine options:
-
-```bash
-fetchary add https://example.com/news \
-  --name "Example News" \
-  --tag research
-```
-
-Ignore one or more dynamic elements during comparison:
-
-```bash
-fetchary add https://github.com/owner/repo \
-  --ignore-selector "relative-time" \
-  --ignore-selector ".timestamp" \
-  --ignore-selector "[data-updated]"
-```
-
-Compare only selected sections and optionally ignore elements within them:
-
-```bash
-fetchary add https://example.com/news \
-  --include-selector "#main" \
-  --include-selector ".sidebar-news" \
-  --ignore-selector ".timestamp"
-```
-
-`--include-selector` and `--ignore-selector` are repeatable. Selectors are trimmed, deduplicated, and
-validated immediately. A valid selector that currently matches no element is
-accepted.
-
-Each include selector uses `querySelector` on the original DOM to select only
-its first matching element and that element's descendants. With multiple include
-selectors, selected sections are compared in page order. Overlapping selections
-are compared once. Ignore selectors then remove matching elements; an ignored
-selected element or ancestor
-also excludes that section. Without include selectors, the whole page is compared.
-If include selectors match nothing, the comparison is empty. A selected section
-appearing or disappearing therefore counts as a content change when its text changes.
-
-Example output:
-
-```text
-✓ Added #12 https://example.com/news
-✓ Saved version 1
-```
-
-#### Options
-
-```text
---name <name>       Human-readable name
---tag <tag>         Assign a tag
---every <interval>  Schedule recurring fetches, for example 15m, 2h, or 3d
---mode <mode>       browser (default) or http
---wait-after-load <duration>
-                    Browser post-load wait, for example 500ms, 5s, or 10s
---include-selector <css>
-                    Compare the first matching element and its descendants; repeatable
---ignore-selector <css>
-                    Ignore matching elements during comparison; repeatable
-```
-
-Add a URL and schedule checks every 30 minutes:
-
-```bash
-fetchary add https://example.com/news --every 30m
-```
-
-The initial fetch happens immediately. Recurring checks require a running
-`fetchary run` process; `--every` saves the schedule without starting the runner.
-
----
-
-### `fetchary list`
-
-List all monitored URLs.
-
-```bash
-fetchary list
-```
-
-Example output:
-
-```text
-ID   NAME           TAG        URL                         VERSION   LAST CHECK   LAST CHANGE
-1    Example News   research   https://example.com/news    7         2 min ago    3 days ago
-2    Press          -          https://example.org/press   3         2 min ago    17 min ago
-```
-
-`VERSION` is the latest archived version for the source.
-In supported interactive terminals, URLs are clickable. Redirected output,
-`--json`, and `--no-color` do not contain hyperlink control sequences.
-
-Filter by tag:
-
-```bash
-fetchary list --tag research
-```
-
-Return machine-readable output:
-
-```bash
-fetchary list --json
-```
-
-JSON source objects include `captureMode`, `waitAfterLoadMs`, and the current
-raw, rendered, and comparison hashes.
-
----
-
-### `fetchary vendors`
-
-List all persisted vendors and their activation state:
-
-```bash
-fetchary vendors
-fetchary vendors --json
-```
-
-The table has `VENDOR` and `ACTIVE` columns. JSON records contain `name` and a
-boolean `active`. At startup, Fetchary discovers modules in `src/vendors/` and
-inserts new vendors as active while preserving existing settings.
-
-### `fetchary vendor`
-
-Enable or disable a vendor for all sources in the selected data directory:
-
-```bash
-fetchary vendor instagram disable
-fetchary vendor instagram enable
-fetchary vendor youtube disable --json
-```
-
-Disabled vendors skip browser preparation and overlay actions. Ordinary
-capturing continues. The setting persists across restarts and is read on the
-next browser capture, including by an already running scheduler.
-
----
-
-### `fetchary fetch`
-
-Fetch monitored URLs and check for changes.
-
-Fetch all active URLs:
-
-```bash
-fetchary fetch
-```
-
-Fetch one URL:
-
-```bash
-fetchary fetch 12
-```
-
-Fetch multiple URLs:
-
-```bash
-fetchary fetch 12 14 18
-```
-
-Example output:
-
-```text
-Fetching now
-  ◉ #12 Example News
-    ↳ https://example.com/news [browser]
-  ◉ #14 Press Release
-    ↳ https://example.org/press [browser]
-  ◉ #18 Company Page
-    ↳ https://example.net/company [http]
-
-Results
-
-ID  NAME           CHANGE
-12  Example News   unchanged
-14  Press Release  content changed → version 7
-18  Company Page   raw changed, content unchanged → version 4
-
-1 content changed, 1 raw only, 1 unchanged
-```
-
-The results table shows `ID`, `NAME`, and `CHANGE`. Sources without a name use
-`-` in the `NAME` column.
-
-In an interactive terminal Fetchary renders this as an in-place progress bar,
-including the current page and completed/total count. Redirected output uses the
-log-friendly `◉` entries shown above. Progress is suppressed by `--json` and
-`--quiet`.
-
-`content changed` means the normalized comparison DOM differs. `raw changed, content unchanged`
-means that the exact HTML bytes changed—for example because of a rotating CSRF
-token or script nonce—while the text shown by the page stayed the same. Both are
-archived as exact versions. A rendered DOM can also change while the raw
-application shell stays identical; that case creates a new version too.
-
----
-
-### `fetchary status`
-
-Show a short overview of the local fetchary installation.
-
-```bash
-fetchary status
-```
-
-Example:
-
-```text
-fetchary 👁️
-
-Sources:        27
-Versions:       143
-Fetch storage:  18.4 MB
-Changed today:  4
-Last fetch:     8 min ago
-Database:       ~/.fetchary/fetchary.sqlite
-```
-
-`Fetch storage` is the total byte size of all archived response bodies and rendered DOMs,
-including archives retained for removed sources. With `--json`, the exact value
-is returned as `fetchBytes`.
-
----
-
-### `fetchary show`
-
-Show detailed information about a monitored URL.
-
-```bash
-fetchary show <id> [--json]
-```
-
-In supported interactive terminals, the displayed URL is clickable.
-
-Example:
-
-```bash
-fetchary show 12
-```
-
-Output:
-
-```text
-ID:             12
-Name:           Example News
-URL:            https://example.com/news
-Capture mode:   browser
-Wait after load: 5s
-Created:        2026-08-30 14:22
-Last checked:   2026-08-31 11:42
-Last changed:   2026-08-29 09:14
-Versions:       8
-Raw hash:       89fa21...
-Rendered hash:  71ab42...
-Comparison hash: 52b14c...
-Include selectors: main
-Ignore selectors: relative-time, .timestamp
-```
-
----
-
-### `fetchary follower`
-
-Print a single vendor profile's latest archived follower count, or list all
-available counts with a sum. Without an ID, `--tag` filters the list and its sum.
-
-```bash
-fetchary follower [id] [--tag <tag>] [--json]
-```
-
-With an ID, output is only the number:
-
-```bash
-fetchary follower 3
-# 65
-```
-
-Without an ID:
-
-```bash
-fetchary follower
-fetchary follower --tag personal
-```
-
-Example output:
-
-```text
-ID  FOLLOWER  NAME     URL                                    LAST CHECK  LAST CHANGE
-5   65        github   https://github.com/oliverjessner        1 min ago   1 min ago
-6   1473      threads  https://www.threads.com/@oliverjessner  1 min ago   1 min ago
-9   1711      youtube  https://youtube.com/@oliverjessner     1 min ago   1 min ago
-------
-sum: 3.249
-```
-
-Supported vendors are GitHub, Threads, X, Instagram, TikTok, Twitch, LinkedIn, and
-YouTube; YouTube returns subscribers. `NAME` uses the source's name, or the
-vendor name if none was set. `LAST CHECK` and `LAST CHANGE` are the source's
-capture and content-change timestamps, as in `list`. URLs are clickable in
-supported terminals.
-
-The list omits removed sources, unsupported sources, and captures without an
-available count. Sources disabled for fetching and disabled vendor integrations
-still contribute their saved counts. Zero counts are included. Empty lists
-print `No follower counts available.` and `sum: 0`. `--tag` applies to lists
-only and cannot be combined with an ID.
-
-With an ID, `--json` returns a number. For lists, it returns
-`{ "followers": [...], "sum": 3249 }`; each row contains `id`, `follower`,
-`name`, `url`, `lastCheckedAt`, and `lastChangedAt`. JSON numbers are unformatted;
-the terminal sum uses dots as thousands separators.
-
-Exact embedded profile statistics and tooltips take priority over rounded
-counts. If only `1.5K` is available, the output is `1500` with the precision of
-the captured page.
-
-This command reads the newest rendered archive, falling back to raw HTML for
-HTTP-only captures. LinkedIn can also fall back to the HTTP profile response
-from the same capture when its rendered page has no count. It does not fetch
-or modify captured evidence; use
-`fetchary fetch 5` to update the capture first. Ignore selectors and vendor
-activation do not filter archive reads. For a single ID, unsupported sources
-exit with code 2; missing or hidden counts exit with code 1 and no number on
-stdout. Archive read errors still fail the list instead of silently changing
-its total.
-
----
-
-### `fetchary history`
-
-Show all archived versions of a URL.
-
-```bash
-fetchary history <id> [--content-change] [--json]
-```
-
-Example:
-
-```bash
-fetchary history 12
-```
-
-Output:
-
-```text
-VERSION   CHANGE    FETCHED               STATUS   SIZE
-8         content   2026-08-31 11:42      200      94 KB
-7         raw only  2026-08-29 09:14      200      93 KB
-6         rendered only 2026-08-28 10:00   200      93 KB
-5         content   2026-08-25 16:31      200      92 KB
-```
-
-The first archived response is marked `initial`. Later versions are classified
-as `content` when the comparison DOM changed, `raw only` when only the response
-changed, or `rendered only` when JavaScript changed the DOM without changing the
-response. Classification always uses the source's current include and ignore selectors,
-including for older versions. In terminal output, HTTP status `200` is shown in green.
-
-Machine-readable output:
-
-```bash
-fetchary history 12 --json
-```
-
-Show only versions whose comparison content changed from the immediately
-preceding archived version:
-
-```bash
-fetchary history 4 --content-change
-fetchary history 4 --content-change --json
-```
-
-The filter uses the source's current include and ignore selectors. It excludes
-the initial capture and changes confined to raw HTML or rendered markup. Versions
-keep their original numbers and appear newest first. With no matching versions,
-the console prints `No content changes.` and JSON output is `[]`.
-
----
-
-### `fetchary diff`
-
-Compare archived versions.
-
-By default, fetchary compares the latest version with the previous version.
-
-```bash
-fetchary diff <id> [from to] [--include-selector <css> ...] [--element-content|--element-raw|--raw] [--html]
-```
-
-Example:
-
-```bash
-fetchary diff 12
-```
-
-Compare two specific versions:
-
-```bash
-fetchary diff 12 6 8
-```
-
-Example output:
-
-```diff
-- Geschäftsführer: Max Mustermann
-+ Geschäftsführer: Erika Musterfrau
-
-- Stand: August 2026
-+ Stand: September 2026
-```
-
-Optional output modes:
-
-```bash
-fetchary diff 12 --html
-fetchary diff 12 --element-content
-fetchary diff 12 --element-raw
-fetchary diff 12 --raw
-```
-
-Limit console output to selected elements for this invocation:
-
-```bash
-fetchary diff 12 --include-selector "#main"
-fetchary diff 12 6 8 --include-selector "#main" --element-content
-fetchary diff 12 --include-selector "#main" --element-raw
-fetchary diff 12 --include-selector "main" --include-selector ".sidebar-news"
-```
-
-`--include-selector` is repeatable and replaces the source's stored include
-selection only for this diff. Each selector selects only its first match. It
-applies to console, JSON, and HTML output and does not change monitoring settings.
-If neither version contains a match, no
-differences are shown.
-
-Normal diffs use `rendered.html` when available and gracefully fall back to the
-historical raw response. The default text diff selects elements matching the
-source's current include selectors, then removes elements matching its ignore
-selectors before applying normal text extraction. `--element-content` shows
-each changed text fragment together with its nearest useful HTML element and
-also applies the include selection and stored ignore selectors. `--element-raw`
-groups raw changes by HTML element, includes tag and attribute changes, and
-ignores stored comparison selectors. An explicit `--include-selector` limits
-element-raw output to those elements, including their attributes and ignored
-descendants. `--raw` always compares exact HTTP responses and cannot be combined
-with `--include-selector`; use `--element-raw` to inspect selected HTML elements.
-
-`--html` may generate or open a rendered HTML diff.
-
-In terminal output, removed lines are red and added lines are blue. Colors are
-disabled automatically when output is redirected and can be disabled explicitly
-with `--no-color` or the `NO_COLOR` environment variable.
-
----
-
-### `fetchary open`
-
-Open an archived HTML version in the default browser, or print selected content
-or inspect external and social media links.
-
-Open the latest version:
-
-```bash
-fetchary open <id> [version] [--show-include-selector|--show-external|--show-social-media] [--html] [--raw]
-```
-
-Example:
-
-```bash
-fetchary open 12
-```
-
-Open a specific version:
-
-```bash
-fetchary open 12 4 --html
-fetchary open 12 4 --raw
-```
-
-Browser captures open `rendered.html` by default; historical and HTTP-only
-versions fall back to `response.html`. Use `--raw` to explicitly open the exact
-HTTP response. Without `--html`, fetchary opens the selected artifact in the
-system's default application. With `--html`, it opens that artifact in the
-standard editor. Fetchary uses `$VISUAL`, then `$EDITOR`, followed by the
-platform editor fallback. No variant requests the live website again.
-
-Print only content matching the source's stored include selectors to the console:
-
-```bash
-fetchary open 16 --show-include-selector
-fetchary open 16 4 --show-include-selector
-fetchary open 16 --show-include-selector --html
-fetchary open 16 --show-include-selector --raw
-```
-
-`--show-include-selector` prints text by default. With `--html`, it prints the
-matching HTML elements and their descendants. Both variants write directly to
-the console. `--raw` selects the archived HTTP response; otherwise the rendered
-capture is used when available. The current include selectors apply even when
-viewing an older version. Each selector selects only its first matching element.
-Selected sections are shown in page order, with overlapping selections included
-once. Stored ignore selectors do not hide any content in this view.
-
-If no include selectors are configured, the command reports an error with an
-`edit --include-selector` example. If the selectors match nothing in the selected
-archive, the output is empty. `--json` returns `sourceId`, `version`,
-`includeSelectors`, and `content`. Viewing content does not change source settings
-or archived files.
-
-Print external link URLs from an archived page:
-
-```bash
-fetchary open 16 --show-external
-fetchary open 16 4 --show-external
-fetchary open 16 --show-external --raw
-fetchary open 16 --show-external --json
-```
-
-`--show-external` lists HTTP(S) URLs from links (`a[href]` and `area[href]`) whose
-hostname differs from the archived page's hostname. Subdomains count as different
-hosts; changes to the protocol or port alone do not. Relative and protocol-relative
-links are resolved using the selected capture's final URL and the first
-`<base href>`, when valid. The captured URL is used even if the source URL has
-since been edited. Email, telephone, JavaScript, and other non-HTTP(S) links are
-excluded, along with invalid or empty URLs.
-
-Each URL is printed once, in page order, one per line. The whole archive is read;
-stored include and ignore selectors do not limit this list. The command uses
-rendered HTML when available; `--raw` reads the archived HTTP response. If a
-rendered file is unavailable, both the HTML and its URL fall back to the raw
-capture. No browser or editor is launched, and no live website is requested.
-
-When there are no external links, the console output is empty. `--json` returns
-`sourceId`, `version`, and a `urls` array, which is empty when no links qualify.
-`--quiet` suppresses normal output. `--show-external` cannot be combined with
-`--show-include-selector`, `--show-social-media`, or `--html`.
-
-Check for links to social media platforms:
-
-```bash
-fetchary open 16 --show-social-media
-fetchary open 16 4 --show-social-media
-fetchary open 16 --show-social-media --raw
-fetchary open 16 --show-social-media --json
-```
-
-The output checks all eight platforms, in the following order, and lists the
-matching external link URLs:
-
-| Platform | Recognized domains, including subdomains |
+Their default capture strategy is now `auto`. The old monitoring, stored-source,
+scheduler, archive, and vendor-activation commands are removed. Existing user
+directories are neither read nor deleted.
+
+| Code | Meaning |
 | --- | --- |
-| Facebook | `facebook.com` |
-| X | `x.com`, `twitter.com` |
-| YouTube | `youtube.com`, `youtu.be` |
-| Instagram | `instagram.com` |
-| Vimeo | `vimeo.com` |
-| TikTok | `tiktok.com` |
-| Reddit | `reddit.com` |
-| LinkedIn | `linkedin.com` |
-
-Console output has `PLATFORM`, `FOUND`, and `URL` columns. A platform with links
-shows `yes` and one row per unique URL. A platform without matching links shows
-`no` and `-`, so all eight checks remain visible even when no social links are
-found. Hostnames are matched exactly or as subdomains; platform names in link
-text, URL paths, or unrelated hostnames do not count.
-
-This view uses the same archived external hyperlinks, URL resolution, rendered
-capture selection, and `--raw` fallback as `--show-external`. Stored comparison
-selectors do not limit the checks. Internal links on the selected capture's own
-host are excluded. It does not fetch the live page or open another application.
-
-`--json` returns `sourceId`, `version`, and a `socialMedia` array. Each entry has
-`platform`, `found`, and `urls`; missing platforms have `found: false` and an
-empty `urls` array. `--quiet` suppresses normal output. `--show-social-media`
-cannot be combined with `--show-external`, `--show-include-selector`, or `--html`.
-
----
-
-### `fetchary edit`
-
-Edit metadata for a monitored URL.
-
-Change the name:
-
-```bash
-fetchary edit 12 --name "Tesla Press"
-```
-
-Assign or change a tag:
-
-```bash
-fetchary edit 12 --tag automotive
-```
-
-Change the monitored URL:
-
-```bash
-fetchary edit 12 --url https://example.com/new-url
-```
-
-Change capture behavior:
-
-```bash
-fetchary edit 12 --mode http
-fetchary edit 12 --mode browser --wait-after-load 8s
-```
-
-Replace all include selectors:
-
-```bash
-fetchary edit 12 --include-selector "main" --include-selector "article"
-```
-
-Clear all include selectors to compare the whole page again:
-
-```bash
-fetchary edit 12 --clear-include-selectors
-```
-
-Supplying `--include-selector` to `edit` replaces the complete list. It cannot be
-combined with `--clear-include-selectors`. Existing ignore selectors still apply
-after include selectors are cleared.
-
-Replace all ignore selectors:
-
-```bash
-fetchary edit 12 \
-  --ignore-selector "relative-time" \
-  --ignore-selector ".timestamp"
-```
-
-Clear all ignore selectors:
-
-```bash
-fetchary edit 12 --clear-ignore-selectors
-```
-
-Supplying `--ignore-selector` to `edit` replaces the complete list; it does not
-append to the stored list. It cannot be combined with
-`--clear-ignore-selectors`.
-
-Include and ignore selectors affect comparison only. Raw responses and rendered DOMs remain
-unmodified and retain independent SHA-256 evidence hashes.
-
----
-
-### `fetchary disable`
-
-Temporarily stop monitoring a URL without deleting it or its archive.
-
-```bash
-fetchary disable <id>
-```
-
-Example:
-
-```bash
-fetchary disable 12
-```
-
-Disabled URLs are skipped by:
-
-```bash
-fetchary fetch
-```
-
----
-
-### `fetchary enable`
-
-Re-enable a disabled URL.
-
-```bash
-fetchary enable <id>
-```
-
-Example:
-
-```bash
-fetchary enable 12
-```
-
----
-
-### `fetchary remove`
-
-Remove a URL from active monitoring.
-
-```bash
-fetchary remove <id>
-```
-
-Example:
-
-```bash
-fetchary remove 12
-```
-
-By default, archived versions are kept.
-
-Example output:
-
-```text
-✓ Removed #12 from monitoring
-  8 archived versions kept
-```
-
-Delete the URL and all archived versions:
-
-```bash
-fetchary remove 12 --purge
-```
-
-`--purge` is destructive.
-
----
-
-### `fetchary export`
-
-Export a monitored source and its archived versions.
-
-```bash
-fetchary export <id>
-```
-
-Example:
-
-```bash
-fetchary export 12
-```
-
-Example export structure:
-
-```text
-fetchary-export-12/
-├── metadata.json
-├── versions/
-│   ├── 001-response.html
-│   ├── 001-rendered.html
-│   ├── 002-response.html
-│   └── 002-rendered.html
-└── hashes.txt
-```
-
-Specify an output directory:
-
-```bash
-fetchary export 12 --output ./research
-```
-
-The export should contain enough metadata to independently verify archived versions.
-
----
-
-### `fetchary schedule`
-
-Create, update, or re-enable a recurring fetch schedule for an existing source.
-
-```bash
-fetchary schedule <id> <interval> [--now]
-```
-
-Intervals use a positive whole number followed by `m` (minutes), `h` (hours), or
-`d` (days). The minimum interval is `1m`; examples include `15m`, `2h`, and `3d`.
-
-```bash
-fetchary schedule 12 15m
-```
-
-The next check is due one interval after scheduling. Use `--now` to fetch the
-source immediately before saving the schedule:
-
-```bash
-fetchary schedule 12 15m --now
-```
-
-#### Options
-
-```text
---now           Fetch immediately, then schedule the next check after the interval
---json          Return the saved schedule as JSON
-```
-
-Schedules persist in SQLite. Recurring checks run only while `fetchary run` is
-active for the same data directory. Scheduling a source does not start a background
-process, and disabled sources are skipped by the runner.
-
----
-
-### `fetchary unschedule`
-
-Disable a source's recurring schedule while keeping the source and its archive.
-Manual fetches remain available.
-
-```bash
-fetchary unschedule <id>
-```
-
-Example:
-
-```bash
-fetchary unschedule 12
-```
-
-Use `fetchary schedule` to re-enable the schedule.
-
----
-
-### `fetchary schedules`
-
-List active schedules with their source ID, interval, last run, and next run.
-
-```bash
-fetchary schedules [--json]
-```
-
-Return machine-readable output:
-
-```bash
-fetchary schedules --json
-```
-
----
-
-### `fetchary run`
-
-Run the scheduler in the foreground to fetch sources when their schedules are due.
-
-```bash
-fetchary run [--poll-interval <milliseconds>]
-```
-
-#### Options
-
-```text
---poll-interval <milliseconds>  How often to check for due schedules (default: 1000, minimum: 10)
-```
-
-The polling interval controls how often the runner checks for work; each source's
-schedule determines how often it is fetched. At startup, the command prints each
-scheduled page and its fetch interval. Schedules belonging to disabled sources are
-shown as disabled and are not fetched until the source is enabled again.
-
-```bash
-fetchary schedule 12 15m
-fetchary run --poll-interval 2000
-```
-
-Stop with `Ctrl+C` or `SIGTERM`. Only one runner may manage a data directory at a
-time. Fetch failures do not stop the runner; the source is retried at its next
-scheduled check. Due schedules are checked when the runner starts again.
-
-## Global options
-
-The following options should work where applicable:
-
-```text
---json             Return machine-readable JSON
---quiet            Suppress normal output
---verbose          Show additional diagnostic information
---no-color         Disable colored terminal output
---help             Show help
---example          Show common examples
---version          Show fetchary version
---data-dir <path>  Override the storage directory
-```
-
-`FETCHARY_DATA_DIR` also selects the storage directory; `--data-dir` takes
-precedence. Use the same directory when creating schedules and running the scheduler.
-
-Human-readable terminal output uses green for successful actions, yellow for
-changes and disabled states, red for errors and destructive removals, blue for
-new values, cyan for URLs and paths, and gray for unchanged or secondary details.
-Color is never added to JSON or redirected output.
-
-Examples:
-
-```bash
-fetchary list --json
-```
-
-```bash
-fetchary fetch --quiet
-```
-
-```bash
-fetchary fetch 12 --verbose
-```
-
-## Exit codes
-
-fetchary uses exit codes so it can be used with shell scripts, cron jobs, CI jobs, and other automation.
-
-```text
-0    Command completed successfully, no visible content changes detected
-1    General error
-2    Invalid arguments
-3    Fetch failed
-10   At least one monitored page had a visible content change
-```
-
-Example:
-
-```bash
-fetchary fetch
-
-if [ $? -eq 10 ]; then
-  echo "At least one page had a visible content change"
-fi
-```
-
-## Storage
-
-fetchary stores all data locally by default.
-
-```text
-~/.fetchary/
-├── fetchary.sqlite
-└── pages/
-    ├── 1/
-    ├── 2/
-    └── 3/
-```
-
-Each monitored URL gets its own directory.
-
-Each archived version gets its own subdirectory:
-
-```text
-~/.fetchary/pages/12/8/
-├── response.html
-├── rendered.html
-└── metadata.json
-```
-
-Example `metadata.json`:
-
-```json
-{
-    "url": "https://example.com/news",
-    "finalUrl": "https://example.com/news",
-    "browserFinalUrl": "https://example.com/news",
-    "fetchedAt": "2026-08-31T11:42:16+02:00",
-    "status": 200,
-    "contentType": "text/html",
-    "contentLength": 96256,
-    "capture": {
-        "mode": "browser",
-        "engine": "chromium",
-        "waitUntil": "load",
-        "waitAfterLoadMs": 5000
-    },
-    "rawSha256": "89fa21...",
-    "renderedSha256": "71ab42...",
-    "comparisonSha256": "52b14c...",
-    "etag": "\"abc123\"",
-    "lastModified": "Mon, 31 Aug 2026 08:12:00 GMT"
-}
-```
-
-## Data model
-
-fetchary uses SQLite for metadata and indexing.
-
-Metadata includes sources, versions, schedules, and vendor activation.
-
-### `urls`
-
-```sql
-CREATE TABLE urls (
-    id INTEGER PRIMARY KEY,
-    url TEXT NOT NULL UNIQUE,
-    name TEXT,
-    tag TEXT,
-    enabled INTEGER NOT NULL DEFAULT 1,
-    created_at TEXT NOT NULL,
-    last_checked_at TEXT,
-    last_changed_at TEXT,
-    current_hash TEXT,
-    current_raw_hash TEXT,
-    current_rendered_hash TEXT,
-    current_comparison_hash TEXT,
-    capture_mode TEXT NOT NULL DEFAULT 'browser',
-    wait_after_load_ms INTEGER NOT NULL DEFAULT 5000,
-    current_version_id INTEGER
-);
-```
-
-### `versions`
-
-```sql
-CREATE TABLE versions (
-    id INTEGER PRIMARY KEY,
-    url_id INTEGER NOT NULL,
-    fetched_at TEXT NOT NULL,
-    status_code INTEGER NOT NULL,
-    final_url TEXT NOT NULL,
-    content_type TEXT,
-    content_length INTEGER NOT NULL,
-    hash TEXT NOT NULL,
-    file TEXT NOT NULL,
-    raw_hash TEXT,
-    rendered_hash TEXT,
-    comparison_hash TEXT,
-    rendered_file TEXT,
-    capture_mode TEXT NOT NULL DEFAULT 'http',
-    browser_final_url TEXT,
-    etag TEXT,
-    last_modified TEXT,
-    FOREIGN KEY (url_id) REFERENCES urls(id)
-);
-```
-
-The raw HTTP body and rendered DOM are stored on disk rather than inside SQLite.
-
-### `vendors`
-
-```sql
-CREATE TABLE vendors (
-    name TEXT PRIMARY KEY NOT NULL,
-    active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1))
-);
-```
-
-SQLite stores the activation boolean as `0` or `1`; the library and CLI JSON
-expose it as `false` or `true`.
-
-## Change detection
-
-fetchary keeps three hashes: the exact HTTP response, the exact rendered DOM,
-and the normalized comparison DOM after include and ignore selectors. A version is archived
-when the raw or rendered hash changes; `last_changed_at` changes only when the
-comparison hash changes.
-
-Simplified logic:
-
-```text
-URL
-├── HTTP fetch → response.html → raw SHA-256
-└── Chromium → load → post-load wait → rendered.html → rendered SHA-256
-                                              └── temporary comparison DOM
-                                                   → comparison SHA-256
-```
-
-The original HTTP response body is archived without DOM cleanup, normalization,
-or rendering. Comparison selectors never modify either archived artifact.
-
-This preserves the fetched source as closely as possible.
-
-## HTTP metadata
-
-For every archived version, fetchary should retain relevant HTTP information where available:
-
-```text
-Requested URL
-Final URL after redirects
-Fetched timestamp
-HTTP status code
-Content-Type
-Content-Length
-ETag
-Last-Modified
-SHA-256
-```
-
-Response headers may optionally be stored separately:
-
-```text
-headers.json
-```
-
-## MVP
-
-The first usable fetchary release only needs:
-
-```text
-fetchary add <url>
-fetchary list
-fetchary fetch [id...]
-fetchary show <id>
-fetchary history <id>
-fetchary diff <id>
-fetchary remove <id>
-```
-
-Everything else can be added later.
-
-## Non-goals
-
-Chromium is used only for deterministic DOM capture. fetchary is not:
-
-```text
-Screenshots
-a crawler
-a full browser automation framework
-a scraping framework
-a screenshot service
-an authenticated-session manager
-```
-
-## Example workflow
-
-Add a company imprint:
-
-```bash
-fetchary add https://example.com/impressum \
-  --name "Example GmbH Impressum" \
-  --tag investigation
-```
-
-Run checks:
-
-```bash
-fetchary fetch
-```
-
-Inspect the source:
-
-```bash
-fetchary show 1
-```
-
-View its archive:
-
-```bash
-fetchary history 1
-```
-
-Compare the latest changes:
-
-```bash
-fetchary diff 1
-```
-
-Open the archived response:
-
-```bash
-fetchary open 1
-```
-
-Export the evidence:
-
-```bash
-fetchary export 1 --output ./research
-```
-
-## Philosophy
-
-fetchary should remain small and predictable.
-
-It is not a crawler, scraping framework, browser automation platform, or monitoring SaaS.
-
-It does one thing:
-
-**Watch changes. Keep the proof.**
+| 0 | Successful extraction, including empty matches and explicit insight unavailability |
+| 1 | Unexpected error |
+| 2 | Invalid input, unsupported options, unsafe URL, or unsupported avatar platform |
+| 3 | HTTP, DNS, timeout, or cancellation failure |
+| 4 | Browser launch/navigation/snapshot failure |
+| 5 | No accessible favicon or avatar |
+
+Errors go to stderr. With `--json`, their shape is
+`{ "error": "Fetchary…Error", "message": "…" }`. There is no change-detection
+exit code. Historical application data requires no migration for extraction.
