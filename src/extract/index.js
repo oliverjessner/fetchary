@@ -8,7 +8,7 @@ const { parseWaitAfterLoad, validateSelectors } = require('../utils/options');
 const { selectHtml, selectText, htmlToText } = require('../utils/html');
 const { classifyUrl, sameEntity, domains } = require('../utils/social');
 const { discoverVendors } = require('../vendors');
-const { FetcharyValidationError, FetcharyNotFoundError, FetcharyFetchError } = require('../errors');
+const { FetcharyValidationError, FetcharyNotFoundError, FetcharyFetchError, FetcharyBrowserError } = require('../errors');
 const { httpUrl, documentBase, readResource, selectImage } = require('./images');
 const { imageLinks } = require('./image-links');
 const { socialLinks } = require('./social-links');
@@ -19,8 +19,11 @@ const types = ['text','html','favicon','images','avatar','selector','social-link
 
 function extractionOptions(options = {}) {
   if (!options || typeof options !== 'object' || Array.isArray(options)) throw new FetcharyValidationError('options must be an object');
+  for (const name of ['method','body','followRedirects','getVendors']) if (Object.hasOwn(options, name)) throw new FetcharyValidationError(`${name} is not an extraction option`);
   const settings = {
-    ...options, timeout: options.timeout ?? 30_000, userAgent: options.userAgent ?? 'fetchary/2.0',
+    fetch: options.fetch, launchBrowser: options.launchBrowser, headers: options.headers, signal: options.signal,
+    lookup: options.lookup, allowPrivateNetwork: options.allowPrivateNetwork,
+    timeout: options.timeout ?? 30_000, userAgent: options.userAgent ?? 'fetchary/2.0',
     browserUserAgent: options.userAgent ?? 'fetchary/2.0', mode: options.mode ?? 'auto',
     waitAfterLoadMs: parseWaitAfterLoad(options.waitAfterLoad), maxResponseBytes: options.maxResponseBytes ?? 10 * 1024 * 1024,
     cacheTtlMs: validateCacheTtl(options.cacheTtlMs), captureCache: options[clientCache],
@@ -30,7 +33,7 @@ function extractionOptions(options = {}) {
   if (!Number.isFinite(settings.timeout) || settings.timeout <= 0) throw new FetcharyValidationError('timeout must be greater than zero');
   if (!Number.isSafeInteger(settings.maxResponseBytes) || settings.maxResponseBytes < 1) throw new FetcharyValidationError('maxResponseBytes must be a positive safe integer');
   if (typeof settings.userAgent !== 'string' || !settings.userAgent.trim()) throw new FetcharyValidationError('userAgent must be a non-empty string');
-  for (const name of ['allowPrivateNetwork','unique','includeMetadata','all']) if (settings[name] !== undefined && typeof settings[name] !== 'boolean') throw new FetcharyValidationError(`${name} must be a boolean`);
+  for (const name of ['allowPrivateNetwork','unique','includeMetadata','all']) if (options[name] !== undefined && typeof options[name] !== 'boolean') throw new FetcharyValidationError(`${name} must be a boolean`);
   if (settings.signal !== undefined && !(settings.signal instanceof AbortSignal)) throw new FetcharyValidationError('signal must be an AbortSignal');
   try { if (settings.headers !== undefined) settings.headers = Object.fromEntries(new Headers(settings.headers)); } catch (cause) { throw new FetcharyValidationError('invalid request headers', { cause }); }
   return settings;
@@ -70,6 +73,8 @@ function fallbackNeeded(page, result, type) {
 async function withCapture(url, options, type, operation) {
   const requestedUrl = validateUrl(url);
   const settings = extractionOptions(options);
+  settings.headerOrigin = new URL(requestedUrl).origin;
+  settings.scopedHeaderNames = Object.keys(settings.headers || {}).filter(name => name !== 'user-agent');
   const capture = new CaptureManager(settings);
   let page;
   try {
@@ -247,11 +252,11 @@ async function extractSocialInsights(url, options = {}) {
     }
     return { data, vendor: data.platform, followers: data.metrics.followers ?? data.metrics.subscribers };
   }).catch(error => {
-    if (!(error instanceof FetcharyFetchError) || ![401,403,429].includes(error.status)) throw error;
+    if (!(error instanceof FetcharyFetchError || error instanceof FetcharyBrowserError) || ![401,403,429].includes(error.status)) throw error;
     const requestedUrl = validateUrl(url);
     const data = insightBuilder(requestedUrl).finish(error.status === 401 ? 'login_required' : 'blocked');
     return { requestedUrl, finalUrl: requestedUrl, rawFinalUrl: requestedUrl, extractedAt: new Date().toISOString(), capturedAt: null,
-      captureMode: 'http', status: error.status, contentType: null, dismissedOverlays: [], cache: { hit: false, ageMs: 0, ttlMs: validateCacheTtl(options.cacheTtlMs) },
+      captureMode: error instanceof FetcharyBrowserError ? 'browser' : 'http', status: error.status, contentType: null, dismissedOverlays: [], cache: { hit: false, ageMs: 0, ttlMs: validateCacheTtl(options.cacheTtlMs) },
       type: 'social-insights', data, vendor: data.platform, followers: null };
   });
 }

@@ -1,18 +1,11 @@
 # Fetchary CLI
 
-Fetchary — Extract what matters.
-
 The CLI calls the same stateless extraction implementation as the Node.js library.
-It writes extracted results to stdout and errors or requested diagnostics to
-stderr. It never creates a database, saved sources, archives, or schedules.
+It writes extracted results to stdout
 
 ## Installation and usage
 
-Requires Node.js 26 or newer. Puppeteer supplies Chrome for Testing; no separate
-browser installation is required.
-
 ```bash
-npm install --global fetchary
 fetchary --version
 fetchary --help
 fetchary extract <type> <url> [options]
@@ -23,16 +16,16 @@ Running without arguments or with `--help` prints help and exits successfully.
 
 ## Extraction types
 
-| Type | Example | Default output |
-| --- | --- | --- |
-| `text` | `fetchary extract text https://example.com` | Readable text |
-| `html` | `fetchary extract html https://example.com` | HTML |
-| `favicon` | `fetchary extract favicon https://example.com` | Selected image URL |
-| `images` | `fetchary extract images https://example.com` | JSON result |
-| `avatar` | `fetchary extract avatar https://github.com/oliverjessner` | Selected image URL |
-| `selector` | `fetchary extract selector https://example.com --selector h1` | Selected text |
-| `social-links` | `fetchary extract social-links https://example.com` | JSON result |
-| `social-insights` | `fetchary extract social-insights https://www.youtube.com/@YouTube` | JSON result |
+| Type              | Example                                                             | Default output     |
+| ----------------- | ------------------------------------------------------------------- | ------------------ |
+| `text`            | `fetchary extract text https://example.com`                         | Readable text      |
+| `html`            | `fetchary extract html https://example.com`                         | HTML               |
+| `favicon`         | `fetchary extract favicon https://example.com`                      | Selected image URL |
+| `images`          | `fetchary extract images https://example.com`                       | JSON result        |
+| `avatar`          | `fetchary extract avatar https://github.com/oliverjessner`          | Selected image URL |
+| `selector`        | `fetchary extract selector https://example.com --selector h1`       | Selected text      |
+| `social-links`    | `fetchary extract social-links https://example.com`                 | JSON result        |
+| `social-insights` | `fetchary extract social-insights https://www.youtube.com/@YouTube` | JSON result        |
 
 Text and HTML contain exactly the extracted string, with no extra newline or
 status message. Image URLs end with a newline. JSON results are objects with
@@ -166,19 +159,19 @@ See [Social support](SOCIAL_SUPPORT.md) for implemented patterns and fixtures an
 
 ## Shared options
 
-| Option | Behavior |
-| --- | --- |
-| `--json` | Full structured result for any extraction; takes precedence over `--urls-only` |
-| `--mode auto\|http\|browser` | Default `auto`: HTTP first, optional browser fallback |
-| `--timeout <ms>` | Positive milliseconds per request/phase; default 30000 |
-| `--user-agent <text>` | HTTP and browser user agent; default `fetchary/2.0` |
-| `--wait-after-load <duration>` | Browser post-load wait; default `5s`; accepts `500ms`, `5s`, or `0ms` |
-| `--max-response-bytes <bytes>` | Positive safe integer; default 10485760 (10 MiB) |
-| `--allow-private-network` | Explicitly allow trusted local/internal targets |
-| `--quiet` | Suppress successful output, keeping errors on stderr |
-| `--verbose` | Print operation/mode diagnostics on stderr |
-| `--no-color` | Accepted for compatibility; output already has no ANSI colors |
-| `--help`, `--version` | Print help/version without extracting |
+| Option                         | Behavior                                                                       |
+| ------------------------------ | ------------------------------------------------------------------------------ |
+| `--json`                       | Full structured result for any extraction; takes precedence over `--urls-only` |
+| `--mode auto\|http\|browser`   | Default `auto`: HTTP first, optional browser fallback                          |
+| `--timeout <ms>`               | Positive milliseconds per request/phase; default 30000                         |
+| `--user-agent <text>`          | HTTP and browser user agent; default `fetchary/2.0`                            |
+| `--wait-after-load <duration>` | Browser post-load wait; default `5s`; accepts `500ms`, `5s`, or `0ms`          |
+| `--max-response-bytes <bytes>` | Positive safe integer; default 10485760 (10 MiB)                               |
+| `--allow-private-network`      | Explicitly allow trusted local/internal targets                                |
+| `--quiet`                      | Suppress successful output, keeping errors on stderr                           |
+| `--verbose`                    | Print operation/mode diagnostics on stderr                                     |
+| `--no-color`                   | Accepted for compatibility; output already has no ANSI colors                  |
+| `--help`, `--version`          | Print help/version without extracting                                          |
 
 Value options support both `--option value` and `--option=value`. Use `--` to
 end option parsing. Unknown options and operation-specific options used with the
@@ -204,7 +197,9 @@ authentication, CAPTCHA solving, or headless user-agent disguise is performed.
 
 Timeouts, cancellation (library `signal`), response limits, and redirect limits
 also apply to auxiliary requests. Up to ten redirects are followed; cross-origin
-redirects strip Authorization, Cookie, and Proxy-Authorization headers. The
+redirects strip Authorization, Cookie, Proxy-Authorization and caller-supplied
+headers (except the user agent). Caller headers are scoped to the original origin
+for auxiliary/browser requests as well. The
 rendered DOM has the same byte limit; total fetched browser resources are limited
 to four times that limit. Invalid or incomplete captures are not retained.
 
@@ -232,14 +227,14 @@ Their default capture strategy is now `auto`. The old monitoring, stored-source,
 scheduler, archive, and vendor-activation commands are removed. Existing user
 directories are neither read nor deleted.
 
-| Code | Meaning |
-| --- | --- |
-| 0 | Successful extraction, including empty matches and explicit insight unavailability |
-| 1 | Unexpected error |
-| 2 | Invalid input, unsupported options, unsafe URL, or unsupported avatar platform |
-| 3 | HTTP, DNS, timeout, or cancellation failure |
-| 4 | Browser launch/navigation/snapshot failure |
-| 5 | No accessible favicon or avatar |
+| Code | Meaning                                                                            |
+| ---- | ---------------------------------------------------------------------------------- |
+| 0    | Successful extraction, including empty matches and explicit insight unavailability |
+| 1    | Unexpected error                                                                   |
+| 2    | Invalid input, unsupported options, unsafe URL, or unsupported avatar platform     |
+| 3    | HTTP, DNS, timeout, or cancellation failure                                        |
+| 4    | Browser launch/navigation/snapshot failure                                         |
+| 5    | No accessible favicon or avatar                                                    |
 
 Errors go to stderr. With `--json`, their shape is
 `{ "error": "Fetchary…Error", "message": "…" }`. There is no change-detection

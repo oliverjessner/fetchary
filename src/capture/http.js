@@ -84,6 +84,9 @@ async function readResource(url, options, maxBytes = options.maxResponseBytes) {
   let response;
   try {
     let headers = new Headers(options.headers);
+    if (options.headerOrigin && new URL(url).origin !== options.headerOrigin) {
+      for (const name of options.scopedHeaderNames || []) headers.delete(name);
+    }
     headers.set('user-agent', options.userAgent);
     headers.set('accept-encoding', 'identity');
     let target = url;
@@ -101,7 +104,7 @@ async function readResource(url, options, maxBytes = options.maxResponseBytes) {
       if (options.followRedirects !== false && [301,302,303,307,308].includes(response.status) && location) {
         const next = new URL(location, checked.url);
         if (next.origin !== checked.url.origin) {
-          for (const name of ['authorization','cookie','proxy-authorization']) headers.delete(name);
+          for (const name of new Set(['authorization','cookie','proxy-authorization', ...(options.scopedHeaderNames || [])])) headers.delete(name);
         }
         if (response.status === 303 || ([301,302].includes(response.status) && method === 'POST')) { method = 'GET'; body = undefined; }
         response.close?.(); await response.body?.cancel?.().catch(() => {});

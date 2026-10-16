@@ -148,3 +148,41 @@ test('DNS and custom browser launch timeouts are bounded and typed',async()=>{
   await assert.rejects(api.extractText('https://public.example.test/',{timeout:20,lookup:()=>new Promise(()=>{})}),api.FetcharyFetchError);
   await assert.rejects(api.extractText('https://public.example.test/',{mode:'browser',timeout:20,waitAfterLoad:0,lookup:publicLookup,fetch:async()=>new Response('<html></html>',{headers:{'content-type':'text/html'}}),launchBrowser:()=>new Promise(()=>{})}),api.FetcharyBrowserError);
 });
+
+test('undocumented transport options cannot alter the HTTP method or bypass redirect/cache policy',async()=>{
+  let requests=0;
+  const fetch=async()=>{requests++;return new Response('<p>public</p>');};
+  for(const override of [{method:'POST'},{body:'payload'},{followRedirects:false},{getVendors:()=>[]}]) await assert.rejects(api.extractText('https://public.example.test/',{lookup:publicLookup,fetch,...override}),api.FetcharyValidationError);
+  assert.equal(requests,0);
+});
+
+test('favicon resources and browser subresources never receive another origin\'s caller headers',async()=>{
+  const primary='https://public.example.test/';const icon='https://cdn.example.test/icon.svg';
+  const seen=[];
+  const fetch=async(target,options)=>{
+    seen.push({url:target,headers:options.headers});
+    if(target===primary) return new Response(`<html><body><main>Public</main><img src="${icon}"><link rel="icon" href="${icon}"></body></html>`,{headers:{'content-type':'text/html'}});
+    if(target===icon) return new Response('<svg width="128" height="128"></svg>',{headers:{'content-type':'image/svg+xml'}});
+    return new Response('',{status:404});
+  };
+  const options={lookup:publicLookup,fetch,headers:{authorization:'Bearer secret','x-api-key':'secret-key'},waitAfterLoad:0};
+  await api.extractFavicon(primary,{...options,mode:'http'});
+  await api.extractHtml(primary,{...options,mode:'browser'});
+  assert.ok(seen.filter(request=>request.url===primary).every(request=>request.headers.authorization==='Bearer secret'));
+  const foreign=seen.filter(request=>request.url===icon);assert.ok(foreign.length>=2);
+  assert.ok(foreign.every(request=>request.headers.authorization===undefined&&request.headers['x-api-key']===undefined));
+});
+
+test('browser navigation access responses preserve insight availability and HTTP status',async()=>{
+  for(const [status,availability] of [[401,'login_required'],[403,'blocked'],[429,'blocked']]) {
+    const target='https://www.tiktok.com/@example';
+    const result=await api.extractSocialInsights(target,{mode:'browser',waitAfterLoad:0,allowPrivateNetwork:true,fetch:async()=>new Response('<html></html>',{headers:{'content-type':'text/html'}}),launchBrowser:async()=>({newPage:async()=>({goto:async()=>({status:()=>status}),close:async()=>{}}),close:async()=>{}})});
+    assert.equal(result.data.status,availability);assert.equal(result.status,status);assert.equal(result.captureMode,'browser');assert.equal(result.capturedAt,null);
+  }
+});
+
+test('the aggregate browser resource budget aborts remaining requests and closes Chromium',async()=>{
+  const primary='https://public.example.test/';
+  const html='<html><head>'+Array.from({length:6},(_,index)=>`<link rel="stylesheet" href="/style-${index}.css">`).join('')+'</head><body>Public</body></html>';
+  await assert.rejects(api.extractHtml(primary,{mode:'browser',lookup:publicLookup,waitAfterLoad:0,timeout:5000,maxResponseBytes:1024,fetch:async target=>new Response(target===primary?html:'/*'+'x'.repeat(896)+'*/',{headers:{'content-type':target===primary?'text/html':'text/css'}})}),error=>error instanceof api.FetcharyBrowserError && /budget/.test(error.cause?.message || error.message));
+});

@@ -10,6 +10,7 @@ function browserError(message, options, cause, phase) {
   return new FetcharyBrowserError(message, {
     url: options.url,
     phase,
+    status: cause?.status,
     cause,
   });
 }
@@ -74,11 +75,6 @@ class BrowserCapture {
       try {
         page = await abortable(browser.newPage(), signal);
         if (options.userAgent && typeof page.setUserAgent === 'function') await page.setUserAgent(options.userAgent);
-        if (options.headers && typeof page.setExtraHTTPHeaders === 'function') {
-          const headers = new Headers(options.headers);
-          headers.delete('user-agent'); // setUserAgent (and vendor preparation) owns this header.
-          await page.setExtraHTTPHeaders(Object.fromEntries(headers));
-        }
         if (typeof page.setRequestInterception === 'function') {
           await page.setRequestInterception(true);
           page.on('request', request => {
@@ -88,10 +84,18 @@ class BrowserCapture {
                   if (request.isNavigationRequest()) throw new Error('unsupported navigation scheme');
                   return await request.abort();
                 }
+                const headersForRequest = new Headers(request.headers());
+                if (new URL(request.url()).origin === new URL(options.url).origin) {
+                  for (const [name, value] of new Headers(options.headers)) headersForRequest.set(name, value);
+                }
                 const resource = await readResource(request.url(), { ...options, signal, followRedirects: false,
-                  headers: request.headers(), method: request.method(), body: request.postData() }, options.maxResponseBytes);
+                  headers: Object.fromEntries(headersForRequest), method: request.method(), body: request.postData() }, options.maxResponseBytes);
                 transferred += resource.body.length;
-                if (transferred > options.maxResponseBytes * 4) throw new Error('browser resource budget exceeded');
+                if (transferred > options.maxResponseBytes * 4) {
+                  const error = new Error('browser resource budget exceeded');
+                  controller.abort(error);
+                  throw error;
+                }
                 const headers = Object.fromEntries(resource.headers);
                 delete headers['content-encoding']; delete headers['content-length']; delete headers['transfer-encoding'];
                 await request.respond({ status: resource.status, headers, body: resource.body });
@@ -106,7 +110,11 @@ class BrowserCapture {
         } else if (!options.allowPrivateNetwork) throw new Error('browser implementation must support guarded request interception');
         await prepareVendorPage(page, options.url, vendors);
         navigation = await abortable(page.goto(options.url, { waitUntil: 'load', timeout: options.timeout }), signal);
-        if (navigation && navigation.status() >= 400) throw new Error(`HTTP ${navigation.status()}`);
+        if (navigation && navigation.status() >= 400) {
+          const error = new Error(`HTTP ${navigation.status()}`);
+          error.status = navigation.status();
+          throw error;
+        }
       } catch (cause) {
         throw browserError(`browser navigation failed for ${options.url}`, options, cause, 'navigation');
       }

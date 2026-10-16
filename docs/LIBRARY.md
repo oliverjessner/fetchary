@@ -63,7 +63,7 @@ remains a compatibility path. `extractProfilePicture` aliases
 | `mode` | `'auto'` | `'auto'`, `'http'`, or `'browser'` |
 | `timeout` | `30000` | Positive milliseconds per request/phase |
 | `userAgent` | `'fetchary/2.0'` | Non-empty HTTP and browser user agent |
-| `headers` | none | `HeadersInit`; applied to primary requests and explicit resource fetches |
+| `headers` | none | `HeadersInit`; caller headers are scoped to the original origin |
 | `waitAfterLoad` | `5000` | Non-negative integer milliseconds or duration such as `'500ms'`, `'5s'` |
 | `signal` | none | `AbortSignal`; aborted operations fail and bypass shared in-flight work |
 | `maxResponseBytes` | `10485760` | Positive safe integer; decoded body/rendered HTML limit |
@@ -149,6 +149,8 @@ type ExtractionMetadata = {
 `extractedAt` is when this result was produced. `capturedAt: null` is used for
 explicit HTTP 401/403/429 insight availability, where no successful capture exists.
 `status` is the HTTP status; the social availability status lives in `data.status`.
+Availability returned for a failed browser HTTP navigation uses that response's
+status, `captureMode: 'browser'`, and `capturedAt: null`.
 
 Operation data shapes:
 
@@ -303,7 +305,9 @@ checks are separate requests, while the primary webpage capture is shared.
 Only HTTP(S) URLs without embedded credentials are accepted. Private, local,
 link-local and reserved/internal targets are blocked by default. All DNS answers
 are checked, and default HTTP connections pin the validated address. Redirects
-are checked before following; cross-origin redirects strip authentication headers.
+are checked before following; cross-origin redirects strip authentication and
+caller-supplied headers, except the user agent. Caller headers are also scoped
+to the original origin for auxiliary and browser requests.
 Timeout and response limits also cover resource requests and decompression.
 
 Chromium requests go through guarded request interception and the same bounded

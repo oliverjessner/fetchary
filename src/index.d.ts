@@ -85,5 +85,5 @@ export declare function clearCache(): void;
 export declare class FetcharyError extends Error { url?: string }
 export declare class FetcharyValidationError extends FetcharyError {}
 export declare class FetcharyFetchError extends FetcharyError { status?: number }
-export declare class FetcharyBrowserError extends FetcharyError { phase?: string }
+export declare class FetcharyBrowserError extends FetcharyError { phase?: string; status?: number }
 export declare class FetcharyNotFoundError extends FetcharyError {}
