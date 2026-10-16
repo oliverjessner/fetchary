@@ -46,6 +46,12 @@ library options. Library calls keep their structured results. For example,
 found social URLs, and image results offer the same `.data.map(image => image.url)`
 pattern. Use `.join('\n')` when you want a newline-separated string.
 
+The CLI's social-insights `--follower`/`--posts` flags also select output only.
+In the library, read `result.followers` for followers (or YouTube subscribers)
+and `result.data.metrics.posts` for the post count from
+`await extractSocialInsights(url)`. Both are `number | null`; the full result
+retains metric sources and availability reasons.
+
 | Type | Function | `data` |
 | --- | --- | --- |
 | `text` | `extractText(url, options?)` | String |

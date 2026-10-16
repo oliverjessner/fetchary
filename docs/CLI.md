@@ -30,7 +30,7 @@ Running without arguments or with `--help` prints help and exits successfully.
 | `telephone`       | `fetchary extract telephone https://example.com/contact`           | JSON result        |
 
 Text and HTML contain exactly the extracted string, with no extra newline or
-status message. Image URLs end with a newline. JSON results are objects with
+status message. Image URLs end with a newline. Unfiltered JSON results are objects with
 common metadata and a `data` field, followed by a newline. An empty URL-only list
 produces no output. Standard output is never colorized.
 
@@ -54,7 +54,7 @@ fetchary extract selector https://example.com --selector a --attribute href --li
 | `favicon`, `avatar` | The selected image URL |
 | `selector` | All matching values, as if `--all` were supplied; missing/empty values are omitted and embedded line breaks become spaces |
 | `social-links` | Discovered social URLs, respecting `--platform`/`--youtube` |
-| `social-insights` | The inspected profile/post URL |
+| `social-insights` | The inspected profile/post URL; with `--follower`/`--posts`, the selected counts |
 | `emails` | Found email addresses |
 | `telephone` | Found phone numbers in international form, retaining extensions |
 
@@ -234,7 +234,27 @@ to that social URL and does not prove the account/post exists.
 fetchary extract social-insights 'https://www.youtube.com/watch?v=VIDEO_ID'
 fetchary extract social-insights https://www.tiktok.com/@example
 fetchary extract social-insights https://www.instagram.com/example/
+fetchary extract social-insights https://github.com/oliverjessner --follower
+fetchary extract social-insights https://www.tiktok.com/@example --posts
 ```
+
+`--follower` selects only the follower count, using subscribers for YouTube.
+`--posts` selects only the profile's post count (TikTok videos or Instagram
+posts, where supported). Each flag is a boolean and applies only to
+`social-insights`; using it with another type is an argument error (exit 2).
+
+With one flag, stdout contains just the number or literal `null`, followed by
+a newline. `--json` keeps this scalar result. Missing, unsupported, or blocked
+metrics stay `null`; a measured zero stays `0`. The full command without either
+flag retains availability reasons, provenance, and metadata.
+
+Both flags can be combined. The default/JSON output is then an object such as
+`{ "followers": 12345, "posts": 42 }` containing only the two selected fields.
+With `--list` or `--urls-only`, the counts appear on separate lines in the fixed
+order followers, posts, including `null` for a missing value. `--json` takes
+precedence over list output while retaining the selected fields. `--quiet` and
+stderr diagnostics work as usual. Selection changes output formatting; capture,
+extraction, caching, and platform support follow the same rules.
 
 Return public metrics scoped to the requested profile/channel/post/video.
 YouTube, TikTok, and Instagram have additional structured metric parsers; existing
@@ -252,7 +272,7 @@ See [Social support](SOCIAL_SUPPORT.md) for implemented patterns and fixtures an
 
 | Option                         | Behavior                                                                       |
 | ------------------------------ | ------------------------------------------------------------------------------ |
-| `--json`                       | Full structured result; takes precedence over `--list`/`--urls-only` |
+| `--json`                       | JSON result, retaining any insight field selection; takes precedence over `--list`/`--urls-only` |
 | `--list`                       | URLs/selected values, one per line, for every extraction type |
 | `--urls-only`                  | Alias for `--list` |
 | `--mode auto\|http\|browser`   | Default `auto`: HTTP first, optional browser fallback                          |

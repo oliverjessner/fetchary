@@ -88,6 +88,13 @@ fetchary extract social-links https://www.tiktok.com/@oliverjessner --platform t
 fetchary extract social-insights https://www.youtube.com/@YouTube
 ```
 
+For just the follower or post count:
+
+```bash
+fetchary extract social-insights https://github.com/oliverjessner --follower
+fetchary extract social-insights https://www.tiktok.com/@oliverjessner --posts
+```
+
 Use `--list` to print found URLs one per line, ready to copy or pipe to another
 tool. It works with every extraction type; for selectors, it lists all matching
 values. It uses the loaded page and does not collect additional profile posts.

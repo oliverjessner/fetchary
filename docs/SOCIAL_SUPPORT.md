@@ -5,13 +5,6 @@ Attention: Social sites can change their
 public markup, hide metrics, or require login. No live social-site verification
 was performed for this refactor.
 
-Markers: **SUPPORTED** = implemented and covered by a relevant test;
-**PARTIAL** = implemented with narrower URL/field coverage;
-**UNSUPPORTED** = no implementation; **BLOCKED** = an observed access wall;
-**UNTESTED** = not verified. BLOCKED/UNTESTED are not assigned speculatively.
-Profile/Post Support below refers to insight extraction, not just recognizing a
-URL. A SUPPORTED parser can still return unavailable data from a live page.
-
 | Platform    | URL Recognition | Social Link Detection | Avatar Extraction | Follower Extraction     | Likes       | Comments    | Views       | Shares      | Profile Support | Post Support | Status  | Notes                                                                      |
 | ----------- | --------------- | --------------------- | ----------------- | ----------------------- | ----------- | ----------- | ----------- | ----------- | --------------- | ------------ | ------- | -------------------------------------------------------------------------- |
 | YouTube     | SUPPORTED       | SUPPORTED             | SUPPORTED         | SUPPORTED (subscribers) | SUPPORTED   | SUPPORTED   | SUPPORTED   | UNSUPPORTED | PARTIAL         | PARTIAL      | PARTIAL | Channel subscribers; matching video player state, primary actions, JSON-LD |
@@ -32,12 +25,6 @@ including real Chromium serving local/injected HTML, not public-site requests.
 
 ## Shared behavior
 
-Social links can classify profiles, channels, posts, videos, and unknown URLs.
-Recognition is not a request to the linked account and does not verify existence.
-Domain matching uses exact hosts and controlled subdomains. Query parameters,
-fragments, and case-sensitive post/video identifiers are preserved. Equivalent
-alias URLs are not necessarily deduplicated.
-
 Insight metrics are always the same nine fields: `likes`, `comments`, `views`,
 `shares`, `saves`, `followers`, `following`, `posts`, `subscribers`. Missing values
 stay `null`; unsupported combinations have an explicit reason. `available` means
@@ -45,10 +32,6 @@ all metrics implemented for this platform and URL kind were found, rather than
 all nine fields. Compact counts have approximation metadata; some legacy
 follower parsers retain unknown precision (`approximate: null`).
 
-HTTP-first auto capture uses public HTML/state when available. Explicit browser
-capture, or an appropriate auto fallback, can reveal rendered fields. The presence
-of an adapter does not imply that rendering will overcome login, CAPTCHA, regional
-restrictions, rate limits, or hidden counts. None of these restrictions is bypassed.
 Authentication walls, challenge pages, entity mismatches, parser errors and
 unsupported combinations are distinct in the [result schema](LIBRARY.md#result-schemas).
 

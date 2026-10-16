@@ -39,6 +39,8 @@ Options:
   --platform <name>              Filter social links to one platform
   --default-country <code>       Country for national phone numbers, e.g. AT
   --youtube                      Shortcut for --platform youtube
+  --follower                     Only the social follower/subscriber count
+  --posts                        Only the social post count
   --urls-only                    Alias for --list
   --exclude-metadata             Exclude Open Graph/Twitter image metadata
   --source <name>                Filter image sources (repeatable)
@@ -58,13 +60,15 @@ Examples:
   fetchary extract social-links https://example.com --youtube
   fetchary extract social-links https://www.tiktok.com/@oliverjessner --list
   fetchary extract social-insights https://www.youtube.com/watch?v=VIDEO_ID
+  fetchary extract social-insights https://github.com/oliverjessner --follower
+  fetchary extract social-insights https://www.tiktok.com/@oliverjessner --posts
 
 Compatibility aliases:
   fetchary extract <url> [--text]
   fetchary favicon <url>
   fetchary profile-picture <url>
 `;
-const flags = new Set(['json','list','binary','all','youtube','urls-only','exclude-metadata','duplicates','quiet','verbose','no-color','allow-private-network','help','version','text']);
+const flags = new Set(['json','list','binary','all','youtube','follower','posts','urls-only','exclude-metadata','duplicates','quiet','verbose','no-color','allow-private-network','help','version','text']);
 const values = new Set(['mode','timeout','user-agent','wait-after-load','max-response-bytes','selector','attribute','format','platform','default-country']);
 const repeated = new Set(['include-selector','ignore-selector','source']);
 function invalid(message) { throw new api.FetcharyValidationError(message); }
@@ -105,7 +109,7 @@ async function main(argv = process.argv.slice(2), io = {}) {
     else if (command === 'profile-picture') type = 'avatar';
     else invalid(`unknown command "${command}"; use "fetchary extract <type> <url>"`);
     if (args.length !== 1) invalid('exactly one URL is required');
-    for (const [key, allowed] of Object.entries({ binary:['favicon'], selector:['selector'], all:['selector'], attribute:['selector'], format:['selector'], platform:['social-links'], 'default-country':['telephone'], youtube:['social-links'], 'exclude-metadata':['images'], source:['images'], duplicates:['images'], 'include-selector':['text','html','emails','telephone'], 'ignore-selector':['text','html','emails','telephone'], text:['text','html'] })) {
+    for (const [key, allowed] of Object.entries({ binary:['favicon'], selector:['selector'], all:['selector'], attribute:['selector'], format:['selector'], platform:['social-links'], 'default-country':['telephone'], youtube:['social-links'], follower:['social-insights'], posts:['social-insights'], 'exclude-metadata':['images'], source:['images'], duplicates:['images'], 'include-selector':['text','html','emails','telephone'], 'ignore-selector':['text','html','emails','telephone'], text:['text','html'] })) {
       if (Object.hasOwn(options, key) && !allowed.includes(type)) invalid(`--${key} is not supported for ${type}`);
     }
     if (options.text && type !== 'text') invalid('--text conflicts with the selected extraction type');
@@ -124,7 +128,15 @@ async function main(argv = process.argv.slice(2), io = {}) {
     if (options.verbose && !options.quiet) stderr.write(`Extracting ${type} (${settings.mode || 'auto'})\n`);
     const result = await api.extract(args[0], captureOptions);
     if (options.quiet) return 0;
-    if (options.binary) stdout.write(result.data);
+    if (options.follower || options.posts) {
+      const selected = {};
+      if (options.follower) selected.followers = result.followers ?? null;
+      if (options.posts) selected.posts = result.data.metrics.posts ?? null;
+      const values = Object.values(selected);
+      const output = list ? values.map(String).join('\n') : JSON.stringify(values.length === 1 ? values[0] : selected, null, 2);
+      stdout.write(`${output}\n`);
+    }
+    else if (options.binary) stdout.write(result.data);
     else if (list) { const items = listItems(result, settings); if (items.length) stdout.write(`${items.join('\n')}\n`); }
     else if (options.json || ['images','social-links','social-insights','emails','telephone'].includes(type)) stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     else if (type === 'favicon' || type === 'avatar') stdout.write(`${result.image.url}\n`);
