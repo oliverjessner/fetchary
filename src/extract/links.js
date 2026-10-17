@@ -1,6 +1,7 @@
 'use strict';
 const { httpUrl, documentBase } = require('./images');
 const { htmlToText } = require('../utils/html');
+const { DOMParser } = require('linkedom');
 
 function locationSelectors() {
   const selectors = new WeakMap(); const positions = new WeakMap();
@@ -53,4 +54,39 @@ function pageLinks(document, pageUrl, options) {
   return [...linkOccurrences(document, pageUrl, options)].map(occurrence => occurrence.link);
 }
 
-module.exports = { pageLinks, linkOccurrences };
+function sitemapLinks(xml, pageUrl, options = {}) {
+  if (!/<(?:[\w.-]+:)?(?:urlset|sitemapindex)(?:\s|>)/.test(xml)) return null;
+  // Sitemap links need no DTDs; do not interpret custom or external entities.
+  if (/<!DOCTYPE|<!ENTITY/i.test(xml)) return [];
+  const document = new DOMParser().parseFromString(xml, 'text/xml');
+  const root = document.documentElement;
+  const localName = element => element.localName.split(':').at(-1);
+  function namespace(element) {
+    const prefix = element.localName.includes(':') ? element.localName.split(':')[0] : '';
+    const name = prefix ? `xmlns:${prefix}` : 'xmlns';
+    for (let current = element; current; current = current.parentElement) if (current.hasAttribute(name)) return current.getAttribute(name);
+    return '';
+  }
+  if (!root || !['urlset','sitemapindex'].includes(localName(root))) return null;
+  const ns = namespace(root);
+  if (ns && !/^https?:\/\/www\.sitemaps\.org\/schemas\/sitemap\/0\.9$/.test(ns)) return null;
+  const entryName = localName(root) === 'urlset' ? 'url' : 'sitemap';
+  const included = (options.includeSelectors || []).map(selector => document.querySelector(selector)).filter(Boolean);
+  const ignored = (options.ignoreSelectors || []).flatMap(selector => [...document.querySelectorAll(selector)]);
+  const selector = locationSelectors(); const origin = new URL(pageUrl).origin; const results = [];
+  for (const entry of root.children) {
+    if (localName(entry) !== entryName || namespace(entry) !== ns) continue;
+    for (const element of entry.children) {
+      if (localName(element) !== 'loc' || namespace(element) !== ns || element.children.length) continue;
+      if (options.includeSelectors?.length && !included.some(parent => parent.contains(element))) continue;
+      if (ignored.some(parent => parent.contains(element))) continue;
+      const rawUrl = element.textContent; const url = httpUrl(rawUrl, pageUrl);
+      if (!url) continue;
+      results.push({ url, rawUrl, text: '', rel: [], internal: new URL(url).origin === origin, source: 'loc',
+        location: { pageUrl, selector: selector(element), attribute: 'textContent' } });
+    }
+  }
+  return results;
+}
+
+module.exports = { pageLinks, linkOccurrences, sitemapLinks };

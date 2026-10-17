@@ -1,3 +1,13 @@
+# 2.0.2
+
+- Add global `--filepath` output saving for every CLI command, with automatic text/HTML/JSON extensions, explicit file or directory targets, quiet-mode exports and protection against overwriting existing files.
+- Extract links from XML URL sitemaps and sitemap indexes, including namespaces, entity decoding, scopes and source locations. Add dedicated CLI examples.
+- Add `history` with the latest 100 CLI commands, timestamps, exit codes, JSON/list output, credential redaction, `--no-history` and an overridable private history file. Serialize atomic updates across processes; keep library extraction free of command-history writes.
+
+- Add `extract videos <url>` with JSON and deduplicated `--list`/`--urls-only` output, typed `extractVideos()` and isolated-client methods. Discover media files/streams, video elements, linked and embedded platform videos, Open Graph/Twitter metadata and Schema.org VideoObject references, with scoped selectors and existing capture/cache behavior.
+
+- Add `login <url>`, `sessions`, `logout <name>` and shared `--session`/`--session-dir` support. Sign in manually in a visible isolated browser without reading an existing Chrome profile or Keychain, then explicitly save scoped cookies in private, atomically replaced session files. Add typed login/session APIs, authenticated cache bypass, cancellation/timeouts and browser/HTTP/CLI regression coverage.
+
 # 2.0.1
 
 - Add `--cookies-from-browser chrome`, `--browser-profile`, and library `cookiesFromBrowser`/`browserProfile` options for Chrome on macOS. Read scoped cookies from the selected SQLite profile in read-only mode, decrypt supported cookies through the existing Keychain item, verify version 24 domain hashes, and reuse isolated browser contexts and authenticated cache bypass without saving credentials or updating the source session.

@@ -1,7 +1,8 @@
 # Fetchary CLI
 
-The CLI calls the same stateless extraction implementation as the Node.js library.
-It writes extracted results to stdout
+The CLI calls the same extraction implementation as the Node.js library.
+It writes extracted results to stdout. `--filepath` also saves successful output;
+the executable keeps the most recent 100 commands in a local history file.
 
 ## Installation and usage
 
@@ -10,10 +11,87 @@ fetchary --version
 fetchary --help
 fetchary extract <type> <url> [options]
 fetchary analyse <url> [options]
+fetchary login <url> [--session <name>] [options]
+fetchary sessions [--json] [--session-dir <directory>]
+fetchary logout <name> [--session-dir <directory>]
+fetchary history [--json|--list]
 ```
 
 Running without arguments or with `--help` prints help and exits successfully.
 `--version` prints the package version. Help can also follow a command.
+
+## Save command output
+
+```bash
+fetchary extract text https://example.com --filepath .
+fetchary extract html https://example.com --filepath .
+fetchary extract links https://example.com --json --filepath .
+fetchary extract links https://example.com --list --filepath ./links.txt
+fetchary analyse https://example.com --filepath ./reports/
+fetchary history --json --filepath ./history.json
+fetchary --filepath .
+```
+
+`--filepath <path>` works before or after any command, including compatibility
+aliases, login/session commands, history, help and version. With no command it
+saves help. The file contains the exact successful stdout bytes; prompts,
+diagnostics and errors on stderr are excluded. Stdout remains available as usual;
+`--quiet` suppresses stdout while still saving the file. A successful empty list
+creates an empty file. Failed commands do not save output.
+
+An existing directory, a path ending in a separator, or a new path without an
+extension is an output directory; missing directories are created. Directory
+exports get a unique filename containing the command/type, UTC timestamp and
+random suffix. A path with an extension selects that exact filename. Existing
+files and symlinks are never overwritten. New files use POSIX mode `600`.
+
+| Selected output | Automatic extension |
+| --- | --- |
+| `--json` or a command/type whose default output is JSON | `.json` |
+| HTML extraction or selector `--format html` | `.html` |
+| Text, URL lists, selected values, session/history summaries, help/version | `.txt` |
+| Favicon `--binary` | Original image extension, or `.bin` if unknown |
+
+Flags choose the contents; an explicit filename does not convert data. `--json`
+still overrides `--list`; help/version always remain plain text. Path validation uses exit 2; output-write failures use
+exit 1. The command's action may already have completed when saving fails.
+`--verbose` reports the saved path on stderr.
+
+## Command history
+
+```bash
+fetchary history
+fetchary history --json
+fetchary history --list
+fetchary extract text https://example.com --no-history
+```
+
+The executable records the latest 100 command attempts, including failures, in
+`~/.fetchary/history.json`. Entries contain the UTC `timestamp`, redacted `args`
+array and `exitCode`. Display is newest first. Plain output shows time, exit code
+and command; `--list` prints command lines; JSON adds a shell-quoted `command`
+field. Page content and extraction results are not stored in this history.
+
+`history` does not record itself. Help, version and empty invocations are omitted.
+`--no-history` skips any one call. Importing/using the Node.js extraction library
+does not record commands. `FETCHARY_HISTORY_FILE` overrides the history-file path.
+Its parent is created only when recording a command. A missing history returns
+an empty successful result without creating files. `history` accepts `--json`,
+`--list`, `--filepath`, `--quiet`, `--verbose`, `--no-color` and `--no-history`.
+
+Atomic writes are serialized across processes. A stale lock from an exited
+process is recoverable after 30 seconds. The history file is bounded to 2 MiB.
+New history directories/files use
+private modes `700`/`600`; the immediate parent directory and file must belong
+to the current user and be private on POSIX. Malformed/unreadable history is
+reported rather than overwritten. Recording failures print a warning on stderr
+and preserve the command's exit code.
+
+History excludes stdout, cookie contents and browser form input. URL credentials,
+sensitive query values (tokens, passwords, signatures, authorization codes),
+fragments and credential flags are redacted. Other arguments, including paths,
+URLs and session names, remain visible; arguments over 4096 characters are
+truncated. Use `--no-history` for other private argument values.
 
 ## Website analysis
 
@@ -81,7 +159,7 @@ Analysis rendering uses the existing passive tracker policy: inline JavaScript
 can change the DOM, but external scripts, pixels, frames and other browser
 requests are blocked. Sites requiring external bundles or fetched configuration
 may therefore have incomplete results. Ordinary standalone extractors keep
-their existing rendering behavior. Nothing is persisted by Fetchary.
+their existing rendering behavior. Analysis does not persist its results.
 
 ## Extraction types
 
@@ -91,6 +169,7 @@ their existing rendering behavior. Nothing is persisted by Fetchary.
 | `html`            | `fetchary extract html https://example.com`                         | HTML               |
 | `favicon`         | `fetchary extract favicon https://example.com`                      | Selected image URL |
 | `images`          | `fetchary extract images https://example.com`                       | JSON result        |
+| `videos`          | `fetchary extract videos https://example.com`                       | JSON result        |
 | `avatar`          | `fetchary extract avatar https://github.com/oliverjessner`          | Selected image URL |
 | `selector`        | `fetchary extract selector https://example.com --selector h1`       | Selected text      |
 | `social-links`    | `fetchary extract social-links https://example.com`                 | JSON result        |
@@ -117,6 +196,7 @@ or metadata. An empty list prints nothing. `--urls-only` is an alias for `--list
 ```bash
 fetchary extract social-links https://www.tiktok.com/@oliverjessner --platform tiktok --list
 fetchary extract images https://example.com --list
+fetchary extract videos https://example.com --list
 fetchary extract html https://example.com --list
 fetchary extract selector https://example.com --selector a --attribute href --list
 ```
@@ -131,7 +211,7 @@ fetchary extract selector https://example.com --selector a --attribute href --li
 | `social-insights` | The inspected profile/post URL; with `--follower`/`--posts`, the selected counts |
 | `emails` | Found email addresses |
 | `telephone` | Found phone numbers in international form, retaining extensions |
-| `links`, `documents` | Unique discovered URLs in first-occurrence order; JSON retains every occurrence |
+| `links`, `documents`, `videos` | Unique discovered URLs in first-occurrence order; JSON retains every occurrence |
 | `metadata` | Present values in title, description, canonical, language, publishedAt, modifiedAt order; nulls omitted |
 | `structured-data` | One compact JSON object per line, JSON-LD first and Microdata items second |
 | `tracker-intelligence` | Provider/identifier pairs; provider name alone when no identifiers exist; Matomo includes its scope |
@@ -166,7 +246,55 @@ file downloader.
 first match per selector in page order; overlapping subtrees appear once. Ignores
 remove every matching element, including selected roots and ancestors. Missing
 include matches return empty content. These options apply to `text`, `html`,
-`emails`, `telephone`, `links`, and `documents`.
+`emails`, `telephone`, `links`, `documents`, and `videos`.
+
+### Videos
+
+```bash
+fetchary extract videos https://example.com
+fetchary extract videos https://example.com --list
+fetchary extract videos https://example.com --include-selector main --ignore-selector footer
+fetchary extract videos https://example.com --mode browser --wait-after-load 500ms --list
+```
+
+`videos` discovers video references from the captured page:
+
+- `video[src]` and child `source[src]`, including extensionless media endpoints.
+- Direct file links in `a`, `area`, `link`, `iframe`, `embed`, and `object`, plus
+  video MIME types, download filenames and query format/filename hints.
+- Individual video links and recognized players on YouTube (including privacy
+  embeds), Vimeo, TikTok, Instagram Reels/TV, Facebook and Twitch.
+- Open Graph `og:video`, `og:video:url`, `og:video:secure_url`, Twitter
+  `twitter:player` and `twitter:player:stream` metadata.
+- JSON-LD `VideoObject` values for `contentUrl`, `embedUrl` and `url`, including
+  nested objects and arrays; matching properties inside VideoObject Microdata.
+- Lazy `data-src`, `data-lazy-src` and `data-original` attributes on video,
+  source and iframe elements when they identify videos by the same rules.
+
+Recognized extensions are `mp4`, `m4v`, `webm`, `mov`, `avi`, `mkv`, `ogv`,
+`mpeg`, `mpg`, `mpe`, `ts`, `mts`, `m2ts`, `3gp`, `3g2`, `flv`, `f4v`, `wmv`,
+`m3u8` and `mpd`. HLS/DASH references may describe audio-only streams; media
+contents are not inspected. Generic social posts and profile links do not prove
+that a video exists and are excluded.
+
+JSON returns each occurrence in `data` and its convenience alias `videos`.
+Records contain `url`, `rawUrl`, the source tag (or `json-ld`), `originalAttribute`,
+and nullable `extension`, `contentType` and `platform` hints. The top-level
+`contentType` describes the captured page. `--list`/`--urls-only` prints unique
+URLs in discovery order. `--json` takes precedence; empty discoveries succeed
+with empty arrays or no list output. `--binary` is unavailable.
+
+Relative URLs use the document base and final page URL. Only HTTP(S) URLs without
+credentials are returned; posters, audio/image elements, template/noscript
+content and executable scripts are excluded. Include/ignore selectors use the
+same scope rules as links and documents. JSON-LD is parsed without execution;
+malformed or excessively nested blocks are skipped. Non-HTML responses produce
+empty arrays.
+
+The extractor does not request discovered targets, inspect media bytes, crawl,
+scroll or paginate. Ordinary browser capture can load page resources. `auto`
+renders once when a scripted page has no discovered videos; use `http` to avoid
+rendering, or `browser` to inspect JavaScript content even when HTTP found videos.
 
 ### Tracker intelligence
 
@@ -292,6 +420,33 @@ use an accessible label, area/image alt text, or title. `rel` is an array of
 distinct lowercase tokens. Repeated URLs retain separate texts and locations in
 JSON. `--list`/`--urls-only` print each URL once, in discovery order. Templates and
 other inert script/style/noscript content are ignored.
+
+#### Links from XML sitemaps
+
+```bash
+fetchary extract links https://oliverjessner.at/sitemap.xml --list
+fetchary extract links https://oliverjessner.at/sitemap.xml --json
+fetchary extract links https://oliverjessner.at/sitemap.xml --list --filepath .
+```
+
+`links` reads XML Sitemap `urlset/url/loc` and index `sitemapindex/sitemap/loc`
+entries from the [Sitemaps protocol](https://www.sitemaps.org/protocol.html).
+Default/prefixed Sitemap namespaces and unnamespaced files are supported.
+The XML root is recognized even when servers label the response as HTML or
+another content type. XML entities and CDATA are decoded; relative values resolve
+against the final sitemap URL. Only credential-free HTTP(S) URLs are returned.
+Image/video-extension locations and namespace/schema declarations are excluded.
+
+Each occurrence has `source: 'loc'`, empty `text`/`rel`, and
+`location.attribute: 'textContent'`. `rawUrl` preserves decoded element text;
+the location selector identifies that `<loc>` in the XML DOM. JSON retains all
+occurrences, while `--list` deduplicates in document order. Include/ignore
+selectors apply to the XML DOM with the same first-match/subtree rules as HTML.
+Sitemaps with DTD/entity declarations are skipped. This does not perform schema
+validation or recursively fetch sitemap-index targets/listed pages. Existing
+response limits apply.
+
+#### Document links
 
 `documents` uses the same metadata and also inspects `iframe[src]`, `embed[src]`,
 and `object[data]`. It recognizes file extensions, `type` MIME hints, download
@@ -499,6 +654,8 @@ See [Social support](SOCIAL_SUPPORT.md) for implemented patterns and fixtures an
 | Option                         | Behavior                                                                       |
 | ------------------------------ | ------------------------------------------------------------------------------ |
 | `--json`                       | JSON result, retaining any insight field selection; takes precedence over `--list`/`--urls-only` |
+| `--filepath <path>`             | Save successful stdout to a new file or directory; format follows the output flags/type |
+| `--no-history`                 | Skip command-history recording for this invocation |
 | `--list`                       | URLs/selected values, one per line, for every extraction type |
 | `--urls-only`                  | Alias for `--list` |
 | `--mode auto\|http\|browser`   | Default `auto`: HTTP first, optional browser fallback                          |
@@ -507,6 +664,8 @@ See [Social support](SOCIAL_SUPPORT.md) for implemented patterns and fixtures an
 | `--wait-after-load <duration>` | Browser post-load wait; default `5s`; accepts `500ms`, `5s`, or `0ms`          |
 | `--max-response-bytes <bytes>` | Decoded response/resource/rendered HTML limit; default 20971520 (20 MiB)                               |
 | `--cookies <file>`            | Read a Netscape/JSON cookie export; cookie-file captures bypass page caches |
+| `--session <name>`           | Read a locally saved Fetchary login session; authenticated captures bypass page caches |
+| `--session-dir <directory>`  | Override `~/.fetchary/sessions`; requires `--session` during extraction |
 | `--cookies-from-browser chrome` | Read matching cookies directly from Chrome on macOS; bypass page caches |
 | `--browser-profile <name\|path>` | Chrome profile directory name or absolute directory path; default `Default` |
 | `--allow-private-network`      | Explicitly allow trusted local/internal targets                                |
@@ -523,6 +682,76 @@ wrong type are rejected. There is no data-directory or monitoring configuration.
 
 Session imports work with any extraction type, the standalone aliases and
 `analyse`. They do not ask for or save your website password.
+
+### Interactive browser login
+
+```bash
+fetchary login https://www.linkedin.com --session linkedin
+fetchary extract social-insights https://www.linkedin.com/in/oliverjessner --follower --mode browser --session linkedin
+fetchary extract videos https://www.linkedin.com/in/oliverjessner --session linkedin --list
+fetchary sessions
+fetchary sessions --json
+fetchary logout linkedin
+```
+
+`login` opens a visible, temporary Chromium browser and a fresh isolated context.
+Sign in on the website, including any MFA or consent steps, then return to the
+terminal and press Enter. Passwords are entered on the website, not through
+Fetchary. This does not read your existing Chrome profile or macOS Keychain and
+does not need permission to access Chrome cookies. The login window uses normal
+browser networking for interactive forms and SSO; extraction keeps its existing
+guarded HTTP/browser transport. No vendor overlays are automatically dismissed
+in the login window.
+
+The default session name is the target hostname, for example
+`www.linkedin.com`. `--session` chooses a different name: 1–64 lowercase letters,
+digits, dots, underscores or hyphens, starting with a letter or digit. Session
+selection during extraction is explicit; there is no automatic login or session
+lookup. Use the same hostname where possible. A saved session is restricted to
+the login hostname and its descendants, with normal cookie domain/path/secure
+rules still applied. Parent-domain and sibling-host extractions require a
+matching login. Unrelated SSO-provider cookies and partitioned cookies are not
+saved.
+
+Sessions are JSON files under `~/.fetchary/sessions`, containing website cookies,
+origin and save time. Cookies grant account access: these files are not encrypted.
+On POSIX systems the directory must be private (`700`) and files must be private
+(`600`) and owned by the current user; session files and the session directory
+cannot be symlinks.
+New directories/files use those permissions. `--session-dir` overrides the
+directory for login, extraction, listing and logout. A successful login atomically
+replaces the named session. Cancelled/failed logins preserve the old session.
+Extraction rereads the file and never updates it; log in again to refresh expired
+or revoked credentials.
+
+An interactive terminal is required. Ctrl+C, terminal EOF, closing the login page,
+or closing the browser cancels without saving. The overall login timeout is five
+minutes; `--timeout <ms>` overrides it. Initial navigation and browser launch are
+each limited to at most 30 seconds. Only HTTP(S) URLs without embedded credentials
+are accepted; private initial targets require `--allow-private-network`.
+`login` accepts `--session`, `--session-dir`, `--timeout`,
+`--allow-private-network`, `--json`, `--quiet`, `--verbose` and `--no-color`.
+Prompts stay on stderr, including with `--json`/`--quiet`; stdout contains only the
+result or is suppressed by `--quiet`.
+
+Saving confirms that cookies were captured, not that every extractor can access
+the account. Sites requiring localStorage/IndexedDB tokens or rejecting automated
+browsers may remain unavailable. Those stores and saved passwords are not
+exported. An empty/expired cookie set fails without replacing a previous session.
+`--session` conflicts with `--cookies`, `--cookies-from-browser` and a library
+Cookie header. It works with every extraction type and `analyse`, and bypasses
+both completed and in-flight capture caches.
+
+`sessions` prints session names, origins and active cookie counts; `--json` adds
+save timestamps and total counts. Cookie values are never printed. It accepts
+`--session-dir`, `--json`, `--quiet` and `--no-color`. An absent directory gives
+an empty successful result without creating it. Invalid session files produce a
+validation error. `logout <name>` deletes only that local session file, not the
+website account or other browser sessions; a missing name is a successful no-op.
+It supports the same output/directory flags as `sessions`. JSON is
+`{ session, removed }`; login JSON is `{ session, origin, savedAt, cookieCount }`.
+Validation/file errors use exit 2, browser/timeout failures exit 4, and interrupted
+logins exit 3.
 
 ### Chrome on macOS
 

@@ -1,8 +1,8 @@
 # Fetchary library
 
-Fetchary is a stateless CommonJS toolkit for Node.js 26+. Importing it creates no
+Fetchary is a CommonJS extraction toolkit for Node.js 26+. Importing it creates no
 database or application data directory. The CLI imports this same API.
-Puppeteer loads lazily, only when rendering is needed.
+Puppeteer loads lazily, when rendering or interactive login is requested.
 
 ## Get started
 
@@ -58,6 +58,7 @@ retains metric sources and availability reasons.
 | `html` | `extractHtml(url, options?)` | String |
 | `favicon` | `extractFavicon(url, options?)` | Selected image, or a Buffer with `binary: true` |
 | `images` | `extractImages(url, options?)` | Array of image references |
+| `videos` | `extractVideos(url, options?)` | Array of video references |
 | `avatar` | `extractSocialAvatar(url, options?)` | Platform, profile, selected image |
 | `selector` | `extractSelector(url, { selector, ...options })` | Match state and values |
 | `social-links` | `extractSocialLinks(url, options?)` | Array of social links |
@@ -154,6 +155,8 @@ not store the report, crawl other pages, monitor the site or infer ownership.
 | `userAgent` | `'fetchary/2.0'` | Non-empty HTTP and browser user agent |
 | `headers` | none | `HeadersInit`; caller headers are scoped to the original origin |
 | `cookieFile` | none | Path to a read-only Netscape/JSON session cookie export; disables page caching |
+| `session` | none | Name of an explicitly saved Fetchary login session; disables page caching |
+| `sessionDir` | `~/.fetchary/sessions` | Session directory override; requires `session` during extraction |
 | `cookiesFromBrowser` | none | `'chrome'`: read matching cookies from Google Chrome on macOS; disables page caching |
 | `browserProfile` | `'Default'` | Profile directory name or absolute path; requires `cookiesFromBrowser` |
 | `waitAfterLoad` | `5000` | Non-negative integer milliseconds or duration such as `'500ms'`, `'5s'` |
@@ -220,6 +223,77 @@ See the [CLI reference](CLI.md#chrome-on-macos) for supported schemas/encryption
 size limits and profile examples. No live authenticated LinkedIn result is
 guaranteed by this API.
 
+### Interactive login and saved sessions
+
+```js
+const readline = require('node:readline/promises');
+const { login, extractMetadata, listSessions, logout } = require('fetchary');
+
+async function main() {
+    await login('https://www.linkedin.com', {
+        session: 'linkedin',
+        confirm: async ({ signal }) => {
+            const terminal = readline.createInterface({ input: process.stdin, output: process.stderr });
+            try { await terminal.question('Sign in in the browser, then press Enter: ', { signal }); }
+            finally { terminal.close(); }
+        },
+    });
+    const result = await extractMetadata('https://www.linkedin.com/in/oliverjessner', {
+        session: 'linkedin', mode: 'browser',
+    });
+    console.log(result.data, await listSessions());
+    await logout('linkedin'); // Remove only Fetchary's local session file.
+}
+main().catch(console.error);
+```
+
+`login(url, options)` requires `confirm({ session, origin, signal })`, which must
+resolve after the user has completed website login in the visible browser.
+Reject the callback or abort the signal to cancel without saving. The result is
+`{ session, origin, savedAt, cookieCount }`, with no cookie values. Saving indicates
+that relevant cookies were captured; it does not verify account authorization.
+
+`LoginOptions` accepts `session` (default: target hostname), `sessionDir`
+(default: `~/.fetchary/sessions`), `signal`, `timeout` (overall default 300000 ms),
+`allowPrivateNetwork`, `lookup` and a separate `launchBrowser` callback. Login's
+launcher receives `headless: false`, `defaultViewport: null`, a bounded launch
+timeout and AbortSignal; unlike extraction's launcher it does not set a proxy or
+replace native browser networking. It must return `LoginBrowser`, with
+`createBrowserContext()` returning `newPage()`, `cookies()` and `close()`. Optional
+browser `disconnected` and page `close` events support immediate cancellation.
+The bundled implementation uses Puppeteer's [isolated browser contexts](https://pptr.dev/api/puppeteer.browser.createbrowsercontext)
+and [context cookies](https://pptr.dev/api/puppeteer.browsercontext.cookies).
+
+Only unexpired, unpartitioned cookies belonging to the login hostname tree or
+matching parent cookie domain are exported; unrelated SSO-provider cookies are
+discarded. localStorage, IndexedDB and saved passwords are not exported. Website
+MFA and other checks are completed manually. Some sites may reject this browser
+or use authentication stores that cookie-only sessions cannot reproduce.
+
+The login command explicitly persists credentials in JSON files with private
+permissions (POSIX directory `700`, file `600`); these files are not encrypted.
+Writes replace the named session atomically, and errors/cancellation preserve the
+previous file. Session files and the session directory cannot be symlinks.
+The [CLI reference](CLI.md#interactive-browser-login) defines session names,
+storage, output and cancellation behavior.
+
+`session?: string` and `sessionDir?: string` are common extraction options across
+all explicit methods, dispatcher, analysis and isolated clients. They load the
+saved cookies afresh, restrict use to the login hostname or its descendants,
+bypass all capture caches and share existing scoped HTTP/cookie-context rules.
+Extraction never changes the session file. `session` conflicts with `cookieFile`,
+`cookiesFromBrowser` and a caller Cookie header; `sessionDir` requires `session`.
+No saved session is selected implicitly, and importing the package or creating
+an extractor does not access session files.
+
+`listSessions({ sessionDir?, signal? })` returns `SessionInfo[]`, with `session`,
+`origin`, `savedAt`, `cookieCount` and `activeCookieCount`, never cookie values.
+Missing directories produce `[]` without creating files; corrupt/unreadable
+entries fail with `FetcharyValidationError`.
+`logout(name, { sessionDir?, signal? })` returns `{ session, removed }`; a missing
+session is a successful no-op and does not log out other browsers or revoke the
+website account. These three session-management methods are top-level exports.
+
 ### Cookie-file authentication
 
 ```js
@@ -258,7 +332,7 @@ are stripped from requests outside the initially requested hostname tree.
 The HTTP phase uses the exported values; refreshed browser cookies stay in that
 browser run and are not written back to the export.
 
-A custom `launchBrowser` used with either session source must expose
+A custom extraction `launchBrowser` used with any session source must expose
 `browser.createBrowserContext()` returning a context with `setCookie()`,
 `newPage()` and `close()`; `CaptureCookieData` documents the values
 passed to it. Protocol errors during cookie import are sanitized rather than
@@ -433,7 +507,7 @@ compareSites('https://example.com', 'https://example.org').then(console.log);
 
 Shared identifiers are technical indications only, **not proof of common
 ownership or identity**. Correlation, attribution and storage belong to the
-calling application. Fetchary remains stateless.
+calling application. Extraction does not persist these results.
 
 ### Operation-specific options
 
@@ -460,6 +534,12 @@ limits, diagnostics, standalone JSON-LD, and browser fallback behavior.
 `links` and `documents` accept `includeSelectors` and `ignoreSelectors`, following
 the text/HTML selection rules. Discovery keeps the original document base and
 DOM locations. Each occurrence is returned separately, including repeated URLs.
+`extractLinks()` also reads URL and index XML sitemaps, including default/prefixed
+namespaces, XML entities and CDATA. It reads only direct `<loc>` entries for each
+page/sitemap, without fetching them. Sitemap results use `source: 'loc'` and
+`location.attribute: 'textContent'`. Scoping selectors apply to the XML DOM;
+the final captured URL is the base for relative values. See the
+[sitemap CLI examples](CLI.md#links-from-xml-sitemaps).
 Link locations refer to the captured page; they are not selectors for the target
 website. All links use HTTP(S) without credentials. Internal/external classification
 compares origins with the final captured page URL.
@@ -481,6 +561,44 @@ and isolated clients. They discover references without requesting the targets or
 saving files. Document hints are not verified file contents. The
 [CLI reference](CLI.md#links-and-documents) lists discovery sources, supported
 extensions, MIME/download/query hints, and filtering behavior.
+
+`videos` accepts the common capture options plus `includeSelectors` and
+`ignoreSelectors` (`LinksOptions`). It returns every discovered video reference,
+including repeated URLs, in `data` and the `videos` alias. It works through
+`extract(url, { type: 'videos' })` and isolated clients' `extractVideos()` methods.
+
+```js
+const { extractVideos } = require('fetchary');
+
+async function main() {
+    const result = await extractVideos('https://example.com', {
+        includeSelectors: ['main'],
+    });
+    console.log([...new Set(result.data.map(video => video.url))]);
+}
+main().catch(console.error);
+```
+
+```ts
+type VideoLink = {
+    url: string;
+    rawUrl: string;
+    source: string; // DOM tag, or 'json-ld'
+    originalAttribute: string; // e.g. src, href, contentUrl, or textContent
+    extension: string | null;
+    contentType: string | null;
+    platform: Platform | null;
+};
+type VideosResult = ExtractionResult<VideoLink[], 'videos'> & { videos: VideoLink[] };
+```
+
+Video discovery reads media elements, video files/streams, recognized platform
+links and players, Open Graph/Twitter metadata and Schema.org VideoObject
+references. URLs are resolved against the full document base. Format and MIME
+fields are hints, and targets are not downloaded or verified. Results use the
+existing capture cache, limits, cancellation and HTTP/browser fallback rules.
+See the [video CLI reference](CLI.md#videos) for sources, supported extensions,
+scope rules, list output and discovery limits.
 
 `emails` and `telephone` accept `includeSelectors` and `ignoreSelectors` with the
 same selection rules as text/HTML. They inspect contact links, page text,
@@ -580,7 +698,7 @@ type ExtractionMetadata = {
     rawFinalUrl: string;
     capturedAt: string | null;
     extractedAt: string;
-    type: 'text' | 'html' | 'favicon' | 'images' | 'avatar'
+    type: 'text' | 'html' | 'favicon' | 'images' | 'videos' | 'avatar'
         | 'selector' | 'social-links' | 'social-insights' | 'emails' | 'telephone'
         | 'links' | 'documents' | 'metadata' | 'structured-data' | 'tracker-intelligence';
     captureMode: 'http' | 'browser';
@@ -610,6 +728,9 @@ data: string[];
 
 // links / documents (types detailed below)
 data: ExtractedLink[] | DocumentLink[];
+
+// videos (type detailed above)
+data: VideoLink[];
 
 // metadata / structured-data (types detailed below)
 data: PageMetadata | StructuredData;
@@ -740,7 +861,7 @@ issues rather than transport failures. See [CLI limits](CLI.md#metadata-and-stru
 type LinkLocation = {
     pageUrl: string;
     selector: string;
-    attribute: 'href' | 'src' | 'data';
+    attribute: 'href' | 'src' | 'data' | 'textContent';
 };
 type ExtractedLink = {
     url: string;
@@ -748,11 +869,11 @@ type ExtractedLink = {
     text: string;
     rel: string[];
     internal: boolean;
-    source: 'a' | 'area' | 'link';
+    source: 'a' | 'area' | 'link' | 'loc';
     location: LinkLocation;
 };
 type DocumentLink = Omit<ExtractedLink, 'source'> & {
-    source: ExtractedLink['source'] | 'iframe' | 'embed' | 'object';
+    source: Exclude<ExtractedLink['source'], 'loc'> | 'iframe' | 'embed' | 'object';
     filename: string | null;
     extension: string | null;
     contentType: string | null;
@@ -760,7 +881,8 @@ type DocumentLink = Omit<ExtractedLink, 'source'> & {
 };
 ```
 
-`rawUrl` is the original DOM attribute value after HTML entity decoding. `text`
+`rawUrl` is the original DOM attribute value after HTML entity decoding, or the
+decoded `<loc>` text for sitemap links. `text`
 contains normalized link text or its label/alt/title fallback. `location.selector`
 is a unique CSS path in the captured DOM, and `location.pageUrl` is the final
 captured page URL. Paths remain relative to the full DOM even when extraction
@@ -909,3 +1031,8 @@ Version 2 removes the old `Fetchary` class, `createFetchary()`, stored-source,
 archive, scheduler, diff, vendor-activation and database APIs. They have no runtime
 replacement or automatic migration. Historical user directories are never read,
 written, migrated or deleted by extraction.
+
+CLI `--filepath` output exports and command history are separate from the library.
+Extraction methods still do not save their results or record commands. The
+executable records up to 100 recent commands; see the
+[CLI reference](CLI.md#command-history) for storage and opt-out behavior.

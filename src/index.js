@@ -1,6 +1,9 @@
 'use strict';
 const extraction = require('./extract');
 const errors = require('./errors');
+exports.login = require('./auth/login').login;
+exports.listSessions = require('./auth/sessions').listSessions;
+exports.logout = require('./auth/sessions').logout;
 exports.analyse = extraction.analyse;
 exports.extract = extraction.extract;
 exports.extractText = extraction.extractText;
@@ -14,6 +17,7 @@ exports.extractEmails = extraction.extractEmails;
 exports.extractTelephone = extraction.extractTelephone;
 exports.extractFavicon = extraction.extractFavicon;
 exports.extractImages = extraction.extractImages;
+exports.extractVideos = extraction.extractVideos;
 exports.extractSelector = extraction.extractSelector;
 exports.extractSocialLinks = extraction.extractSocialLinks;
 exports.extractSocialAvatar = extraction.extractSocialAvatar;

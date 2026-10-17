@@ -2,7 +2,7 @@ import type { LookupAddress } from 'node:dns';
 import type { Buffer } from 'node:buffer';
 import type { CountryCode } from 'libphonenumber-js';
 
-export type ExtractionType = 'text' | 'html' | 'favicon' | 'images' | 'avatar' | 'selector' | 'social-links' | 'social-insights' | 'emails' | 'telephone' | 'links' | 'documents' | 'metadata' | 'structured-data' | 'tracker-intelligence';
+export type ExtractionType = 'text' | 'html' | 'favicon' | 'images' | 'videos' | 'avatar' | 'selector' | 'social-links' | 'social-insights' | 'emails' | 'telephone' | 'links' | 'documents' | 'metadata' | 'structured-data' | 'tracker-intelligence';
 export type CaptureMode = 'auto' | 'http' | 'browser';
 export type Platform = 'youtube' | 'tiktok' | 'instagram' | 'facebook' | 'x' | 'threads' | 'linkedin' | 'twitch' | 'reddit' | 'github' | 'vimeo' | 'bluesky';
 export type SocialKind = 'profile' | 'channel' | 'post' | 'video' | 'unknown';
@@ -18,6 +18,10 @@ export type CaptureBrowser = {
   close(): Promise<void>;
 };
 export type ExtractionOptions = {
+  /** Use cookies explicitly saved by login(); authenticated captures bypass caches. */
+  session?: string;
+  /** Default ~/.fetchary/sessions; requires session for extraction. */
+  sessionDir?: string;
   mode?: CaptureMode;
   timeout?: number;
   userAgent?: string;
@@ -75,15 +79,21 @@ export type SocialLink = { platform: Platform; url: string; kind: SocialKind; so
 export type SocialLinksResult = ExtractionResult<SocialLink[], 'social-links'> & { links: SocialLink[] };
 export type EmailsResult = ExtractionResult<string[], 'emails'> & { emails: string[] };
 export type TelephoneResult = ExtractionResult<string[], 'telephone'> & { numbers: string[] };
-export type LinkLocation = { pageUrl: string; selector: string; attribute: 'href' | 'src' | 'data' };
-export type ExtractedLink = { url: string; rawUrl: string; text: string; rel: string[]; internal: boolean; source: 'a' | 'area' | 'link'; location: LinkLocation };
+export type LinkLocation = { pageUrl: string; selector: string; attribute: 'href' | 'src' | 'data' | 'textContent' };
+export type ExtractedLink = { url: string; rawUrl: string; text: string; rel: string[]; internal: boolean; source: 'a' | 'area' | 'link' | 'loc'; location: LinkLocation };
 export type DocumentLink = Omit<ExtractedLink, 'source'> & {
-  source: ExtractedLink['source'] | 'iframe' | 'embed' | 'object';
+  source: Exclude<ExtractedLink['source'], 'loc'> | 'iframe' | 'embed' | 'object';
   filename: string | null; extension: string | null; contentType: string | null;
   detectedBy: 'url' | 'query' | 'download' | 'type';
 };
 export type LinksResult = ExtractionResult<ExtractedLink[], 'links'> & { links: ExtractedLink[] };
 export type DocumentsResult = ExtractionResult<DocumentLink[], 'documents'> & { documents: DocumentLink[] };
+export type VideoLink = {
+  url: string; rawUrl: string;
+  source: string;
+  originalAttribute: string; extension: string | null; contentType: string | null; platform: Platform | null;
+};
+export type VideosResult = ExtractionResult<VideoLink[], 'videos'> & { videos: VideoLink[] };
 export type PageMetadata = { title: string | null; description: string | null; canonical: string | null; language: string | null; publishedAt: string | null; modifiedAt: string | null };
 export type JsonValue = string | number | boolean | null | JsonValue[] | JsonObject;
 export type JsonObject = { [key: string]: JsonValue };
@@ -108,8 +118,8 @@ export type SocialInsightsData = {
   unavailable: Partial<Record<Metric, string>>;
 };
 export type SocialInsightsResult = ExtractionResult<SocialInsightsData, 'social-insights'> & { vendor: Platform | null; followers: number | null };
-export type ResultMap = { text: ContentResult<'text'>; html: ContentResult<'html'>; favicon: FaviconResult<boolean>; images: ImagesResult; avatar: ProfilePictureResult; selector: SelectorResult; 'social-links': SocialLinksResult; 'social-insights': SocialInsightsResult; emails: EmailsResult; telephone: TelephoneResult; links: LinksResult; documents: DocumentsResult; metadata: MetadataResult; 'structured-data': StructuredDataResult; 'tracker-intelligence': TrackerIntelligenceResult };
-export type OptionsMap = { text: ContentOptions; html: ContentOptions; favicon: FaviconOptions; images: ImagesOptions; avatar: ExtractionOptions; selector: SelectorOptions; 'social-links': SocialLinksOptions; 'social-insights': ExtractionOptions; emails: ContactOptions; telephone: TelephoneOptions; links: LinksOptions; documents: LinksOptions; metadata: ExtractionOptions; 'structured-data': ExtractionOptions; 'tracker-intelligence': ExtractionOptions };
+export type ResultMap = { text: ContentResult<'text'>; html: ContentResult<'html'>; favicon: FaviconResult<boolean>; images: ImagesResult; videos: VideosResult; avatar: ProfilePictureResult; selector: SelectorResult; 'social-links': SocialLinksResult; 'social-insights': SocialInsightsResult; emails: EmailsResult; telephone: TelephoneResult; links: LinksResult; documents: DocumentsResult; metadata: MetadataResult; 'structured-data': StructuredDataResult; 'tracker-intelligence': TrackerIntelligenceResult };
+export type OptionsMap = { text: ContentOptions; html: ContentOptions; favicon: FaviconOptions; images: ImagesOptions; videos: LinksOptions; avatar: ExtractionOptions; selector: SelectorOptions; 'social-links': SocialLinksOptions; 'social-insights': ExtractionOptions; emails: ContactOptions; telephone: TelephoneOptions; links: LinksOptions; documents: LinksOptions; metadata: ExtractionOptions; 'structured-data': ExtractionOptions; 'tracker-intelligence': ExtractionOptions };
 export type AnalysisType = 'favicon' | 'links' | 'social-links' | 'emails' | 'telephone' | 'images' | 'documents' | 'structured-data' | 'metadata' | 'tracker-intelligence';
 export type AnalysisOptions = ExtractionOptions & { defaultCountry?: CountryCode };
 export type AnalysisResults = { [K in AnalysisType]: (K extends 'favicon' ? FaviconResult : ResultMap[K]) | null };
@@ -123,6 +133,7 @@ export declare function extractText(url: string, options?: ContentOptions): Prom
 export declare function extractHtml(url: string, options?: ContentOptions): Promise<ContentResult<'html'>>;
 export declare function extractLinks(url: string, options?: LinksOptions): Promise<LinksResult>;
 export declare function extractDocuments(url: string, options?: LinksOptions): Promise<DocumentsResult>;
+export declare function extractVideos(url: string, options?: LinksOptions): Promise<VideosResult>;
 export declare function extractMetadata(url: string, options?: ExtractionOptions): Promise<MetadataResult>;
 export declare function extractTrackerIntelligence(url: string, options?: ExtractionOptions): Promise<TrackerIntelligenceResult>;
 export declare function extractStructuredData(url: string, options?: ExtractionOptions): Promise<StructuredDataResult>;
@@ -137,9 +148,36 @@ export declare function extractSocialInsights(url: string, options?: ExtractionO
 export declare function extractSocialAvatar(url: string, options?: ExtractionOptions): Promise<ProfilePictureResult>;
 export declare const extractProfilePicture: typeof extractSocialAvatar;
 export type ExtractorOptions = ExtractionOptions & { maxEntries?: number; maxCacheBytes?: number };
-export type Extractor = { analyse: typeof analyse; extract: typeof extract; extractText: typeof extractText; extractHtml: typeof extractHtml; extractLinks: typeof extractLinks; extractDocuments: typeof extractDocuments; extractMetadata: typeof extractMetadata; extractStructuredData: typeof extractStructuredData; extractTrackerIntelligence: typeof extractTrackerIntelligence; extractEmails: typeof extractEmails; extractTelephone: typeof extractTelephone; extractFavicon: typeof extractFavicon; extractImages: typeof extractImages; extractSelector: typeof extractSelector; extractSocialLinks: typeof extractSocialLinks; extractSocialInsights: typeof extractSocialInsights; extractSocialAvatar: typeof extractSocialAvatar; extractProfilePicture: typeof extractProfilePicture; clearCache(): void };
+export type Extractor = { analyse: typeof analyse; extract: typeof extract; extractText: typeof extractText; extractHtml: typeof extractHtml; extractLinks: typeof extractLinks; extractDocuments: typeof extractDocuments; extractVideos: typeof extractVideos; extractMetadata: typeof extractMetadata; extractStructuredData: typeof extractStructuredData; extractTrackerIntelligence: typeof extractTrackerIntelligence; extractEmails: typeof extractEmails; extractTelephone: typeof extractTelephone; extractFavicon: typeof extractFavicon; extractImages: typeof extractImages; extractSelector: typeof extractSelector; extractSocialLinks: typeof extractSocialLinks; extractSocialInsights: typeof extractSocialInsights; extractSocialAvatar: typeof extractSocialAvatar; extractProfilePicture: typeof extractProfilePicture; clearCache(): void };
 export declare function createExtractor(options?: ExtractorOptions): Extractor;
 export declare function clearCache(): void;
+export type SessionOptions = { sessionDir?: string; signal?: AbortSignal };
+export type SavedSession = { session: string; origin: string; savedAt: string; cookieCount: number };
+export type SessionInfo = SavedSession & { activeCookieCount: number };
+export type LoginPage = {
+  goto(url: string, options: { waitUntil: 'domcontentloaded'; timeout: number }): Promise<{ status(): number } | null | void>;
+  on?(event: 'close', listener: () => void): unknown;
+  off?(event: 'close', listener: () => void): unknown;
+};
+export type LoginBrowser = {
+  createBrowserContext(): Promise<{ newPage(): Promise<LoginPage>; cookies(): Promise<CaptureCookieData[]>; close(): Promise<void> }>;
+  on?(event: 'disconnected', listener: () => void): unknown;
+  off?(event: 'disconnected', listener: () => void): unknown;
+  close(): Promise<void>;
+};
+export type LoginOptions = SessionOptions & {
+  session?: string;
+  /** Overall login timeout, default 300000 ms. */
+  timeout?: number;
+  allowPrivateNetwork?: boolean;
+  lookup?: ExtractionOptions['lookup'];
+  /** Resolve after the user has signed in; receives no credentials. */
+  confirm(info: { session: string; origin: string; signal: AbortSignal }): Promise<void>;
+  launchBrowser?: (options: { headless: false; defaultViewport: null; timeout: number; signal: AbortSignal; args: string[]; handleSIGINT: false; handleSIGTERM: false; handleSIGHUP: false }) => Promise<LoginBrowser>;
+};
+export declare function login(url: string, options: LoginOptions): Promise<SavedSession>;
+export declare function listSessions(options?: SessionOptions): Promise<SessionInfo[]>;
+export declare function logout(session: string, options?: SessionOptions): Promise<{ session: string; removed: boolean }>;
 export declare class FetcharyError extends Error { url?: string }
 export declare class FetcharyValidationError extends FetcharyError {}
 export declare class FetcharyFetchError extends FetcharyError { status?: number }

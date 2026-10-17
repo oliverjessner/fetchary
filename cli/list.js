@@ -37,7 +37,7 @@ function listItems(result, options = {}) {
     case 'analyse': return [...new Set(Object.values(result.results).flatMap(section => section ? listItems(section) : []))];
     case 'text': case 'html': return pageUrls(result, options);
     case 'images': case 'social-links': return result.data.map(item => item.url);
-    case 'links': case 'documents': return [...new Set(result.data.map(item => item.url))];
+    case 'links': case 'documents': case 'videos': return [...new Set(result.data.map(item => item.url))];
     case 'emails': case 'telephone': return result.data;
     case 'metadata': return Object.values(result.data).filter(value => value !== null);
     case 'tracker-intelligence': return result.data.trackers.flatMap(tracker => tracker.identifiers.length

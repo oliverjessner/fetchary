@@ -6,7 +6,7 @@
 
 > **Extract what matters.**
 
-Fetchary is a stateless web extraction toolkit for your terminal and Node.js apps.
+Fetchary is a web extraction toolkit for your terminal and Node.js apps.
 Ask for text, images, favicons, contact details, social links, or public social metrics without
 working out a different set of CSS selectors for every website.
 
@@ -79,15 +79,17 @@ prove common ownership or identity. Fetchary inspects the captured page without
 contacting the tracking services. See the [tracker reference](docs/CLI.md#tracker-intelligence)
 for supported providers and capture limits.
 
-### Find images and icons
+### Find images, videos and icons
 
 ```bash
 fetchary extract images https://example.com --list
+fetchary extract videos https://example.com --list
 fetchary extract favicon https://github.com
 fetchary extract avatar https://github.com/oliverjessner
 ```
 
-These commands return image URLs. They don't save image files.
+These commands return URLs. They don't save media files. Video extraction also
+finds linked videos and embedded players, such as YouTube and Vimeo.
 
 To get the favicon itself, use `--binary`. You can pipe it to another tool or
 save it in its original format:
@@ -107,6 +109,12 @@ fetchary extract documents https://example.com --list
 
 Link results include their text, `rel` values, and where they appeared on the
 page. Document discovery finds PDFs, spreadsheets, Word files, and other downloads.
+
+You can also read page URLs from a sitemap:
+
+```bash
+fetchary extract links https://oliverjessner.at/sitemap.xml --list
+```
 
 ### Find contact details
 
@@ -169,6 +177,33 @@ commands for structured results too. A missing metric stays `null`, with a reaso
 it never silently becomes zero. Platform support varies: see the
 [social support matrix](docs/SOCIAL_SUPPORT.md).
 
+### Sign in to a website
+
+Open a browser, sign in as usual, then return to the terminal and press Enter:
+
+```bash
+fetchary login https://www.linkedin.com --session linkedin
+fetchary extract social-insights https://www.linkedin.com/in/oliverjessner --follower --mode browser --session linkedin
+```
+
+Fetchary keeps the session locally so you can reuse it with `--session linkedin`.
+Use `fetchary sessions` to see saved sessions and `fetchary logout linkedin` to
+remove one. Your website password is entered in the browser.
+
+### Save output and revisit commands
+
+Add `--filepath .` to save output in the current directory. Fetchary chooses a
+new filename and the matching format:
+
+```bash
+fetchary extract html https://example.com --filepath .
+fetchary extract links https://oliverjessner.at/sitemap.xml --list --filepath .
+fetchary analyse https://example.com --json --filepath ./analysis.json
+```
+
+`fetchary history` shows your last 100 commands. Use `--no-history` on a command
+you do not want to keep.
+
 ## Use Fetchary in Node.js
 
 ```js
@@ -193,8 +228,10 @@ The cache lives in memory in the current process; separate CLI executions each
 start fresh. You can adjust the TTL, request a fresh capture, or use
 `createExtractor()` for a client with its own cache.
 
-Extraction creates no database or saved application state. Private and internal
-network targets are blocked by default; trusted local development can opt in
+The library creates no database or saved extraction results. The CLI keeps a
+command history; `--filepath` saves output and `login` saves session cookies when
+requested. Private and internal network targets are blocked by default;
+trusted local development can opt in
 with `--allow-private-network` or `{ allowPrivateNetwork: true }`.
 
 ## Documentation

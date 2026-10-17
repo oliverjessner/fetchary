@@ -1,7 +1,7 @@
 {
     "name": "fetchary",
-    "version": "2.0.1",
-    "description": "Extract what matters. Stateless semantic web extraction for Node.js and the command line.",
+    "version": "2.0.2",
+    "description": "Extract what matters. Semantic web extraction for Node.js and the command line, with optional browser login.",
     "keywords": [
         "web",
         "extraction",
@@ -51,8 +51,8 @@
     },
     "scripts": {
         "publish": "node ./scripts/publish.js",
-        "test": "node --test",
-        "test:coverage": "node --test --experimental-test-coverage"
+        "test": "node --require ./test-support/setup.cjs --test",
+        "test:coverage": "node --require ./test-support/setup.cjs --test --experimental-test-coverage"
     },
     "dependencies": {
         "libphonenumber-js": "^1.13.15",

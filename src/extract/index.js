@@ -6,6 +6,7 @@ const { CaptureManager, shouldRender, sharedCaptureCache } = require('../capture
 const { createCaptureSession } = require('../capture/session');
 const { loadCookieJar } = require('../capture/cookies');
 const { loadBrowserCookieJar } = require('../capture/browser-cookies');
+const { loadSessionJar, validateSessionName, sessionDirectory } = require('../auth/sessions');
 const { createCaptureCache, validateCacheTtl } = require('../capture/cache');
 const { validateUrl } = require('../utils/url');
 const { parseWaitAfterLoad, validateSelectors } = require('../utils/options');
@@ -18,8 +19,9 @@ const { imageLinks } = require('./image-links');
 const { socialLinks } = require('./social-links');
 const { insightBuilder } = require('../metrics/insights');
 const contacts = require('./contacts');
-const { pageLinks } = require('./links');
+const { pageLinks, sitemapLinks } = require('./links');
 const { documentLinks } = require('./documents');
+const { videoLinks } = require('./videos');
 const { pageMetadata: extractPageMetadata } = require('./metadata');
 const { structuredData } = require('./structured-data');
 const { trackerIntelligence } = require('./tracker-intelligence');
@@ -27,14 +29,14 @@ const { trackerIntelligence } = require('./tracker-intelligence');
 const clientCache = Symbol('captureCache');
 const analysisSession = Symbol('analysisSession');
 const sessionCookies = Symbol('sessionCookies');
-const types = ['text','html','favicon','images','avatar','selector','social-links','social-insights','emails','telephone','links','documents','metadata','structured-data','tracker-intelligence'];
+const types = ['text','html','favicon','images','videos','avatar','selector','social-links','social-insights','emails','telephone','links','documents','metadata','structured-data','tracker-intelligence'];
 
 function extractionOptions(options = {}) {
   if (!options || typeof options !== 'object' || Array.isArray(options)) throw new FetcharyValidationError('options must be an object');
   for (const name of ['method','body','followRedirects','getVendors']) if (Object.hasOwn(options, name)) throw new FetcharyValidationError(`${name} is not an extraction option`);
   const settings = {
     fetch: options.fetch, launchBrowser: options.launchBrowser, headers: options.headers, signal: options.signal, cookieFile: options.cookieFile,
-    cookiesFromBrowser:options.cookiesFromBrowser, browserProfile:options.browserProfile,
+    cookiesFromBrowser:options.cookiesFromBrowser, browserProfile:options.browserProfile, session:options.session, sessionDir:options.sessionDir,
     lookup: options.lookup, allowPrivateNetwork: options.allowPrivateNetwork,
     timeout: options.timeout ?? 30_000, userAgent: options.userAgent ?? 'fetchary/2.0',
     browserUserAgent: options.userAgent ?? 'fetchary/2.0', mode: options.mode ?? 'auto',
@@ -51,6 +53,12 @@ function extractionOptions(options = {}) {
   if (settings.cookieFile !== undefined && (typeof settings.cookieFile !== 'string' || !settings.cookieFile.trim() || settings.cookieFile.length > 4096)) throw new FetcharyValidationError('cookieFile must be a non-empty file path');
   if (settings.cookiesFromBrowser !== undefined && settings.cookiesFromBrowser !== 'chrome') throw new FetcharyValidationError('cookiesFromBrowser must be chrome');
   if (settings.cookieFile && settings.cookiesFromBrowser) throw new FetcharyValidationError('cookieFile and cookiesFromBrowser cannot be combined');
+  if (settings.session !== undefined) validateSessionName(settings.session);
+  if (settings.sessionDir !== undefined) {
+    sessionDirectory(settings);
+    if (!settings.session) throw new FetcharyValidationError('sessionDir requires session');
+  }
+  if (settings.session && (settings.cookieFile || settings.cookiesFromBrowser)) throw new FetcharyValidationError('session cannot be combined with cookieFile or cookiesFromBrowser');
   if (settings.browserProfile !== undefined) {
     const profile = settings.browserProfile;
     if (typeof profile !== 'string' || !profile.trim() || profile.length > 4096 || /[\x00-\x1f\x7f]/.test(profile)
@@ -58,11 +66,12 @@ function extractionOptions(options = {}) {
     if (!settings.cookiesFromBrowser) throw new FetcharyValidationError('browserProfile requires cookiesFromBrowser');
   }
   try { if (settings.headers !== undefined) settings.headers = Object.fromEntries(new Headers(settings.headers)); } catch (cause) { throw new FetcharyValidationError('invalid request headers', { cause }); }
-  if ((settings.cookieFile || settings.cookiesFromBrowser) && new Headers(settings.headers).has('cookie')) throw new FetcharyValidationError('session cookies cannot be combined with a Cookie header');
+  if ((settings.cookieFile || settings.cookiesFromBrowser || settings.session) && new Headers(settings.headers).has('cookie')) throw new FetcharyValidationError('session cookies cannot be combined with a Cookie header');
   return settings;
 }
 
 function loadSessionCookies(settings, url) {
+  if (settings.session) return loadSessionJar(settings.session, url, settings);
   return settings.cookiesFromBrowser ? loadBrowserCookieJar(settings, url) : loadCookieJar(settings.cookieFile, url, settings.signal);
 }
 
@@ -96,7 +105,7 @@ function fallbackNeeded(page, result, type) {
   }
   if (type === 'social-insights') return ['unavailable','partial'].includes(result.data.status) && scripts;
   if (type === 'selector') return !result.data.matched && scripts;
-  if (['images','social-links','emails','telephone','links','documents'].includes(type)) return result.data.length === 0 && scripts;
+  if (['images','videos','social-links','emails','telephone','links','documents'].includes(type)) return result.data.length === 0 && scripts;
   const document = pageDocument(page);
   const text = htmlToText((document.body || document).toString());
   return scripts && (!text || /id=["'](?:root|app|__next)["']/i.test(html) && text.length < 40);
@@ -105,7 +114,7 @@ function fallbackNeeded(page, result, type) {
 async function withCapture(url, options, type, operation) {
   const requestedUrl = validateUrl(url);
   const settings = extractionOptions(options);
-  if (settings.cookieFile || settings.cookiesFromBrowser) settings.cookieJar = options[sessionCookies] || await loadSessionCookies(settings, requestedUrl);
+  if (settings.cookieFile || settings.cookiesFromBrowser || settings.session) settings.cookieJar = options[sessionCookies] || await loadSessionCookies(settings, requestedUrl);
   settings.passiveTrackerCapture = type === 'tracker-intelligence';
   settings.headerOrigin = new URL(requestedUrl).origin;
   settings.scopedHeaderNames = Object.keys(settings.headers || {}).filter(name => name !== 'user-agent');
@@ -139,7 +148,7 @@ async function analyse(url, options = {}) {
   for (const name of ['selector','all','attribute','format','platform','unique','includeMetadata','sources','includeSelectors','ignoreSelectors']) {
     if (Object.hasOwn(options, name)) throw new FetcharyValidationError(`${name} is not supported for analyse`);
   }
-  if (settings.cookieFile || settings.cookiesFromBrowser) settings.cookieJar = await loadSessionCookies(settings, requestedUrl);
+  if (settings.cookieFile || settings.cookiesFromBrowser || settings.session) settings.cookieJar = await loadSessionCookies(settings, requestedUrl);
   settings.headerOrigin = new URL(requestedUrl).origin;
   settings.scopedHeaderNames = Object.keys(settings.headers || {}).filter(name => name !== 'user-agent');
   const session = createCaptureSession(requestedUrl, settings);
@@ -317,12 +326,19 @@ function extractLinkCollection(url, options, type) {
   const includeSelectors = validateSelectors(options.includeSelectors ?? [], 'include');
   const ignoreSelectors = validateSelectors(options.ignoreSelectors ?? [], 'ignore');
   return withCapture(url, options, type, page => {
-    const data = (type === 'links' ? pageLinks : documentLinks)(pageDocument(page), pageMetadata(page).finalUrl, { includeSelectors, ignoreSelectors });
-    return type === 'links' ? { data, links: data } : { data, documents: data };
+    const filters = { includeSelectors, ignoreSelectors, maxResponseBytes: options.maxResponseBytes };
+    if (type === 'links') {
+      const sitemap = sitemapLinks(pageHtml(page), pageMetadata(page).finalUrl, filters);
+      if (sitemap !== null) return { data: sitemap, links: sitemap };
+    }
+    const method = { links: pageLinks, documents: documentLinks, videos: videoLinks }[type];
+    const data = type !== 'videos' || shouldRender(page.contentType) ? method(pageDocument(page), pageMetadata(page).finalUrl, filters) : [];
+    return { data, [type]: data };
   });
 }
 async function extractLinks(url, options = {}) { return extractLinkCollection(url, options, 'links'); }
 async function extractDocuments(url, options = {}) { return extractLinkCollection(url, options, 'documents'); }
+async function extractVideos(url, options = {}) { return extractLinkCollection(url, options, 'videos'); }
 
 async function extractImages(url, options = {}) {
   return withCapture(url, options, 'images', page => { const data = imageLinks(pageDocument(page), pageMetadata(page).finalUrl, options); return { data, images: data }; });
@@ -395,7 +411,7 @@ async function extract(url, options = {}) {
   extractionOptions(options);
   const type = options.type ?? (options.format === 'text' ? 'text' : 'html');
   if (options.format !== undefined && !['text','html'].includes(options.format)) throw new FetcharyValidationError('format must be text or html');
-  const methods = { text: extractText, html: extractHtml, favicon: extractFavicon, images: extractImages, avatar: extractSocialAvatar,
+  const methods = { text: extractText, html: extractHtml, favicon: extractFavicon, images: extractImages, videos: extractVideos, avatar: extractSocialAvatar,
     selector: extractSelector, 'social-links': extractSocialLinks, 'social-insights': extractSocialInsights, emails: extractEmails, telephone: extractTelephone, links: extractLinks, documents: extractDocuments, metadata: extractMetadata, 'structured-data': extractStructuredData, 'tracker-intelligence': extractTrackerIntelligence };
   if (!types.includes(type)) throw new FetcharyValidationError(`unknown extraction type: ${type}`);
   return methods[type](url, options);
@@ -406,11 +422,11 @@ function createExtractor(options = {}) {
   const cache = createCaptureCache({ maxEntries: options.maxEntries, maxCacheBytes: options.maxCacheBytes });
   const defaults = { ...options, headers: settings.headers };
   const client = { clearCache: () => cache.clear() };
-  for (const [name, method] of Object.entries({ analyse, extract, extractText, extractHtml, extractFavicon, extractImages, extractSocialLinks, extractSocialAvatar, extractProfilePicture, extractSocialInsights, extractEmails, extractTelephone, extractLinks, extractDocuments, extractMetadata, extractStructuredData, extractTrackerIntelligence })) client[name] = (url, overrides = {}) => method(url, { ...defaults, ...overrides, [clientCache]: cache });
+  for (const [name, method] of Object.entries({ analyse, extract, extractText, extractHtml, extractFavicon, extractImages, extractVideos, extractSocialLinks, extractSocialAvatar, extractProfilePicture, extractSocialInsights, extractEmails, extractTelephone, extractLinks, extractDocuments, extractMetadata, extractStructuredData, extractTrackerIntelligence })) client[name] = (url, overrides = {}) => method(url, { ...defaults, ...overrides, [clientCache]: cache });
   client.extractSelector = (url, selectorOrOptions = {}, overrides = {}) => typeof selectorOrOptions === 'string'
     ? extractSelector(url, { ...defaults, ...overrides, selector: selectorOrOptions, [clientCache]: cache })
     : extractSelector(url, { ...defaults, ...selectorOrOptions, [clientCache]: cache });
   return client;
 }
-module.exports = { analyse, extract, extractText, extractHtml, extractFavicon, extractImages, extractSelector, extractSocialLinks, extractEmails, extractTelephone, extractLinks, extractDocuments, extractMetadata, extractStructuredData, extractTrackerIntelligence,
+module.exports = { analyse, extract, extractText, extractHtml, extractFavicon, extractImages, extractVideos, extractSelector, extractSocialLinks, extractEmails, extractTelephone, extractLinks, extractDocuments, extractMetadata, extractStructuredData, extractTrackerIntelligence,
   extractSocialAvatar, extractProfilePicture, extractSocialInsights, createExtractor, clearCache };
