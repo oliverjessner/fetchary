@@ -1,9 +1,11 @@
 'use strict';
 
 const { parseHTML } = require('linkedom');
+const { isAbsolute } = require('node:path');
 const { CaptureManager, shouldRender, sharedCaptureCache } = require('../capture');
 const { createCaptureSession } = require('../capture/session');
 const { loadCookieJar } = require('../capture/cookies');
+const { loadBrowserCookieJar } = require('../capture/browser-cookies');
 const { createCaptureCache, validateCacheTtl } = require('../capture/cache');
 const { validateUrl } = require('../utils/url');
 const { parseWaitAfterLoad, validateSelectors } = require('../utils/options');
@@ -32,6 +34,7 @@ function extractionOptions(options = {}) {
   for (const name of ['method','body','followRedirects','getVendors']) if (Object.hasOwn(options, name)) throw new FetcharyValidationError(`${name} is not an extraction option`);
   const settings = {
     fetch: options.fetch, launchBrowser: options.launchBrowser, headers: options.headers, signal: options.signal, cookieFile: options.cookieFile,
+    cookiesFromBrowser:options.cookiesFromBrowser, browserProfile:options.browserProfile,
     lookup: options.lookup, allowPrivateNetwork: options.allowPrivateNetwork,
     timeout: options.timeout ?? 30_000, userAgent: options.userAgent ?? 'fetchary/2.0',
     browserUserAgent: options.userAgent ?? 'fetchary/2.0', mode: options.mode ?? 'auto',
@@ -46,9 +49,21 @@ function extractionOptions(options = {}) {
   for (const name of ['allowPrivateNetwork','unique','includeMetadata','all','binary']) if (options[name] !== undefined && typeof options[name] !== 'boolean') throw new FetcharyValidationError(`${name} must be a boolean`);
   if (settings.signal !== undefined && !(settings.signal instanceof AbortSignal)) throw new FetcharyValidationError('signal must be an AbortSignal');
   if (settings.cookieFile !== undefined && (typeof settings.cookieFile !== 'string' || !settings.cookieFile.trim() || settings.cookieFile.length > 4096)) throw new FetcharyValidationError('cookieFile must be a non-empty file path');
+  if (settings.cookiesFromBrowser !== undefined && settings.cookiesFromBrowser !== 'chrome') throw new FetcharyValidationError('cookiesFromBrowser must be chrome');
+  if (settings.cookieFile && settings.cookiesFromBrowser) throw new FetcharyValidationError('cookieFile and cookiesFromBrowser cannot be combined');
+  if (settings.browserProfile !== undefined) {
+    const profile = settings.browserProfile;
+    if (typeof profile !== 'string' || !profile.trim() || profile.length > 4096 || /[\x00-\x1f\x7f]/.test(profile)
+      || !isAbsolute(profile) && (profile === '.' || profile === '..' || /[/\\]/.test(profile))) throw new FetcharyValidationError('browserProfile must be a profile directory name or an absolute directory path');
+    if (!settings.cookiesFromBrowser) throw new FetcharyValidationError('browserProfile requires cookiesFromBrowser');
+  }
   try { if (settings.headers !== undefined) settings.headers = Object.fromEntries(new Headers(settings.headers)); } catch (cause) { throw new FetcharyValidationError('invalid request headers', { cause }); }
-  if (settings.cookieFile && new Headers(settings.headers).has('cookie')) throw new FetcharyValidationError('cookieFile cannot be combined with a Cookie header');
+  if ((settings.cookieFile || settings.cookiesFromBrowser) && new Headers(settings.headers).has('cookie')) throw new FetcharyValidationError('session cookies cannot be combined with a Cookie header');
   return settings;
+}
+
+function loadSessionCookies(settings, url) {
+  return settings.cookiesFromBrowser ? loadBrowserCookieJar(settings, url) : loadCookieJar(settings.cookieFile, url, settings.signal);
 }
 
 function pageMetadata(page) {
@@ -90,7 +105,7 @@ function fallbackNeeded(page, result, type) {
 async function withCapture(url, options, type, operation) {
   const requestedUrl = validateUrl(url);
   const settings = extractionOptions(options);
-  if (settings.cookieFile) settings.cookieJar = options[sessionCookies] || await loadCookieJar(settings.cookieFile, requestedUrl, settings.signal);
+  if (settings.cookieFile || settings.cookiesFromBrowser) settings.cookieJar = options[sessionCookies] || await loadSessionCookies(settings, requestedUrl);
   settings.passiveTrackerCapture = type === 'tracker-intelligence';
   settings.headerOrigin = new URL(requestedUrl).origin;
   settings.scopedHeaderNames = Object.keys(settings.headers || {}).filter(name => name !== 'user-agent');
@@ -124,7 +139,7 @@ async function analyse(url, options = {}) {
   for (const name of ['selector','all','attribute','format','platform','unique','includeMetadata','sources','includeSelectors','ignoreSelectors']) {
     if (Object.hasOwn(options, name)) throw new FetcharyValidationError(`${name} is not supported for analyse`);
   }
-  if (settings.cookieFile) settings.cookieJar = await loadCookieJar(settings.cookieFile, requestedUrl, settings.signal);
+  if (settings.cookieFile || settings.cookiesFromBrowser) settings.cookieJar = await loadSessionCookies(settings, requestedUrl);
   settings.headerOrigin = new URL(requestedUrl).origin;
   settings.scopedHeaderNames = Object.keys(settings.headers || {}).filter(name => name !== 'user-agent');
   const session = createCaptureSession(requestedUrl, settings);

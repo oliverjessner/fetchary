@@ -154,6 +154,8 @@ not store the report, crawl other pages, monitor the site or infer ownership.
 | `userAgent` | `'fetchary/2.0'` | Non-empty HTTP and browser user agent |
 | `headers` | none | `HeadersInit`; caller headers are scoped to the original origin |
 | `cookieFile` | none | Path to a read-only Netscape/JSON session cookie export; disables page caching |
+| `cookiesFromBrowser` | none | `'chrome'`: read matching cookies from Google Chrome on macOS; disables page caching |
+| `browserProfile` | `'Default'` | Profile directory name or absolute path; requires `cookiesFromBrowser` |
 | `waitAfterLoad` | `5000` | Non-negative integer milliseconds or duration such as `'500ms'`, `'5s'` |
 | `signal` | none | `AbortSignal`; aborted operations fail and bypass shared in-flight work |
 | `maxResponseBytes` | `20971520` | Positive safe integer; decoded response/resource/rendered HTML limit |
@@ -176,6 +178,47 @@ The page HTTP status/content type remain the original HTTP response metadata,
 even when the browser subsequently renders or redirects. UTF-8 is the default;
 declared supported HTTP charsets and simple HTML meta charset declarations use
 `TextDecoder`, with UTF-8 fallback for unsupported labels.
+
+### Browser-cookie authentication
+
+```js
+const { extractSocialInsights, createExtractor } = require('fetchary');
+
+async function main() {
+    const result = await extractSocialInsights('https://www.linkedin.com/in/oliverjessner', {
+        mode: 'browser', cookiesFromBrowser: 'chrome', browserProfile: 'Default',
+    });
+    console.log(result.followers);
+
+    const client = createExtractor({ cookiesFromBrowser: 'chrome', browserProfile: 'Profile 1' });
+    return client.analyse('https://example.com');
+}
+```
+
+`cookiesFromBrowser?: 'chrome'` and `browserProfile?: string` are common extraction
+options for explicit methods, dispatch, analysis and clients. Chrome on macOS is
+currently supported. `browserProfile` defaults to the `Default` directory under
+`~/Library/Application Support/Google/Chrome`; it accepts another directory name
+or an absolute profile directory path. Relative paths and Chrome display names
+are not profile selectors.
+
+The importer opens the existing cookie database read-only and filters matching,
+unexpired, unpartitioned rows before decrypting values. It reads `Chrome Safe
+Storage` from the macOS Keychain only when relevant encrypted cookies exist.
+macOS may request access. It never writes the key, an export, refreshed cookies,
+or your website password. There is no Keychain/profile access during module
+import or `createExtractor()` construction. Each method reloads the profile;
+an analysis loads it once for all sections.
+
+Both session sources share scoped HTTP delivery, isolated Chromium contexts and
+cache bypass described below. `cookiesFromBrowser` conflicts with `cookieFile`
+and an explicit Cookie header; `browserProfile` requires `cookiesFromBrowser`.
+Unsupported platforms, formats, denied Keychain access and unreadable/locked
+databases raise sanitized `FetcharyValidationError`; cancellation raises
+`FetcharyFetchError`. Keychain lookup is bounded by `min(timeout, 30000)` ms.
+See the [CLI reference](CLI.md#chrome-on-macos) for supported schemas/encryption,
+size limits and profile examples. No live authenticated LinkedIn result is
+guaranteed by this API.
 
 ### Cookie-file authentication
 
@@ -215,7 +258,7 @@ are stripped from requests outside the initially requested hostname tree.
 The HTTP phase uses the exported values; refreshed browser cookies stay in that
 browser run and are not written back to the export.
 
-A custom `launchBrowser` used with `cookieFile` must expose
+A custom `launchBrowser` used with either session source must expose
 `browser.createBrowserContext()` returning a context with `setCookie()`,
 `newPage()` and `close()`; `CaptureCookieData` documents the values
 passed to it. Protocol errors during cookie import are sanitized rather than
@@ -808,7 +851,7 @@ implementation identity, DNS implementation identity, private-network policy,
 and browser wait settings. HTTP and browser snapshots are separate. Extraction
 selectors and formats do not change a page snapshot's key.
 
-Cookie-file requests bypass all capture caches, including isolated clients.
+Cookie-file and browser-cookie requests bypass all capture caches, including isolated clients.
 Authorization, Cookie, and Proxy-Authorization headers bypass the shared global
 cache. Private clients isolate their authenticated entries by complete headers.
 Never change a custom transport's hidden session while retaining its entries;

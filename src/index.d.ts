@@ -13,7 +13,7 @@ export type CapturePage = {
 };
 export type CaptureBrowser = {
   newPage(): Promise<CapturePage>;
-  /** Required when using cookieFile with a custom browser implementation. */
+  /** Required when importing session cookies with a custom browser implementation. */
   createBrowserContext?(): Promise<{ newPage(): Promise<CapturePage>; setCookie(...cookies: CaptureCookieData[]): Promise<void>; close(): Promise<void> }>;
   close(): Promise<void>;
 };
@@ -24,6 +24,10 @@ export type ExtractionOptions = {
   headers?: HeadersInit;
   /** Read-only Netscape/JSON cookie export. Cookie-file captures bypass all page caches. */
   cookieFile?: string;
+  /** Read relevant cookies from Chrome on macOS; disables page caching. Conflicts with cookieFile. */
+  cookiesFromBrowser?: 'chrome';
+  /** Chrome profile directory name (default: Default) or absolute profile directory path. */
+  browserProfile?: string;
   waitAfterLoad?: number | string;
   signal?: AbortSignal;
   /** Default 20 MiB, applied to each decoded response/resource and rendered HTML. */

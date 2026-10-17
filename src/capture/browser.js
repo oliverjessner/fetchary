@@ -99,7 +99,7 @@ class BrowserCapture {
             await abortable(cookieContext.setCookie(...options.cookieJar.browserCookies()), signal);
           } catch {
             // Protocol errors may serialize the credentials passed to Chromium.
-            throw new FetcharyBrowserError('could not import cookieFile into the browser context', {url:options.url, phase:'cookies'});
+            throw new FetcharyBrowserError(`could not import ${options.cookiesFromBrowser ? 'browser cookies' : 'cookieFile'} into the browser context`, {url:options.url, phase:'cookies'});
           }
         }
         page = await abortable((cookieContext || browser).newPage(), signal);

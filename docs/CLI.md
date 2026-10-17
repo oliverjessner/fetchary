@@ -507,6 +507,8 @@ See [Social support](SOCIAL_SUPPORT.md) for implemented patterns and fixtures an
 | `--wait-after-load <duration>` | Browser post-load wait; default `5s`; accepts `500ms`, `5s`, or `0ms`          |
 | `--max-response-bytes <bytes>` | Decoded response/resource/rendered HTML limit; default 20971520 (20 MiB)                               |
 | `--cookies <file>`            | Read a Netscape/JSON cookie export; cookie-file captures bypass page caches |
+| `--cookies-from-browser chrome` | Read matching cookies directly from Chrome on macOS; bypass page caches |
+| `--browser-profile <name\|path>` | Chrome profile directory name or absolute directory path; default `Default` |
 | `--allow-private-network`      | Explicitly allow trusted local/internal targets                                |
 | `--quiet`                      | Suppress successful output, keeping errors on stderr                           |
 | `--verbose`                    | Print operation/mode diagnostics on stderr                                     |
@@ -519,8 +521,63 @@ wrong type are rejected. There is no data-directory or monitoring configuration.
 
 ## Signed-in sessions
 
-`--cookies <file>` imports an existing session for any extraction type, the
-standalone aliases and `analyse`. It does not ask for or save a password.
+Session imports work with any extraction type, the standalone aliases and
+`analyse`. They do not ask for or save your website password.
+
+### Chrome on macOS
+
+Read the relevant cookies directly from your signed-in Chrome profile:
+
+```bash
+fetchary extract social-insights https://www.linkedin.com/in/oliverjessner --follower --mode browser --cookies-from-browser chrome
+```
+
+The default profile is `~/Library/Application Support/Google/Chrome/Default`.
+Select another profile with its directory name (not its Chrome display name),
+or pass an absolute profile directory path:
+
+```bash
+fetchary analyse https://example.com --cookies-from-browser chrome --browser-profile "Profile 1"
+fetchary extract text https://example.com --cookies-from-browser chrome --browser-profile "/absolute/path/to/Chrome/Default"
+```
+
+Fetchary opens the existing `Network/Cookies` or `Cookies` SQLite database in
+read-only mode. It loads only unexpired, unpartitioned cookies that can match the
+initial hostname or its descendants. Unrelated sessions are not decrypted.
+The selected profile is reread on every operation; `analyse` reads it once.
+No cookie export, persistent copy, saved password, key or refreshed session is
+written. Browser capture still uses a new isolated context rather than launching
+Chrome with your personal profile.
+
+Encrypted cookies require the `Chrome Safe Storage` key from your macOS
+Keychain. macOS may ask you to allow access. Fetchary only reads the existing
+item; it does not create a key, change its permissions, or store the key.
+Keychain lookup observes cancellation and a timeout of at most 30 seconds.
+Denied access and database/decryption errors fail with validation exit code 2
+without printing cookie values or Keychain output. If Chrome locks its database,
+close Chrome and retry.
+
+If macOS denies file access (`EPERM`/`EACCES`), check **System Settings → Privacy &
+Security** for the terminal or app running Fetchary, or use a cookie export.
+File access and Keychain access are separate permissions. See
+[Apple's file-access guidance](https://support.apple.com/en-gb/guide/security/secddd1d86a6/web).
+
+This option currently supports **Google Chrome on macOS**, database versions
+15–24 and `v10` encryption, including version 24's domain hash verification.
+Partitioned cookies are skipped. Database size is limited to 256 MiB, matching
+cookies to 3000 entries and 1 MiB. Other browsers, Windows/Linux, newer unsupported
+schemas and other encryption formats require an exported `--cookies` file.
+The format follows Chromium's [Keychain provider](https://chromium.googlesource.com/chromium/src/+/main/components/os_crypt/async/browser/keychain_key_provider.mm)
+and [cookie store](https://chromium.googlesource.com/chromium/src/+/main/net/extras/sqlite/sqlite_persistent_cookie_store.cc).
+
+`--cookies-from-browser` conflicts with `--cookies` and an explicit Cookie request
+header. `--browser-profile` requires `--cookies-from-browser`. Both session
+sources use the hostname restrictions, isolated browser contexts and cache bypass
+described below. Importing a session does not guarantee website access.
+
+### Exported cookie files
+
+`--cookies <file>` reads a local Netscape or JSON export:
 
 1. Sign in normally in your browser.
 2. Export only the desired site's cookies as a Netscape cookie file or a JSON

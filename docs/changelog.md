@@ -1,5 +1,7 @@
 # Unreleased
 
+- Add `--cookies-from-browser chrome`, `--browser-profile`, and library `cookiesFromBrowser`/`browserProfile` options for Chrome on macOS. Read scoped cookies from the selected SQLite profile in read-only mode, decrypt supported cookies through the existing Keychain item, verify version 24 domain hashes, and reuse isolated browser contexts and authenticated cache bypass without saving credentials or updating the source session.
+
 - Add `--cookies <file>` and library `cookieFile` support for read-only Netscape/JSON session exports across extractors and analysis. Apply scoped cookies to HTTP redirects and browser contexts, bypass authenticated capture caches, preserve browser session updates, and validate/redact exports without storing passwords or rewriting cookie files.
 
 - Increase the default decoded response/resource and rendered HTML limit to 20 MiB (20971520 bytes), with an 80 MiB aggregate browser resource budget. Explicit `maxResponseBytes`/`--max-response-bytes` values continue to override the default.

@@ -122,16 +122,16 @@ country code work without it.
 
 ### Use a signed-in session
 
-If a page needs your login, export that site's cookies from your signed-in
-browser and pass the local file:
+On macOS, you can reuse your signed-in Chrome session:
 
 ```bash
-fetchary extract social-insights https://www.linkedin.com/in/oliverjessner --follower --mode browser --cookies ~/linkedin-cookies.txt
+fetchary extract social-insights https://www.linkedin.com/in/oliverjessner --follower --mode browser --cookies-from-browser chrome
 ```
 
-Fetchary reads the export without changing it or storing your password. Keep
-this file private. See [cookie-file support](docs/CLI.md#signed-in-sessions)
-for supported exports and session limits.
+Fetchary reads the relevant cookies without changing your Chrome session or
+storing your password. You can also pass an exported cookie file with
+`--cookies ~/linkedin-cookies.txt`. See [signed-in sessions](docs/CLI.md#signed-in-sessions)
+for profiles, supported exports and session limits.
 
 ### Select an element
 

@@ -10,15 +10,15 @@ const MAX_COOKIES = 3000;
 const fail = message => { throw new FetcharyValidationError(message); };
 const hostname = url => new URL(url).hostname.toLowerCase().replace(/\.$/, '');
 
-function normalizeCookie(input, index) {
-  const invalid = () => fail(`invalid cookieFile entry ${index + 1}`);
+function normalizeCookie(input, index, source) {
+  const invalid = () => fail(`invalid ${source} entry ${index + 1}`);
   if (!input || typeof input !== 'object' || Array.isArray(input)) return invalid();
   const { name, value } = input;
   if (typeof name !== 'string' || !/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/.test(name) || typeof value !== 'string' || name.length + value.length > 4096) return invalid();
   if (value === '"') return invalid();
   const unquoted = value.startsWith('"') && value.endsWith('"') ? value.slice(1, -1) : value;
   if (!/^[\x21\x23-\x2B\x2D-\x3A\x3C-\x5B\x5D-\x7E]*$/.test(unquoted)) return invalid();
-  if (input.partitionKey != null || input.partitioned === true) fail('partitioned cookies are not supported by cookieFile');
+  if (input.partitionKey != null || input.partitioned === true) fail(`partitioned cookies are not supported by ${source}`);
   for (const field of ['hostOnly','secure','httpOnly','session']) if (input[field] !== undefined && typeof input[field] !== 'boolean') return invalid();
   if (typeof input.domain !== 'string' || !input.domain || /[\s/@?#\\]/.test(input.domain)) return invalid();
   let domain; const rawDomain = input.domain.replace(/^\./, '').replace(/\.$/, '');
@@ -68,23 +68,27 @@ function parseCookieFile(text) {
         expires:Number(fields[4]), session:Number(fields[4]) === 0, name:fields[5], value:fields[6], httpOnly });
     }
   }
-  if (entries.length > MAX_COOKIES) fail(`cookieFile exceeds ${MAX_COOKIES} cookies`);
+  return normalizeCookies(entries);
+}
+
+function normalizeCookies(entries, source = 'cookieFile') {
+  if (entries.length > MAX_COOKIES) fail(`${source} exceeds ${MAX_COOKIES} cookies`);
   const unique = new Map();
   entries.forEach((entry, index) => {
-    const cookie = normalizeCookie(entry, index);
+    const cookie = normalizeCookie(entry, index, source);
     unique.set(JSON.stringify([cookie.domain,cookie.hostOnly,cookie.path,cookie.name]), cookie);
   });
   return [...unique.values()];
 }
 
-function createCookieJar(cookies, requestedUrl) {
+function createCookieJar(cookies, requestedUrl, source = 'cookieFile') {
   const root = hostname(requestedUrl);
   const allows = url => { const host = hostname(url); return host === root || host.endsWith(`.${root}`); };
   // Only load credentials belonging to the requested hostname's tree. Parent
   // domain cookies may match it; unrelated exported sessions stay out entirely.
   const relevant = cookies.filter(cookie => cookie.expires === null || cookie.expires > Date.now() / 1000).filter(cookie =>
     cookie.domain === root || cookie.domain.endsWith(`.${root}`) || !cookie.hostOnly && root.endsWith(`.${cookie.domain}`));
-  if (!relevant.length) fail('cookieFile contains no unexpired cookies for the requested host');
+  if (!relevant.length) fail(`${source} contains no unexpired cookies for the requested host`);
   return {
     allows,
     header(url) {
@@ -132,4 +136,4 @@ async function loadCookieJar(file, url, signal) {
   } finally { await handle?.close().catch(() => {}); }
 }
 
-module.exports = { parseCookieFile, createCookieJar, loadCookieJar };
+module.exports = { parseCookieFile, normalizeCookies, createCookieJar, loadCookieJar };
