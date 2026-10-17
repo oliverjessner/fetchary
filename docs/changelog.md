@@ -1,4 +1,4 @@
-# Unreleased
+# 2.0.1
 
 - Add `--cookies-from-browser chrome`, `--browser-profile`, and library `cookiesFromBrowser`/`browserProfile` options for Chrome on macOS. Read scoped cookies from the selected SQLite profile in read-only mode, decrypt supported cookies through the existing Keychain item, verify version 24 domain hashes, and reuse isolated browser contexts and authenticated cache bypass without saving credentials or updating the source session.
 
