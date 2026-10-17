@@ -120,17 +120,36 @@ test('import and extraction create no application data files and leave existing 
 });
 
 test('real Chromium blocks private subresources and direct WebSocket networking',async t=>{
-  let requests=0;
+  let requests=0;let connections=0;
   const server=http.createServer((request,response)=>{requests++;response.end('private');});
+  server.on('connection',()=>{connections++;});
   server.on('upgrade',(request,socket)=>{requests++;socket.destroy();});
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
   t.after(()=>new Promise(resolve=>server.close(resolve)));
   const privateUrl=`http://127.0.0.1:${server.address().port}`;
-  const options={mode:'browser',waitAfterLoad:150,timeout:5000,lookup:publicLookup,fetch:async()=>new Response(`<html><body><main>Public</main><script>new WebSocket('${privateUrl.replace('http:','ws:')}/socket').onerror=()=>{document.body.dataset.wsBlocked='true';};</script></body></html>`,{headers:{'content-type':'text/html'}})};
-  const result=await api.extractHtml('https://public.example.test/',options);
-  assert.match(result.data,/data-ws-blocked="true"/);assert.equal(requests,0);
+  const options={mode:'browser',waitAfterLoad:0,timeout:15000,lookup:publicLookup,fetch:async()=>new Response(`<html><body><main>Public</main><script>new WebSocket('${privateUrl.replace('http:','ws:')}/socket').onerror=()=>{setTimeout(()=>{document.body.dataset.wsBlocked='true';},300);};</script></body></html>`,{headers:{'content-type':'text/html'}})};
+  const launchBrowser=async launchOptions=>{
+    const browser=await require('puppeteer').launch(launchOptions);
+    return {
+      newPage:async()=>{
+        const page=await browser.newPage();
+        const content=page.content.bind(page);
+        page.content=async()=>{
+          // Observe completion before taking the snapshot. The fixture delays
+          // its error marker beyond the old 150 ms sleep to cover the race.
+          const ready=await page.waitForFunction(()=>document.body?.dataset.wsBlocked==='true',{polling:25,timeout:5000});
+          await ready.dispose();
+          return content();
+        };
+        return page;
+      },
+      close:()=>browser.close(),
+    };
+  };
+  const result=await api.extractHtml('https://public.example.test/',{...options,launchBrowser});
+  assert.match(result.data,/data-ws-blocked="true"/);assert.equal(requests,0);assert.equal(connections,0);
   await assert.rejects(api.extractHtml('https://public.example.test/',{...options,fetch:async()=>new Response(`<html><body><img src="${privateUrl}/secret"></body></html>`,{headers:{'content-type':'text/html'}})}));
-  assert.equal(requests,0);
+  assert.equal(requests,0);assert.equal(connections,0);
 });
 
 test('browser cancellation returns promptly and closes a late custom launch result',async()=>{
