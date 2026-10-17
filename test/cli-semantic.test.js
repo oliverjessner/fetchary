@@ -8,6 +8,7 @@ const {spawn}=require('node:child_process');
 const zlib=require('node:zlib');
 const {main}=require('../cli');
 const api=require('../src');
+const {version}=require('../package.json');
 const page='https://example.test/';
 const profile='https://github.com/example';
 const svg='<svg width="128" height="128"></svg>';
@@ -71,7 +72,13 @@ test('CLI validates options and input, keeps diagnostics on stderr and uses docu
   assert.equal(browser.code,4);
   const verbose=await run(['extract','text',page,'--json','--verbose']);
   assert.match(verbose.stderr,/Extracting text/);assert.equal(JSON.parse(verbose.stdout).data,'Title\nBody\nYouTube');
-  assert.equal((await run(['--version'])).stdout,'2.0.0\n');
+});
+
+test('CLI --version prints the current package version without diagnostics',async()=>{
+  const result=await run(['--version']);
+  assert.equal(result.code,0);
+  assert.equal(result.stdout,`${version}\n`);
+  assert.equal(result.stderr,'');
 });
 
 test('favicon binary CLI writes Buffers for both command forms and isolates diagnostics',async()=>{
