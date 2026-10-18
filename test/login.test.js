@@ -123,6 +123,39 @@ test('aborted launches return promptly and close browsers delivered after cancel
   assert.equal(closed, 1); assert.equal(fs.existsSync(sessionDir), false);
 });
 
+test('missing Chromium gives a version-matched repair command through the API and CLI without replacing the session or leaking launcher details', async t => {
+  const { sessionDir } = await saved(t);
+  const file = path.join(sessionDir, 'www.example.test.json'); const before = fs.readFileSync(file);
+  const options = { sessionDir, allowPrivateNetwork: true, confirm: async () => assert.fail('browser did not launch'),
+    launchBrowser: async () => { throw new Error(`Could not find Chrome (ver. 155.0.8059.79). ${secret}`, { cause: new Error(secret) }); } };
+  const command = `npx puppeteer@${require('puppeteer/package.json').version} browsers install chrome`;
+  await assert.rejects(api.login(url, options), error => {
+    assert.ok(error instanceof api.FetcharyBrowserError); assert.equal(error.phase, 'launch');
+    assert.match(error.message, /required Chrome 155\.0\.8059\.79 is not installed/);
+    assert.ok(error.message.includes(command)); assert.ok(error.message.includes('previous session kept'));
+    assert.ok(!error.message.includes(secret)); assert.equal(error.cause, undefined); return true;
+  });
+  const output = await run(['login', url, '--session-dir', sessionDir, '--no-history'], { options, confirmLogin: options.confirm });
+  assert.equal(output.code, 4); assert.equal(output.stdout, ''); assert.ok(output.stderr.includes(command)); assert.ok(!output.stderr.includes(secret));
+  assert.deepEqual(fs.readFileSync(file), before); assert.deepEqual(fs.readdirSync(sessionDir), ['www.example.test.json']);
+});
+
+test('unknown launch errors stay sanitized and later protocol errors cannot become browser installation hints', async t => {
+  const sessionDir = directory(t);
+  await assert.rejects(api.login(url, { sessionDir, allowPrivateNetwork: true, confirm: async () => {},
+    launchBrowser: async () => { throw new Error(secret); } }), error => {
+    assert.equal(error.phase, 'launch'); assert.equal(error.message, 'could not launch login browser; previous session kept');
+    assert.equal(error.cause, undefined); return true;
+  });
+  const browser = fake();
+  await assert.rejects(api.login(url, { sessionDir, allowPrivateNetwork: true, launchBrowser: browser.launchBrowser,
+    confirm: async () => { throw new Error(`Could not find Chrome (ver. 155.0.8059.79). ${secret}`); } }), error => {
+    assert.equal(error.phase, 'login'); assert.equal(error.message, 'could not complete browser login; previous session kept');
+    assert.equal(error.cause, undefined); return true;
+  });
+  assert.equal(browser.closed, 1); assert.equal(fs.existsSync(sessionDir), false);
+});
+
 test('login, sessions and logout CLI keep machine output free of prompts and credentials, and logout only removes the named local session', async t => {
   const sessionDir = directory(t); const browser = fake();
   const login = await run(['login', url, '--session', 'example', '--session-dir', sessionDir, '--json'], { options: { allowPrivateNetwork: true, launchBrowser: browser.launchBrowser }, confirmLogin: async () => {} });

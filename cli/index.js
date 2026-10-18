@@ -43,7 +43,7 @@ Options:
   --timeout <ms>                 Request timeout (default: 30000)
   --user-agent <text>            Request user agent
   --wait-after-load <duration>   Browser wait, e.g. 500ms or 5s (default: 5s)
-  --max-response-bytes <bytes>   Maximum response/DOM size (default: 20971520)
+  --max-response-bytes <bytes>   Maximum response/DOM size (default: 47185920)
   --allow-private-network        Allow trusted local/internal targets
   --cookies <file>               Import Netscape or JSON session cookies
   --session <name>               Use a session saved with fetchary login

@@ -2,9 +2,15 @@
 
 const assert = require('node:assert/strict');
 const test = require('node:test');
+const fs = require('node:fs');
+const path = require('node:path');
 const { parseHTML } = require('linkedom');
 const linkedin = require('../src/vendors/linkedin');
 const { dismissVendorOverlays } = require('../src/vendors');
+const api = require('../src');
+const { main } = require('../cli');
+const sduiHtml = fs.readFileSync(path.join(__dirname, 'fixtures/social/linkedin-profile.html'), 'utf8');
+const profileUrl = 'https://www.linkedin.com/in/example/?isSelfProfile=true';
 
 function count(html, url = 'https://www.linkedin.com/company/example/') {
   return linkedin.followerCount(parseHTML(html).document, url);
@@ -47,6 +53,9 @@ test('LinkedIn profile counts preserve connections as a different metric and sup
   assert.equal(count('<h3 class="top-card-layout__first-subline">Salzburg und Umgebung 4267 Follower:innen 500+ Kontakte</h3>', url), 4267);
   assert.equal(count('<h3 class="top-card-layout__first-subline">Salzburg 4.267 Follower*innen</h3>', url), 4267);
   assert.equal(count('<div class="pv-top-card"><a href="/in/example/recent-activity/">2,345 followers</a></div>', url), 2345);
+  assert.equal(count('<main><a href="/in/example/followers/">4,288 followers</a></main>', url), 4288);
+  assert.equal(count('<aside><a href="/in/other/followers/">99K followers</a></aside><main><a href="/in/example/recent-activity/">4,288 followers</a></main>', url), 4288);
+  assert.equal(count('<main><a href="/in/other/followers/">99K followers</a><a href="https://evil.test/in/example/followers/">100K followers</a></main>', url), null);
   assert.equal(count('<span data-test-id="follower-count">2345</span>', url), 2345);
   assert.equal(count('<div class="pv-top-card"><a href="/in/other/recent-activity/">99K followers</a><a href="https://evil.test/in/example/followers/">100K followers</a></div>', url), null);
   assert.equal(count('<div class="pv-top-card"><a href="https://[invalid]/in/example/followers/">99K followers</a><a href="/in/example/followers/">2345 followers</a></div>', url), 2345);
@@ -63,6 +72,48 @@ test('LinkedIn JSON follower statistics belong to the captured entity and ignore
   assert.equal(count(`<h3 class="top-card-layout__first-subline">1.5K followers</h3><script type="application/ld+json">${JSON.stringify(data)}</script>`), 1473);
   assert.equal(count('<script type="application/ld+json">{"@type":"Person","url":"/in/example/","interactionStatistic":{"interactionType":"FollowAction","userInteractionCount":0}}</script>', 'https://www.linkedin.com/in/example/'), 0);
   assert.equal(count('<script>{"@type":"Organization","url":"https://evil.test/company/example/","interactionStatistic":{"interactionType":"FollowAction","userInteractionCount":90000}}</script>'), null);
+});
+
+test('LinkedIn SDUI topcards use matching profile identity and labelled paragraphs without depending on generated classes', () => {
+  assert.equal(count(sduiHtml, profileUrl), 4288);
+  assert.equal(count(sduiHtml.replace(/class="[^"]*"/g, 'class="new-generated-classes"'), profileUrl), 4288);
+  assert.equal(count(sduiHtml.replace(/componentkey="[^"]*"/g, ''), profileUrl), 4288);
+  const nestedCard = '<div componentkey="com.linkedin.sdui.profile.card.refNESTEDTopcard"><a href="/in/other/"><h2>Other profile</h2></a><p>99K followers</p></div>';
+  assert.equal(count(sduiHtml.replace('<p>Founder', `${nestedCard}<p>Founder`), profileUrl), 4288);
+  for (const [text, expected] of [['0 followers', 0], ['4.288 Follower', 4288], ['4 288 Follower:innen', 4288], ['4,3K Follower*innen', 4300], ['4.3K followers <span title="4,288"></span>', 4288]]) {
+    assert.equal(count(sduiHtml.replace('4,288 followers', text), profileUrl), expected, text);
+  }
+});
+
+test('LinkedIn SDUI counters exclude connections, unrelated identities, unscoped paragraphs and hidden or ambiguous cards', () => {
+  for (const replacement of ['500+ connections', '500 employees', 'Followers', '— followers', '4,288 followers help other followers']) {
+    assert.equal(count(sduiHtml.replace('4,288 followers', replacement), profileUrl), null, replacement);
+  }
+  assert.equal(count('<p>4,288 followers</p>', profileUrl), null);
+  assert.equal(count(sduiHtml.replaceAll('/in/example/', '/in/another/'), profileUrl), null);
+  assert.equal(count(sduiHtml.replaceAll('https://www.linkedin.com/in/example/', 'https://evil.test/in/example/'), profileUrl), null);
+  assert.equal(count(sduiHtml.replaceAll('href="https://www.linkedin.com/in/example/?isSelfProfile=true"', 'href="https://[invalid]/"'), profileUrl), null);
+  const mismatchedHeading = sduiHtml.replace('href="https://www.linkedin.com/in/example/?isSelfProfile=true" componentkey="ProfileVerificationTriggerRef-example"',
+    'href="/in/other/" componentkey="ProfileVerificationTriggerRef-example"');
+  assert.equal(count(mismatchedHeading, profileUrl), null);
+  assert.equal(count(sduiHtml.replace('>4,288 followers</p>', ' hidden>4,288 followers</p>'), profileUrl), null);
+  for (const hidden of ['hidden', 'aria-hidden="true"', 'inert']) {
+    assert.equal(count(sduiHtml.replace('class="i0ll57 i0la1s i0lmlu"', `${hidden} class="i0ll57 i0la1s i0lmlu"`), profileUrl), null);
+  }
+});
+
+test('real Chromium and CLI extract SDUI profile followers from the supplied header structure', async () => {
+  const options = { mode: 'browser', waitAfterLoad: 0, timeout: 15000, lookup: async () => [{ address: '93.184.216.34', family: 4 }],
+    fetch: async () => new Response(sduiHtml, { headers: { 'content-type': 'text/html' } }) };
+  const result = await api.extractSocialInsights(profileUrl, options);
+  assert.equal(result.captureMode, 'browser'); assert.equal(result.followers, 4288);
+  assert.equal(result.data.metrics.followers, 4288); assert.equal(result.data.status, 'available');
+  assert.equal(result.data.sources.followers.field, 'followerCount'); assert.equal(result.data.unavailable.likes, 'unsupported');
+  let stdout = ''; let stderr = '';
+  const code = await main(['extract', 'social-insights', profileUrl, '--follower', '--mode', 'browser', '--no-history'], {
+    options, stdout: { write: value => { stdout += value; } }, stderr: { write: value => { stderr += value; } },
+  });
+  assert.equal(code, 0, stderr); assert.equal(stdout, '4288\n'); assert.equal(stderr, '');
 });
 
 test('LinkedIn login walls, challenges and post pages do not provide a profile count', () => {

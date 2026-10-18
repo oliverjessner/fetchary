@@ -13,7 +13,7 @@ was performed for this refactor.
 | Facebook    | SUPPORTED       | SUPPORTED             | UNSUPPORTED       | UNSUPPORTED             | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED     | UNSUPPORTED  | PARTIAL | URL recognition and links only                                             |
 | X / Twitter | SUPPORTED       | SUPPORTED             | SUPPORTED         | SUPPORTED               | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED | PARTIAL         | UNSUPPORTED  | PARTIAL | Existing matching-profile follower links and avatar parser                 |
 | Threads     | SUPPORTED       | SUPPORTED             | SUPPORTED         | SUPPORTED               | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED | PARTIAL         | UNSUPPORTED  | PARTIAL | Public profile JSON/description followers; no engagement parser            |
-| LinkedIn    | SUPPORTED       | SUPPORTED             | SUPPORTED         | SUPPORTED               | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED | PARTIAL         | UNSUPPORTED  | PARTIAL | Profile/company header or matching JSON-LD followers                       |
+| LinkedIn    | SUPPORTED       | SUPPORTED             | SUPPORTED         | SUPPORTED               | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED | PARTIAL         | UNSUPPORTED  | PARTIAL | Public/signed-in profile headers or matching JSON-LD followers             |
 | Twitch      | SUPPORTED       | SUPPORTED             | SUPPORTED         | SUPPORTED               | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED | PARTIAL         | UNSUPPORTED  | PARTIAL | Channel followers; subscriptions/viewers are not followers                 |
 | Reddit      | SUPPORTED       | SUPPORTED             | UNSUPPORTED       | UNSUPPORTED             | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED     | UNSUPPORTED  | PARTIAL | URL recognition and links only                                             |
 | GitHub      | SUPPORTED       | SUPPORTED             | SUPPORTED         | SUPPORTED               | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED | PARTIAL         | UNSUPPORTED  | PARTIAL | User follower links; repositories are not profiles                         |
@@ -137,15 +137,22 @@ Tests: `test/semantic.test.js`,
 - Implemented insight: profile `followers` from matching Person/Organization
   JSON-LD, dedicated counters, profile header/description metadata, or matching
   follower links. Connections, employees and post reactions are excluded.
+- Signed-in SDUI profile headers use stable topcard identifiers and matching
+  heading/photo profile links, including self-profile URLs. Labelled follower
+  paragraphs inside that header are read independently of generated CSS classes;
+  unrelated, nested recommendation and hidden cards are ignored.
 - Avatar: profile header image or matching Person/Organization image/logo.
 - Browser: optional for HTTP-exposed data; localized consent and dismissible login
   dialogs are covered. An HTTP avatar can supply a safe same-capture login-wall
   fallback. The guarded public HTTP follower fallback is retained at a same-platform login wall; insights still report `login_required` and identify `followerCountFromRaw` as the source.
-- Sessions: `--cookies <file>` or `--cookies-from-browser chrome` (macOS) imports an existing session into an isolated
-  browser context. Authenticated LinkedIn availability has not been live-verified.
+- Sessions: `--session <name>` uses a Fetchary login; `--cookies <file>` or
+  `--cookies-from-browser chrome` (macOS) imports an existing session into an
+  isolated browser context. SDUI parsing is covered by supplied HTML and Chromium
+  fixtures; successful live access still depends on the website's session checks.
 - Limits: no post metrics or historical comparisons. Importing a session does not
   guarantee access or add support for other metrics.
-- Tests: `linkedin.test.js`, LinkedIn avatar cases in `extract.test.js`, real
+- Tests: `linkedin.test.js` and the reduced `social/linkedin-profile.html` fixture,
+  LinkedIn avatar cases in `extract.test.js`, real
   hidden/unrelated/challenge dialog guards in `vendor-browser.test.js`.
 
 ## Twitch

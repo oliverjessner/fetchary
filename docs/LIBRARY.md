@@ -161,7 +161,7 @@ not store the report, crawl other pages, monitor the site or infer ownership.
 | `browserProfile` | `'Default'` | Profile directory name or absolute path; requires `cookiesFromBrowser` |
 | `waitAfterLoad` | `5000` | Non-negative integer milliseconds or duration such as `'500ms'`, `'5s'` |
 | `signal` | none | `AbortSignal`; aborted operations fail and bypass shared in-flight work |
-| `maxResponseBytes` | `20971520` | Positive safe integer; decoded response/resource/rendered HTML limit |
+| `maxResponseBytes` | `47185920` | Positive safe integer; decoded response/resource/rendered HTML limit |
 | `allowPrivateNetwork` | `false` | Explicitly permit trusted local/internal targets |
 | `cacheTtlMs` | `45000` | Finite, non-negative age limit; zero requests a fresh capture |
 | `fetch` | guarded native HTTP | Optional Fetch-compatible transport injection |
@@ -263,6 +263,11 @@ replace native browser networking. It must return `LoginBrowser`, with
 browser `disconnected` and page `close` events support immediate cancellation.
 The bundled implementation uses Puppeteer's [isolated browser contexts](https://pptr.dev/api/puppeteer.browser.createbrowsercontext)
 and [context cookies](https://pptr.dev/api/puppeteer.browsercontext.cookies).
+
+Browser launch failures use `FetcharyBrowserError` with `phase: 'launch'`.
+A missing Puppeteer-managed Chrome includes a matching browser-install command
+in the message; arbitrary login launcher/protocol details remain redacted.
+See the [CLI setup instructions](CLI.md#interactive-browser-login).
 
 Only unexpired, unpartitioned cookies belonging to the login hostname tree or
 matching parent cookie domain are exported; unrelated SSO-provider cookies are
@@ -1020,12 +1025,12 @@ for inaccessible favicon/avatar candidates. A failed browser resource download
 is a `FetcharyBrowserError` with `phase: 'resource'` and its original transport
 error in `cause`. Byte-limit errors include the effective `maxResponseBytes`
 and a recovery hint without echoing resource URLs into the top-level message.
-The default 20 MiB limit applies to external scripts as well as the document and
+The default 45 MiB limit applies to external scripts as well as the document and
 rendered HTML; large bundles may require an explicit override, for example
-`{ mode: 'browser', maxResponseBytes: 32 * 1024 * 1024 }`. The aggregate browser
-resource budget remains four times that limit. Insights can instead return explicit
-availability, as documented above. Type declarations are bundled in
-[`src/index.d.ts`](../src/index.d.ts), including dispatcher result inference.
+`{ mode: 'browser', maxResponseBytes: 64 * 1024 * 1024 }`. The aggregate browser
+resource budget remains four times that limit (180 MiB by default). Insights can
+instead return explicit availability, as documented above. Type declarations are
+bundled in [`src/index.d.ts`](../src/index.d.ts), including dispatcher result inference.
 
 Version 2 removes the old `Fetchary` class, `createFetchary()`, stored-source,
 archive, scheduler, diff, vendor-activation and database APIs. They have no runtime

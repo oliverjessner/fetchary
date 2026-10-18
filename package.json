@@ -1,6 +1,6 @@
 {
     "name": "fetchary",
-    "version": "2.0.3",
+    "version": "2.0.4",
     "description": "Extract what matters. Semantic web extraction for Node.js and the command line, with optional browser login.",
     "keywords": [
         "web",
@@ -60,6 +60,6 @@
         "puppeteer": "^25.12.0"
     },
     "allowScripts": {
-        "puppeteer@25.12.0": true
+        "puppeteer": true
     }
 }

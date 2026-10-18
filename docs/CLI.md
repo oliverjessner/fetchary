@@ -619,6 +619,7 @@ fetchary extract social-insights 'https://www.youtube.com/watch?v=VIDEO_ID'
 fetchary extract social-insights https://www.tiktok.com/@example
 fetchary extract social-insights https://www.instagram.com/example/
 fetchary extract social-insights https://github.com/oliverjessner --follower
+fetchary extract social-insights https://www.linkedin.com/in/oliverjessner --follower --mode browser --session linkedin
 fetchary extract social-insights https://www.tiktok.com/@example --posts
 ```
 
@@ -649,6 +650,11 @@ metrics. HTML login/CAPTCHA walls and HTTP 401/403/429 return explicit availabil
 Other transport failures use a nonzero exit code. An inspectable unavailable or
 blocked insight result is a successful command (exit 0).
 
+LinkedIn follower extraction includes signed-in profile headers with the current
+SDUI layout. Counts are tied to the matching profile header; connections and
+recommendation counts do not become followers. A saved session provides access
+but does not add support for other LinkedIn metrics.
+
 See [Social support](SOCIAL_SUPPORT.md) for implemented patterns and fixtures and
 [Library schemas](LIBRARY.md#result-schemas) for the exact result format.
 
@@ -665,7 +671,7 @@ See [Social support](SOCIAL_SUPPORT.md) for implemented patterns and fixtures an
 | `--timeout <ms>`               | Positive milliseconds per request/phase; default 30000                         |
 | `--user-agent <text>`          | HTTP and browser user agent; default `fetchary/2.0`                            |
 | `--wait-after-load <duration>` | Browser post-load wait; default `5s`; accepts `500ms`, `5s`, or `0ms`          |
-| `--max-response-bytes <bytes>` | Decoded response/resource/rendered HTML limit; default 20971520 (20 MiB)                               |
+| `--max-response-bytes <bytes>` | Decoded response/resource/rendered HTML limit; default 47185920 (45 MiB)                               |
 | `--cookies <file>`            | Read a Netscape/JSON cookie export; cookie-file captures bypass page caches |
 | `--session <name>`           | Read a locally saved Fetchary login session; authenticated captures bypass page caches |
 | `--session-dir <directory>`  | Override `~/.fetchary/sessions`; requires `--session` during extraction |
@@ -705,6 +711,22 @@ does not need permission to access Chrome cookies. The login window uses normal
 browser networking for interactive forms and SSO; extraction keeps its existing
 guarded HTTP/browser transport. No vendor overlays are automatically dismissed
 in the login window.
+
+If the required Chrome download is missing, `login` and browser extraction print
+an installation command matched to Fetchary's installed Puppeteer version. Run
+that command, then retry. For example, an installation using Puppeteer 25.14.0
+reports:
+
+```bash
+npx puppeteer@25.14.0 browsers install chrome
+fetchary login https://www.linkedin.com --session linkedin
+```
+
+Use the version printed by your own error message. A separately installed Chrome
+or a download for another Puppeteer version does not satisfy this requirement.
+Package managers that skip dependency installation scripts can omit the browser
+download; see [Puppeteer's installation guide](https://pptr.dev/guides/installation).
+Browser setup failures keep any previous session.
 
 The default session name is the target hostname, for example
 `www.linkedin.com`. `--session` chooses a different name: 1–64 lowercase letters,
@@ -895,17 +917,17 @@ rendered DOM has the same byte limit; total fetched browser resources are limite
 to four times that limit. Invalid or incomplete captures are not retained.
 
 The per-response limit also applies to browser scripts and other resources, not
-only to the final HTML. Large application bundles can exceed the default 20 MiB
+only to the final HTML. Large application bundles can exceed the default 45 MiB
 before a usable DOM is captured. Such failures report `browser resource request
 failed`, `maxResponseBytes`, the effective byte limit, and the option to change it.
 For pages that exceed the default, choose a larger explicit bound:
 
 ```bash
-fetchary extract social-insights https://youtube.com/@oliverjessner --follower --mode browser --max-response-bytes 33554432
+fetchary extract social-insights https://youtube.com/@oliverjessner --follower --mode browser --max-response-bytes 67108864
 ```
 
-This sets 32 MiB per response and for the rendered DOM, with an aggregate browser
-resource budget of 128 MiB. The default is 20 MiB per response/DOM and 80 MiB
+This sets 64 MiB per response and for the rendered DOM, with an aggregate browser
+resource budget of 256 MiB. The default is 45 MiB per response/DOM and 180 MiB
 for the aggregate browser resource budget.
 The JSON error format and browser exit code 4 are unchanged. Subresource URLs
 and query strings are retained in the library cause chain, rather than copied

@@ -34,7 +34,7 @@ export type ExtractionOptions = {
   browserProfile?: string;
   waitAfterLoad?: number | string;
   signal?: AbortSignal;
-  /** Default 20 MiB, applied to each decoded response/resource and rendered HTML. */
+  /** Default 45 MiB, applied to each decoded response/resource and rendered HTML. */
   maxResponseBytes?: number;
   /** Explicitly trust local/private network targets; false by default. */
   allowPrivateNetwork?: boolean;

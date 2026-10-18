@@ -2,6 +2,7 @@
 const { validateRemoteUrl, validateUrl } = require('../utils/url');
 const { normalizeCookies, createCookieJar } = require('../capture/cookies');
 const { abortable } = require('../capture/http');
+const { browserInstallHint } = require('../capture/browser-install');
 const { validateSessionName, sessionDirectory, saveSession } = require('./sessions');
 const { FetcharyValidationError, FetcharyBrowserError, FetcharyFetchError } = require('../errors');
 
@@ -21,14 +22,16 @@ async function login(url, options = {}) {
   const signal = options.signal ? AbortSignal.any([options.signal, controller.signal]) : controller.signal;
   const timer = setTimeout(() => controller.abort(new Error('timeout')), timeout);
   const launch = options.launchBrowser || (settings => require('puppeteer').launch(settings));
-  let browser; let pending; let context; let page; let disconnected = false;
+  let browser; let pending; let context; let page; let disconnected = false; let launching = false;
   const closed = () => { disconnected = true; controller.abort(); };
   try {
     signal.throwIfAborted();
     await validateRemoteUrl(requestedUrl, { ...options, signal, timeout: Math.min(timeout, 30_000) });
+    launching = true;
     pending = Promise.resolve().then(() => launch({ headless: false, defaultViewport: null, timeout: Math.min(timeout, 30_000),
       signal, handleSIGINT: false, handleSIGTERM: false, handleSIGHUP: false, args: ['--disable-background-networking'] }));
     browser = await abortable(pending, signal);
+    launching = false;
     browser.on?.('disconnected', closed);
     context = await abortable(browser.createBrowserContext(), signal);
     page = await abortable(context.newPage(), signal);
@@ -56,6 +59,7 @@ async function login(url, options = {}) {
     if (signal.aborted) throw new FetcharyBrowserError('login timed out; previous session kept', { phase: 'login' });
     if (error instanceof FetcharyValidationError || error instanceof FetcharyBrowserError || error instanceof FetcharyFetchError) throw error;
     // Browser/protocol errors can serialize cookies or form submissions.
+    if (launching) throw new FetcharyBrowserError(`could not launch login browser${browserInstallHint(error)}; previous session kept`, { phase: 'launch' });
     throw new FetcharyBrowserError('could not complete browser login; previous session kept', { phase: 'login' });
   } finally {
     clearTimeout(timer);

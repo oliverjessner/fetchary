@@ -4,6 +4,9 @@ const { classifyUrl } = require('../utils/social');
 const { profilePictures } = require('../metrics/profile-pictures');
 
 const { parseCount, elementCount, labeledCount, jsonObjects } = require('../metrics/followers');
+const followerLabels = String.raw`followers?(?::innen|\*innen)?|abonnenten`;
+const followerSuffix = new RegExp(`\\s*(?:${followerLabels})$`, 'i');
+const sduiTopcard = '[componentkey^="com.linkedin.sdui.profile.card."][componentkey$="Topcard"], [id^="com.linkedin.sdui.profile.card."][id$="Topcard"]';
 
 function matches(url) {
   try {
@@ -98,6 +101,30 @@ function countFromText(value) {
   return match ? parseCount(match[1]) : null;
 }
 
+function sduiFollowerCount(document, profile, url) {
+  for (const card of document.querySelectorAll(sduiTopcard)) {
+    if (card.closest('[hidden], [aria-hidden="true"], [inert]')) continue;
+    // A topcard's internal reference is opaque. Bind its heading/photo links to
+    // the requested profile before accepting a self-only /mynetwork counter.
+    const identities = [...card.querySelectorAll('a[href]')]
+      .filter(link => link.closest(sduiTopcard) === card &&
+        (link.getAttribute('componentkey') === 'topcard-logo-image-referencekey' ||
+         link.getAttribute('componentkey')?.startsWith('ProfileVerificationTriggerRef-') || link.querySelector('h1, h2')))
+      .map(link => profileKey(link.getAttribute('href'), url));
+    if (!identities.length || identities.some(identity => identity !== profile)) continue;
+    for (const paragraph of card.querySelectorAll('p')) {
+      if (paragraph.closest(sduiTopcard) !== card || paragraph.closest('[hidden], [aria-hidden="true"], [inert]')) continue;
+      for (const value of [paragraph.textContent, paragraph.getAttribute('aria-label')]) {
+        const text = String(value || '').trim();
+        const number = text.replace(followerSuffix, '');
+        const count = number === text ? null : parseCount(number);
+        if (count !== null) return elementCount(paragraph, followerLabels) ?? count;
+      }
+    }
+  }
+  return null;
+}
+
 function followerCount(document, url) {
   const profile = profileKey(url);
   if (!profile) return null;
@@ -113,6 +140,8 @@ function followerCount(document, url) {
       if (count !== null) return count;
     }
   }
+  const authenticated = sduiFollowerCount(document, profile, url);
+  if (authenticated !== null) return authenticated;
   const selector = '.top-card-layout__first-subline, .top-card-layout__second-subline, .top-card-layout .top-card__subline-item, .pv-top-card .pv-top-card--list-bullet li, .org-top-card-summary-info-list__info-item';
   for (const element of document.querySelectorAll(selector)) {
     const count = countFromText(element.textContent);
@@ -121,7 +150,9 @@ function followerCount(document, url) {
   }
   const dedicated = elementCount(document.querySelector('[data-test-id="follower-count"]'));
   if (dedicated !== null) return dedicated;
-  for (const element of document.querySelectorAll('.pv-top-card [href*="/followers"], .pv-top-card [href*="/recent-activity"]')) {
+  // Current authenticated layouts do not retain the legacy .pv-top-card class.
+  // The link's profile identity provides the scope independently of its layout.
+  for (const element of document.querySelectorAll('a[href*="/followers"], a[href*="/recent-activity"]')) {
     let target;
     try { target = new URL(element.getAttribute('href'), url); } catch { continue; }
     target.pathname = target.pathname.replace(/\/(followers|recent-activity)\/?$/, '/');

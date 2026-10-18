@@ -1,4 +1,12 @@
+# 2.0.4
+
+- Extract LinkedIn followers from current signed-in SDUI topcards, bound to matching profile heading/photo links instead of generated CSS classes. Support self-profile links and follower paragraphs while excluding connections, hidden cards and unrelated recommendations; add supplied-markup and Chromium/CLI regression coverage.
+
+- Raise the default decoded response/resource and rendered HTML limit to 45 MiB (47185920 bytes), with a 180 MiB aggregate browser resource budget. Preserve explicit limits and bounded-resource errors; cover application bundles above the previous 20 MiB default.
+
 # 2.0.3
+
+- Report missing Chromium with an install command matched to the installed Puppeteer version for login and browser extraction. Distinguish login launch failures while keeping browser details redacted and previous sessions intact. Allow Puppeteer's browser-download script across compatible dependency updates.
 
 - Limit test and coverage runs to two concurrent test files and allow 15 seconds for resource-limit, contact and one-shot Chromium integration captures, avoiding startup/navigation timeouts under load while retaining the resource-limit and error-phase assertions.
 

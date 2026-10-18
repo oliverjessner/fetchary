@@ -3,10 +3,12 @@
 const { validateRemoteUrl } = require('../utils/url');
 const { readResource, abortable } = require('./http');
 const { FetcharyBrowserError } = require('../errors');
+const { browserInstallHint } = require('./browser-install');
 const { discoverVendors, prepareVendorPage, dismissVendorOverlays } = require('../vendors');
 
 function browserError(message, options, cause, phase) {
   if (cause instanceof FetcharyBrowserError) return cause;
+  if (phase === 'launch') message += browserInstallHint(cause);
   // Report bounded-resource failures without echoing subresource URLs, which
   // can contain signed query strings or other credentials.
   let failure = cause;

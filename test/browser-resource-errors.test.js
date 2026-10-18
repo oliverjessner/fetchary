@@ -19,6 +19,15 @@ async function cli(flags, options, mode = 'browser') {
   return {code,stdout,stderr};
 }
 
+test('missing Chromium during extraction reports a matching install command without echoing launcher details', async () => {
+  const result = await cli([], { ...settings(), launchBrowser: async () => {
+    throw new Error('Could not find Chrome (ver. 155.0.8059.79). PRIVATE_BROWSER_PATH');
+  } });
+  assert.equal(result.code, 4); assert.equal(result.stdout, '');
+  assert.ok(result.stderr.includes(`npx puppeteer@${require('puppeteer/package.json').version} browsers install chrome`));
+  assert.ok(!result.stderr.includes('PRIVATE_BROWSER_PATH'));
+});
+
 test('oversized browser scripts report a resource failure with the limit and recovery option', async () => {
   const options=settings();
   await assert.rejects(api.extractSocialInsights(target,{...options,maxResponseBytes:1024}),error=>{
@@ -41,8 +50,8 @@ test('CLI surfaces the bounded browser-resource cause, keeps stdout empty and ac
 });
 
 
-test('the default auto capture supports bundles above 10 MiB while explicit limits and the 20 MiB bound remain enforced', async () => {
-  const largeScript = '/*' + 'x'.repeat(12 * 1024 * 1024) + '*/' + script;
+test('the default auto capture supports bundles above 20 MiB while explicit limits and the 45 MiB bound remain enforced', async () => {
+  const largeScript = '/*' + 'x'.repeat(21 * 1024 * 1024) + '*/' + script;
   const options = settings();
   delete options.mode;
   options.fetch = async url => new Response(url === target ? html : largeScript, {
@@ -52,9 +61,16 @@ test('the default auto capture supports bundles above 10 MiB while explicit limi
   // The user's normal command: no --mode and no --max-response-bytes override.
   const result = await cli([], options, null);
   assert.equal(result.code, 0, result.stderr); assert.equal(result.stdout, '1930\n'); assert.equal(result.stderr, '');
-  await assert.rejects(api.extractSocialInsights(target, { ...options, maxResponseBytes: 10 * 1024 * 1024 }), error =>
-    error instanceof api.FetcharyBrowserError && /maxResponseBytes \(10485760 bytes\)/.test(error.message));
+  await assert.rejects(api.extractSocialInsights(target, { ...options, maxResponseBytes: 20 * 1024 * 1024 }), error =>
+    error instanceof api.FetcharyBrowserError && /maxResponseBytes \(20971520 bytes\)/.test(error.message));
   await assert.rejects(api.extractHtml(target, { ...options, mode: 'http', fetch: async () => new Response('<p>Oversized</p>', {
-    headers: { 'content-length': String(20 * 1024 * 1024 + 1), 'content-type': 'text/html' },
+    headers: { 'content-length': String(45 * 1024 * 1024 + 1), 'content-type': 'text/html' },
   }) }), error => error instanceof api.FetcharyFetchError && /maxResponseBytes/.test(error.message));
+  const oversized = await cli([], { ...options, fetch: async url => new Response(url === target ? html : script, {
+    headers: { 'content-type': url === target ? 'text/html' : 'application/javascript',
+      'content-length': String(url === target ? Buffer.byteLength(html) : 45 * 1024 * 1024 + 1) },
+  }) });
+  assert.equal(oversized.code, 4); assert.equal(oversized.stdout, '');
+  assert.match(oversized.stderr, /browser resource.*maxResponseBytes \(47185920 bytes\)/);
+  assert.ok(!oversized.stderr.includes('must-not-leak'));
 });
