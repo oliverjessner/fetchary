@@ -83,7 +83,10 @@ Atomic writes are serialized across processes. A stale lock from an exited
 process is recoverable after 30 seconds. The history file is bounded to 2 MiB.
 New history directories/files use
 private modes `700`/`600`; the immediate parent directory and file must belong
-to the current user and be private on POSIX. Malformed/unreadable history is
+to the current user on POSIX. Existing parent directories such as `755` are
+supported without changing their permissions, provided group/other users cannot
+write to them. The history file itself must remain private (`600`); symlink
+directories/files are rejected. Malformed/unreadable history is
 reported rather than overwritten. Recording failures print a warning on stderr
 and preserve the command's exit code.
 

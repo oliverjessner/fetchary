@@ -1,3 +1,7 @@
+# 2.0.3
+
+- Fix command-history recording in existing owner-controlled application directories with normal read/search permissions such as `755`. Keep history files private, reject parent directories writable by other users and symlinks, preserve existing permissions, and report specific validation failures.
+
 # 2.0.2
 
 - Add global `--filepath` output saving for every CLI command, with automatic text/HTML/JSON extensions, explicit file or directory targets, quiet-mode exports and protection against overwriting existing files.

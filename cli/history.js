@@ -85,7 +85,14 @@ async function recordHistory(file, args, exitCode) {
   try {
     await fs.mkdir(directory, { recursive: true, mode: 0o700 });
     const stat = await fs.lstat(directory);
-    if (!stat.isDirectory() || process.platform !== 'win32' && (stat.mode & 0o077 || typeof process.getuid === 'function' && stat.uid !== process.getuid())) throw new Error();
+    if (!stat.isDirectory()) throw new FetcharyValidationError('history directory must be a directory, not a symlink');
+    if (process.platform !== 'win32') {
+      if (typeof process.getuid === 'function' && stat.uid !== process.getuid()) throw new FetcharyValidationError('history directory must belong to the current user');
+      // Read/search permissions on an existing application directory are normal.
+      // The history stays private through its own mode-600 file; other users
+      // must not be able to replace it through a writable parent directory.
+      if (stat.mode & 0o022) throw new FetcharyValidationError('history directory must not be writable by group or other users');
+    }
     lock = await acquireLock(lockFile);
     const entries = await readHistory(file);
     entries.push({ timestamp: new Date().toISOString(), args: redactedArgs(args), exitCode });
@@ -94,7 +101,11 @@ async function recordHistory(file, args, exitCode) {
     temporary = path.join(directory, `.${randomUUID()}.tmp`);
     await fs.writeFile(temporary, body, { flag: 'wx', mode: 0o600 });
     await fs.rename(temporary, file); temporary = null;
-  } catch { throw new FetcharyValidationError('could not save command history; check FETCHARY_HISTORY_FILE and private directory/file permissions'); }
+  } catch (error) {
+    throw new FetcharyValidationError(error instanceof FetcharyValidationError
+      ? `could not save command history: ${error.message}`
+      : 'could not save command history; check FETCHARY_HISTORY_FILE and directory/file permissions');
+  }
   finally {
     if (temporary) await fs.unlink(temporary).catch(() => {});
     if (lock) { await lock.close().catch(() => {}); await fs.unlink(lockFile).catch(() => {}); }

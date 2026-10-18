@@ -83,6 +83,35 @@ test('history records recent successful and failed commands, displays newest fir
   if (process.platform !== 'win32') assert.equal(fs.statSync(historyFile).mode & 0o777, 0o600);
 });
 
+test('history works in an existing owner-controlled 755 directory and keeps its file private without changing directory permissions', { skip: process.platform === 'win32' }, async t => {
+  const directory = root(t); fs.chmodSync(directory, 0o755);
+  const historyFile = path.join(directory, 'history.json');
+  const result = await run(['extract','text',url], { historyFile, recordHistory: true });
+  assert.equal(result.code, 0); assert.equal(result.stderr, '');
+  assert.equal((await readHistory(historyFile)).length, 1);
+  assert.equal(fs.statSync(historyFile).mode & 0o777, 0o600);
+  assert.equal(fs.statSync(directory).mode & 0o777, 0o755);
+  await recordHistory(historyFile, ['extract','links',url], 0);
+  assert.equal((await readHistory(historyFile)).length, 2);
+  assert.equal(fs.statSync(historyFile).mode & 0o777, 0o600);
+});
+
+test('history refuses shared writable directories, symlinks and nonprivate files without changing existing contents or permissions', { skip: process.platform === 'win32' }, async t => {
+  const directory = root(t); const file = path.join(directory, 'history.json');
+  fs.writeFileSync(file, '[]\n', { mode: 0o600 });
+  for (const mode of [0o775, 0o777]) {
+    fs.chmodSync(directory, mode);
+    await assert.rejects(recordHistory(file, ['sessions'], 0), /history directory must not be writable by group or other users/);
+    assert.equal(fs.statSync(directory).mode & 0o777, mode); assert.equal(fs.readFileSync(file, 'utf8'), '[]\n');
+  }
+  fs.chmodSync(directory, 0o755); fs.chmodSync(file, 0o644);
+  await assert.rejects(recordHistory(file, ['sessions'], 0), /could not read command history/);
+  assert.equal(fs.statSync(file).mode & 0o777, 0o644); assert.equal(fs.readFileSync(file, 'utf8'), '[]\n');
+  const linkedDirectory = path.join(directory, 'linked'); fs.symlinkSync(directory, linkedDirectory);
+  await assert.rejects(recordHistory(path.join(linkedDirectory, 'history.json'), ['sessions'], 0), /not a symlink/);
+  assert.deepEqual(fs.readdirSync(directory).sort(), ['history.json','linked']);
+});
+
 test('history retains exactly the latest 100 commands and serializes concurrent updates without losing entries', async t => {
   const directory = root(t); const file = path.join(directory, 'history.json');
   for (let index = 0; index < 105; index++) await recordHistory(file, ['extract','text',`https://example.test/${index}`], 0);
