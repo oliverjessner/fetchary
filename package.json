@@ -51,8 +51,8 @@
     },
     "scripts": {
         "publish": "node ./scripts/publish.js",
-        "test": "node --require ./test-support/setup.cjs --test",
-        "test:coverage": "node --require ./test-support/setup.cjs --test --experimental-test-coverage"
+        "test": "node --require ./test-support/setup.cjs --test --test-concurrency=2",
+        "test:coverage": "node --require ./test-support/setup.cjs --test --test-concurrency=2 --experimental-test-coverage"
     },
     "dependencies": {
         "libphonenumber-js": "^1.13.15",

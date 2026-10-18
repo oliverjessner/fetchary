@@ -1,5 +1,7 @@
 # 2.0.3
 
+- Limit test and coverage runs to two concurrent test files and allow 15 seconds for resource-limit, contact and one-shot Chromium integration captures, avoiding startup/navigation timeouts under load while retaining the resource-limit and error-phase assertions.
+
 - Fix command-history recording in existing owner-controlled application directories with normal read/search permissions such as `755`. Keep history files private, reject parent directories writable by other users and symlinks, preserve existing permissions, and report specific validation failures.
 
 # 2.0.2

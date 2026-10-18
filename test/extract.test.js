@@ -281,9 +281,9 @@ test('real Chromium one-shot extraction captures JavaScript content and dynamic 
   await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
   t.after(() => new Promise(resolve => server.close(resolve)));
   const url = `http://127.0.0.1:${server.address().port}/`;
-  const result = await extract(url, { mode: 'browser', waitAfterLoad: 0, format: 'text', includeSelectors: ['main'], timeout: 5000 });
+  const result = await extract(url, { mode: 'browser', waitAfterLoad: 0, format: 'text', includeSelectors: ['main'], timeout: 15_000 });
   assert.equal(result.content, 'rendered');
-  const icon = await extractFavicon(url, { mode: 'browser', waitAfterLoad: 0, timeout: 5000 });
+  const icon = await extractFavicon(url, { mode: 'browser', waitAfterLoad: 0, timeout: 15_000 });
   assert.equal(icon.image.url, `${url}icon.png`);
   assert.equal(icon.image.width, 256);
 });

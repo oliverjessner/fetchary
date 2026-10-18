@@ -8,7 +8,8 @@ const scriptUrl = 'https://www.youtube.com/channel.js?token=must-not-leak';
 const script = '/*' + 'x'.repeat(1600) + '*/document.body.insertAdjacentHTML("beforeend", \'<ytd-c4-tabbed-header-renderer><span id="subscriber-count">1.93K subscribers</span></ytd-c4-tabbed-header-renderer>\');';
 const html = `<html><body><script src="${scriptUrl}"></script></body></html>`;
 function settings() {
-  return { mode:'browser', waitAfterLoad:0, timeout:5000, lookup:async()=>[{address:'93.184.216.34',family:4}], fetch:async url=>new Response(url===target?html:script, {
+  // Include Chromium startup and large-bundle processing in the integration budget.
+  return { mode:'browser', waitAfterLoad:0, timeout:15000, lookup:async()=>[{address:'93.184.216.34',family:4}], fetch:async url=>new Response(url===target?html:script, {
     headers:{'content-type':url===target?'text/html':'application/javascript','content-length':String(Buffer.byteLength(url===target?html:script))},
   }) };
 }

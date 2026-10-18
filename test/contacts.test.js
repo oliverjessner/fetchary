@@ -136,7 +136,7 @@ test('real HTTP CLI and Chromium extract static and rendered contacts using the 
   await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
   t.after(() => new Promise(resolve => server.close(resolve)));
   const target = `http://127.0.0.1:${server.address().port}/`;
-  const settings = { mode: 'browser', waitAfterLoad: 0, allowPrivateNetwork: true, timeout: 5000 };
+  const settings = { mode: 'browser', waitAfterLoad: 0, allowPrivateNetwork: true, timeout: 15_000 };
   assert.deepEqual((await api.extractEmails(target, settings)).data, ['raw@example.test', 'rendered@example.test']);
   assert.deepEqual((await api.extractTelephone(target, settings)).data, ['+4312345678', '+4930123456']);
   for (const [type, expected] of [['emails', 'raw@example.test\n'], ['telephone', '+4312345678\n']]) {

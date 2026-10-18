@@ -1036,3 +1036,17 @@ CLI `--filepath` output exports and command history are separate from the librar
 Extraction methods still do not save their results or record commands. The
 executable records up to 100 recent commands; see the
 [CLI reference](CLI.md#command-history) for storage and opt-out behavior.
+
+## Development checks
+
+```bash
+npm test
+npm run test:coverage
+```
+
+Both commands run at most two test files concurrently so browser integration
+tests do not compete with a CPU-scaled number of Chromium instances. The
+resource-limit, contact and one-shot browser fixtures allow 15 seconds per
+capture, including startup, navigation and snapshotting. Explicit short timeout
+and cancellation tests retain their own budgets. Production capture timeouts
+continue to come from the caller's `timeout` option.
