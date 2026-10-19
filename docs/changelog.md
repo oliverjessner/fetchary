@@ -1,4 +1,4 @@
-# Unreleased
+# 2.0.5
 
 - Preserve original Chromium POST bytes through the guarded transport instead of decoding binary/compressed bodies as UTF-8. Fix HTTP 400 responses for YouTube's gzip-compressed comment API requests, with byte-level and real Chromium/native HTTP regression coverage.
 

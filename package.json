@@ -1,6 +1,6 @@
 {
     "name": "fetchary",
-    "version": "2.0.4",
+    "version": "2.0.5",
     "description": "Extract what matters. Semantic web extraction for Node.js and the command line, with optional browser login.",
     "keywords": [
         "web",
