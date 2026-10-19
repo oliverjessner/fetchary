@@ -54,16 +54,23 @@ Tests: `test/semantic.test.js`,
 - Video insights: `views` from matching `videoDetails.videoId`; `likes` from scoped
   primary video actions; `comments` from scoped comment headers. Matching
   VideoObject JSON-LD supplies supported interaction statistics/comment counts.
+  Rendered watch-page comment headers are bound to `ytd-watch-flexy[video-id]`,
+  including localized headings such as `14 Kommentare` and reported zero counts.
 - Avatar: channel header images, embedded header avatars, and verified square
   metadata fallback. Preview thumbnails are not channel avatars.
 - Browser: optional when these fields exist in HTTP HTML; modern rendered fields
   may need it. Optional-cookie rejection and consent-form redirects are preserved.
+  The watch-page comment heading is kept in view during the existing post-load
+  wait to load the reported total. There is no comment pagination or sort change;
+  a short wait or unavailable/disabled comments can leave the total unknown.
 - Limits: only the documented player/header variants are implemented. Alternate
   mobile/modern button variants may expose no metric. Likes may be rounded or
   hidden; comment totals and subscriber counts may not be exposed. No shares,
   saves, following, or post-count extraction.
 - Fixtures: `test/fixtures/social/youtube-video.html`,
-  `test/fixtures/social/youtube-channel.html`; their exact and compact
+  `test/fixtures/social/youtube-channel.html`, `test/fixtures/social/youtube-comments.html`;
+  `test/youtube-comments.test.js` covers lazy loading in real Chromium and CLI output.
+  Their exact and compact
   fields, case-sensitive IDs, wrong videos and malformed scripts are tested.
 
 ## TikTok

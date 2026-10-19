@@ -655,6 +655,12 @@ SDUI layout. Counts are tied to the matching profile header; connections and
 recommendation counts do not become followers. A saved session provides access
 but does not add support for other LinkedIn metrics.
 
+On YouTube watch pages, browser capture brings the comment heading into view
+during `--wait-after-load` so YouTube can load its reported total. The count
+comes from the matching video's comment header, including `14 Kommentare`,
+rather than the number of loaded comments. A short wait, disabled comments or a
+missing header can still leave `comments: null`; no comment pagination is run.
+
 See [Social support](SOCIAL_SUPPORT.md) for implemented patterns and fixtures and
 [Library schemas](LIBRARY.md#result-schemas) for the exact result format.
 
@@ -907,6 +913,8 @@ validated DNS addresses. Browser requests are fulfilled by the guarded transport
 direct browser networking is disabled through a deny proxy. Local opt-in is for
 trusted inputs and also applies to resources and redirects. No proxy rotation,
 authentication, CAPTCHA solving, or headless user-agent disguise is performed.
+Browser POST bodies retain their original bytes, including gzip-compressed API
+requests, and still pass through the same guarded transport.
 
 Timeouts, cancellation (library `signal`), response limits, and redirect limits
 also apply to auxiliary requests. Up to ten redirects are followed; cross-origin

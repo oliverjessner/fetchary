@@ -20,6 +20,7 @@ function discoverVendors(directory = __dirname) {
         (vendor.classifyUrl !== undefined && typeof vendor.classifyUrl !== 'function') ||
         (vendor.socialInsights !== undefined && typeof vendor.socialInsights !== 'function') ||
         (vendor.prepare !== undefined && typeof vendor.prepare !== 'function') ||
+        (vendor.prepareSnapshot !== undefined && typeof vendor.prepareSnapshot !== 'function') ||
         (vendor.followerCount !== undefined && typeof vendor.followerCount !== 'function') ||
         (vendor.profilePicture !== undefined && typeof vendor.profilePicture !== 'function') ||
         (vendor.followerCountFromRaw !== undefined && typeof vendor.followerCountFromRaw !== 'function')) {
@@ -69,4 +70,17 @@ async function dismissVendorOverlays(page, url, alreadyDismissed = [], vendors =
   return dismissed;
 }
 
-module.exports = { discoverVendors, prepareVendorPage, dismissVendorOverlays };
+async function prepareVendorSnapshot(page, url, prepared = new Set(), vendors = discoverVendors()) {
+  for (const vendor of vendors) {
+    if (prepared.has(vendor.name) || !vendor.matches(url) || typeof vendor.prepareSnapshot !== 'function') continue;
+    try {
+      // Returning false retries on the next post-load pass, within its existing
+      // time budget. A completed preparation runs only once per capture.
+      if (await vendor.prepareSnapshot(page, url) !== false) prepared.add(vendor.name);
+    } catch {
+      // Optional preparation cannot turn missing metrics into a capture error.
+    }
+  }
+}
+
+module.exports = { discoverVendors, prepareVendorPage, dismissVendorOverlays, prepareVendorSnapshot };

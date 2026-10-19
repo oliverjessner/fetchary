@@ -1,3 +1,9 @@
+# Unreleased
+
+- Preserve original Chromium POST bytes through the guarded transport instead of decoding binary/compressed bodies as UTF-8. Fix HTTP 400 responses for YouTube's gzip-compressed comment API requests, with byte-level and real Chromium/native HTTP regression coverage.
+
+- Extract YouTube comment totals from the rendered header for the matching watch video, including German headings and reported zero counts. Add optional generic vendor snapshot preparation; YouTube keeps its lazy comment heading in view during the existing post-load wait, without pagination or sort changes. Cover structured-count fallback, unrelated/hidden headers, scroll restoration, Chromium lazy loading and CLI output.
+
 # 2.0.4
 
 - Extract LinkedIn followers from current signed-in SDUI topcards, bound to matching profile heading/photo links instead of generated CSS classes. Support self-profile links and follower paragraphs while excluding connections, hidden cards and unrelated recommendations; add supplied-markup and Chromium/CLI regression coverage.

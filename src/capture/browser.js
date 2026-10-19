@@ -4,7 +4,8 @@ const { validateRemoteUrl } = require('../utils/url');
 const { readResource, abortable } = require('./http');
 const { FetcharyBrowserError } = require('../errors');
 const { browserInstallHint } = require('./browser-install');
-const { discoverVendors, prepareVendorPage, dismissVendorOverlays } = require('../vendors');
+const { browserRequestBodies } = require('./browser-request-body');
+const { discoverVendors, prepareVendorPage, dismissVendorOverlays, prepareVendorSnapshot } = require('../vendors');
 
 function browserError(message, options, cause, phase) {
   if (cause instanceof FetcharyBrowserError) return cause;
@@ -32,12 +33,14 @@ function browserError(message, options, cause, phase) {
 
 async function waitAfterLoad(page, options, vendors) {
   const dismissedOverlays = [];
+  const prepared = new Set();
   const deadline = Date.now() + options.waitAfterLoadMs;
   do {
     options.signal?.throwIfAborted();
     const currentUrl = typeof page.url === 'function' ? page.url() : options.url;
     const dismissed = await dismissVendorOverlays(page, currentUrl, dismissedOverlays, vendors);
     dismissedOverlays.push(...dismissed);
+    await prepareVendorSnapshot(page, typeof page.url === 'function' ? page.url() : options.url, prepared, vendors);
     const remaining = deadline - Date.now();
     if (remaining <= 0) break;
     await new Promise(resolve => setTimeout(resolve, Math.min(100, remaining)));
@@ -81,6 +84,7 @@ class BrowserCapture {
     let transferred = 0;
     const activeRequests = new Set();
     let page;
+    let requestBodies;
     let cookieContext;
     let navigation;
     let suppliedDocument = false;
@@ -106,6 +110,7 @@ class BrowserCapture {
         }
         page = await abortable((cookieContext || browser).newPage(), signal);
         if (options.userAgent && typeof page.setUserAgent === 'function') await page.setUserAgent(options.userAgent);
+        if (!options.passiveTrackerCapture) requestBodies = await browserRequestBodies(page, signal);
         if (typeof page.setRequestInterception === 'function') {
           await page.setRequestInterception(true);
           page.on('request', request => {
@@ -129,7 +134,7 @@ class BrowserCapture {
                   for (const [name, value] of new Headers(options.headers)) headersForRequest.set(name, value);
                 }
                 const resource = await readResource(request.url(), { ...options, signal, followRedirects: false,
-                  cookieHeaderFromBrowser: true, headers: Object.fromEntries(headersForRequest), method: request.method(), body: request.postData() }, options.maxResponseBytes);
+                  cookieHeaderFromBrowser: true, headers: Object.fromEntries(headersForRequest), method: request.method(), body: await requestBodies.read(request) }, options.maxResponseBytes);
                 transferred += resource.body.length;
                 if (transferred > options.maxResponseBytes * 4) {
                   const error = new Error('browser resource budget exceeded');
@@ -199,6 +204,7 @@ class BrowserCapture {
         try { await cookieContext.close(); } catch {}
       }
       await Promise.allSettled([...activeRequests]);
+      await requestBodies?.close();
     }
   }
 

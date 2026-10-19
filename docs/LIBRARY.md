@@ -921,6 +921,12 @@ Existing follower parsers may not preserve the exact source token; those sources
 use `approximate: null` unless a matching compact token is known. This indicates
 unknown precision, never a claim of exactness. `field` names identify an embedded
 field, JSON-LD statistic, or the legacy vendor parser used.
+YouTube's rendered comment header is reported as source type `vendor` with field
+`ytd-comments-header-renderer.#count`, scoped to the matching watch video.
+During browser capture, the YouTube adapter keeps the comment heading in view
+within the configured `waitAfterLoad` period to trigger lazy loading.
+It reads the reported total without paginating or counting loaded threads;
+disabled or unavailable totals stay `null`.
 
 Platform support is fixture-backed and limited to exposed public data. See
 [SOCIAL_SUPPORT.md](SOCIAL_SUPPORT.md) before relying on any metric.
@@ -1015,6 +1021,11 @@ perform additional network requests. A custom browser launcher must honor the
 provided network restrictions and implement Puppeteer's interception API unless
 explicit local trust is enabled. Tests using these injections do not prove live
 platform availability.
+The bundled Chromium capture uses CDP request-body entries to preserve binary
+POST payloads, including compressed JSON. Custom browser implementations without
+those entries support textual bodies; unavailable binary bodies fail rather than
+being forwarded as corrupted UTF-8 text. Request bodies remain in memory only
+for the capture and are never included in output or command history.
 
 ## Errors, TypeScript, and compatibility
 
