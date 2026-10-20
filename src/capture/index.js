@@ -60,7 +60,7 @@ class CaptureManager {
     const key = JSON.stringify([
       url.href, source.captureMode, [...headers.entries()].sort(), this.timeout,
       identity(this.httpFetch), identity(this.browserIdentity), identity(this.vendorIdentity),
-      this.options.maxResponseBytes, Boolean(this.options.allowPrivateNetwork), identity(this.options.lookup),
+      this.options.maxResponseBytes, Boolean(this.options.allowPrivateNetwork), this.options.insecure !== false, identity(this.options.lookup),
       source.captureMode === 'browser' ? [source.waitAfterLoadMs, this.browserUserAgent, Boolean(this.options.passiveTrackerCapture)] : null,
     ]);
     const page = await this.cache.capture(key, ttlMs, async () => {

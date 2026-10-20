@@ -1,3 +1,7 @@
+# 2.0.6
+
+- Default to `insecure: true` for OSINT extraction despite self-signed, expired, untrusted, incomplete-chain or hostname-mismatched TLS certificates. Support explicit `--insecure` and `--secure` CLI flags and typed library `insecure: false` for verification. Apply the policy to HTTP/browser/auto capture, redirects, image candidates, analysis and login, with separate verified/unverified caches and HTTPS pools. Cover default extraction, explicit verification, native HTTPS, Chromium, CLI and session extraction.
+
 # 2.0.5
 
 - Preserve original Chromium POST bytes through the guarded transport instead of decoding binary/compressed bodies as UTF-8. Fix HTTP 400 responses for YouTube's gzip-compressed comment API requests, with byte-level and real Chromium/native HTTP regression coverage.

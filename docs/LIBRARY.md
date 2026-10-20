@@ -163,9 +163,10 @@ not store the report, crawl other pages, monitor the site or infer ownership.
 | `signal` | none | `AbortSignal`; aborted operations fail and bypass shared in-flight work |
 | `maxResponseBytes` | `47185920` | Positive safe integer; decoded response/resource/rendered HTML limit |
 | `allowPrivateNetwork` | `false` | Explicitly permit trusted local/internal targets |
+| `insecure` | `true` | Skip TLS certificate and hostname verification; set `false` to verify |
 | `cacheTtlMs` | `45000` | Finite, non-negative age limit; zero requests a fresh capture |
 | `fetch` | guarded native HTTP | Optional Fetch-compatible transport injection |
-| `launchBrowser` | Puppeteer launch | Optional browser launcher, receiving headless, args, timeout, signal |
+| `launchBrowser` | Puppeteer launch | Optional browser launcher, receiving headless, acceptInsecureCerts, args, timeout, signal |
 | `lookup` | Node DNS lookup | Trusted async DNS injection returning all `{ address, family }` records |
 
 HTTP mode returns the decoded response and never substitutes rendered HTML.
@@ -255,8 +256,9 @@ that relevant cookies were captured; it does not verify account authorization.
 
 `LoginOptions` accepts `session` (default: target hostname), `sessionDir`
 (default: `~/.fetchary/sessions`), `signal`, `timeout` (overall default 300000 ms),
-`allowPrivateNetwork`, `lookup` and a separate `launchBrowser` callback. Login's
-launcher receives `headless: false`, `defaultViewport: null`, a bounded launch
+`allowPrivateNetwork`, `insecure` (default: `true`), `lookup` and a separate
+`launchBrowser` callback. Login's launcher receives `headless: false`,
+`defaultViewport: null`, `acceptInsecureCerts` matching `insecure`, a bounded launch
 timeout and AbortSignal; unlike extraction's launcher it does not set a proxy or
 replace native browser networking. It must return `LoginBrowser`, with
 `createBrowserContext()` returning `newPage()`, `cookies()` and `close()`. Optional
@@ -981,8 +983,9 @@ without cancelling it; old work cannot refill the cleared cache.
 Compatibility includes normalized requested URL (query and fragment preserved),
 actual capture mode, headers/user agent, timeout, response limit, fetch/browser
 implementation identity, DNS implementation identity, private-network policy,
-and browser wait settings. HTTP and browser snapshots are separate. Extraction
-selectors and formats do not change a page snapshot's key.
+TLS certificate-verification policy, and browser wait settings. HTTP and browser
+snapshots are separate. Extraction selectors and formats do not change a page
+snapshot's key.
 
 Cookie-file and browser-cookie requests bypass all capture caches, including isolated clients.
 Authorization, Cookie, and Proxy-Authorization headers bypass the shared global
@@ -997,6 +1000,44 @@ The cache is process-local. Separate CLI executions start empty. Image candidate
 checks are separate requests, while the primary webpage capture is shared.
 
 ## Network safety and dependency injection
+
+Fetchary defaults to `insecure: true` for OSINT collection from servers with
+invalid certificates:
+
+```js
+const { extractFavicon, createExtractor } = require('fetchary');
+
+async function main() {
+    const icon = await extractFavicon('https://www.faktor3.de');
+    console.log(icon.image.url);
+
+    const research = createExtractor();
+    const report = await research.analyse('https://example.com');
+    console.log(report.results.metadata?.data);
+    // Per-call options override the client's defaults.
+    await research.extractText('https://example.com', { insecure: false });
+}
+main().catch(console.error);
+```
+
+`insecure` must be a boolean and defaults to `true`. Set `insecure: false` for
+certificate-chain and hostname verification. Set that option on `createExtractor()`
+to make verification the client's default, or override it on an individual call.
+The option applies to all extraction methods, the dispatcher, `analyse()` and
+isolated clients, including HTTP capture,
+auto fallback, guarded Chromium resources, redirects, manifests and image
+candidate downloads. The default skips certificate-chain and hostname verification,
+including self-signed, expired, untrusted or incomplete certificates. TLS
+handshakes and HTTP status handling still apply.
+
+The policy is local to the operation or client. It does not change Node's
+global TLS environment or trust store. Verified and unverified captures and
+HTTPS connection pools stay separate; a later `insecure: false` call cannot reuse
+an unverified snapshot or socket. Login also defaults to `insecure: true` through
+Puppeteer's `acceptInsecureCerts`; saved sessions do not store the policy.
+Custom browser launchers receive `acceptInsecureCerts` and must honor it. A custom
+`fetch` implementation controls its own TLS policy and must be configured
+separately to accept certificate errors.
 
 Only HTTP(S) URLs without embedded credentials are accepted. Private, local,
 link-local and reserved/internal targets are blocked by default. All DNS answers

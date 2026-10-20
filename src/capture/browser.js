@@ -62,7 +62,7 @@ class BrowserCapture {
   async _getBrowser(options) {
     if (!this.browserPromise) {
       this.browserPromise = Promise.resolve()
-        .then(() => this.launch({ headless: true, timeout: options.timeout, signal: options.signal, args: ['--disable-background-networking', '--disable-quic', '--proxy-server=http://127.0.0.1:9', '--proxy-bypass-list=<-loopback>', '--force-webrtc-ip-handling-policy=disable_non_proxied_udp'] }))
+        .then(() => this.launch({ headless: true, acceptInsecureCerts: options.insecure !== false, timeout: options.timeout, signal: options.signal, args: ['--disable-background-networking', '--disable-quic', '--proxy-server=http://127.0.0.1:9', '--proxy-bypass-list=<-loopback>', '--force-webrtc-ip-handling-policy=disable_non_proxied_udp'] }))
         .then(browser => { this.browser = browser; return browser; })
         .catch(cause => {
           this.browserPromise = null;

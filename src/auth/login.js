@@ -18,6 +18,7 @@ async function login(url, options = {}) {
   if (options.launchBrowser !== undefined && typeof options.launchBrowser !== 'function') throw new FetcharyValidationError('launchBrowser must be a function');
   if (options.signal !== undefined && !(options.signal instanceof AbortSignal)) throw new FetcharyValidationError('signal must be an AbortSignal');
   if (options.allowPrivateNetwork !== undefined && typeof options.allowPrivateNetwork !== 'boolean') throw new FetcharyValidationError('allowPrivateNetwork must be a boolean');
+  if (options.insecure !== undefined && typeof options.insecure !== 'boolean') throw new FetcharyValidationError('insecure must be a boolean');
   const controller = new AbortController();
   const signal = options.signal ? AbortSignal.any([options.signal, controller.signal]) : controller.signal;
   const timer = setTimeout(() => controller.abort(new Error('timeout')), timeout);
@@ -28,7 +29,7 @@ async function login(url, options = {}) {
     signal.throwIfAborted();
     await validateRemoteUrl(requestedUrl, { ...options, signal, timeout: Math.min(timeout, 30_000) });
     launching = true;
-    pending = Promise.resolve().then(() => launch({ headless: false, defaultViewport: null, timeout: Math.min(timeout, 30_000),
+    pending = Promise.resolve().then(() => launch({ headless: false, defaultViewport: null, acceptInsecureCerts: options.insecure !== false, timeout: Math.min(timeout, 30_000),
       signal, handleSIGINT: false, handleSIGTERM: false, handleSIGHUP: false, args: ['--disable-background-networking'] }));
     browser = await abortable(pending, signal);
     launching = false;

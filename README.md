@@ -53,6 +53,15 @@ Fetchary tries HTTP first. When the extractor needs content added by JavaScript,
 it can fall back to bundled Chromium. Use `--mode browser` to request rendering
 or `--mode http` to read only the server response.
 
+Fetchary also extracts from sites with broken certificates by default:
+
+```bash
+fetchary extract favicon https://www.faktor3.de
+```
+
+Add `--secure` when you want to require certificate verification. See the
+[CLI reference](docs/CLI.md#tls-certificates) for details.
+
 ### Read metadata and structured data
 
 Get a page's title, description, canonical URL, language, and publication dates,

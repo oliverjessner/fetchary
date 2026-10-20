@@ -38,8 +38,10 @@ export type ExtractionOptions = {
   maxResponseBytes?: number;
   /** Explicitly trust local/private network targets; false by default. */
   allowPrivateNetwork?: boolean;
+  /** Skip TLS certificate and hostname verification; true by default. Set false to verify. */
+  insecure?: boolean;
   fetch?: typeof globalThis.fetch;
-  launchBrowser?: (options: { headless: true; args: string[]; timeout?: number; signal?: AbortSignal }) => Promise<CaptureBrowser>;
+  launchBrowser?: (options: { headless: true; acceptInsecureCerts: boolean; args: string[]; timeout?: number; signal?: AbortSignal }) => Promise<CaptureBrowser>;
   /** Trusted DNS injection. All returned addresses are validated. */
   lookup?: (hostname: string, options: { all: true; verbatim: true }) => Promise<LookupAddress[]>;
   /** Default 45000. Zero bypasses both cache and in-flight deduplication. */
@@ -170,10 +172,12 @@ export type LoginOptions = SessionOptions & {
   /** Overall login timeout, default 300000 ms. */
   timeout?: number;
   allowPrivateNetwork?: boolean;
+  /** Accept TLS certificate and hostname errors in the login browser; true by default. */
+  insecure?: boolean;
   lookup?: ExtractionOptions['lookup'];
   /** Resolve after the user has signed in; receives no credentials. */
   confirm(info: { session: string; origin: string; signal: AbortSignal }): Promise<void>;
-  launchBrowser?: (options: { headless: false; defaultViewport: null; timeout: number; signal: AbortSignal; args: string[]; handleSIGINT: false; handleSIGTERM: false; handleSIGHUP: false }) => Promise<LoginBrowser>;
+  launchBrowser?: (options: { headless: false; defaultViewport: null; acceptInsecureCerts: boolean; timeout: number; signal: AbortSignal; args: string[]; handleSIGINT: false; handleSIGTERM: false; handleSIGHUP: false }) => Promise<LoginBrowser>;
 };
 export declare function login(url: string, options: LoginOptions): Promise<SavedSession>;
 export declare function listSessions(options?: SessionOptions): Promise<SessionInfo[]>;

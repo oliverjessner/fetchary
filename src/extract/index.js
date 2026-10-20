@@ -37,7 +37,7 @@ function extractionOptions(options = {}) {
   const settings = {
     fetch: options.fetch, launchBrowser: options.launchBrowser, headers: options.headers, signal: options.signal, cookieFile: options.cookieFile,
     cookiesFromBrowser:options.cookiesFromBrowser, browserProfile:options.browserProfile, session:options.session, sessionDir:options.sessionDir,
-    lookup: options.lookup, allowPrivateNetwork: options.allowPrivateNetwork,
+    lookup: options.lookup, allowPrivateNetwork: options.allowPrivateNetwork, insecure: options.insecure ?? true,
     timeout: options.timeout ?? 30_000, userAgent: options.userAgent ?? 'fetchary/2.0',
     browserUserAgent: options.userAgent ?? 'fetchary/2.0', mode: options.mode ?? 'auto',
     waitAfterLoadMs: parseWaitAfterLoad(options.waitAfterLoad), maxResponseBytes: options.maxResponseBytes ?? 45 * 1024 * 1024,
@@ -48,7 +48,7 @@ function extractionOptions(options = {}) {
   if (!Number.isFinite(settings.timeout) || settings.timeout <= 0) throw new FetcharyValidationError('timeout must be greater than zero');
   if (!Number.isSafeInteger(settings.maxResponseBytes) || settings.maxResponseBytes < 1) throw new FetcharyValidationError('maxResponseBytes must be a positive safe integer');
   if (typeof settings.userAgent !== 'string' || !settings.userAgent.trim()) throw new FetcharyValidationError('userAgent must be a non-empty string');
-  for (const name of ['allowPrivateNetwork','unique','includeMetadata','all','binary']) if (options[name] !== undefined && typeof options[name] !== 'boolean') throw new FetcharyValidationError(`${name} must be a boolean`);
+  for (const name of ['allowPrivateNetwork','insecure','unique','includeMetadata','all','binary']) if (options[name] !== undefined && typeof options[name] !== 'boolean') throw new FetcharyValidationError(`${name} must be a boolean`);
   if (settings.signal !== undefined && !(settings.signal instanceof AbortSignal)) throw new FetcharyValidationError('signal must be an AbortSignal');
   if (settings.cookieFile !== undefined && (typeof settings.cookieFile !== 'string' || !settings.cookieFile.trim() || settings.cookieFile.length > 4096)) throw new FetcharyValidationError('cookieFile must be a non-empty file path');
   if (settings.cookiesFromBrowser !== undefined && settings.cookiesFromBrowser !== 'chrome') throw new FetcharyValidationError('cookiesFromBrowser must be chrome');

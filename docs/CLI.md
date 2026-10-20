@@ -684,6 +684,8 @@ See [Social support](SOCIAL_SUPPORT.md) for implemented patterns and fixtures an
 | `--cookies-from-browser chrome` | Read matching cookies directly from Chrome on macOS; bypass page caches |
 | `--browser-profile <name\|path>` | Chrome profile directory name or absolute directory path; default `Default` |
 | `--allow-private-network`      | Explicitly allow trusted local/internal targets                                |
+| `--insecure`                   | Skip TLS certificate and hostname verification; this is the default |
+| `--secure`                     | Require TLS certificate and hostname verification for this extraction, analysis or login |
 | `--quiet`                      | Suppress successful output, keeping errors on stderr                           |
 | `--verbose`                    | Print operation/mode diagnostics on stderr                                     |
 | `--no-color`                   | Accepted for compatibility; output already has no ANSI colors                  |
@@ -761,7 +763,7 @@ minutes; `--timeout <ms>` overrides it. Initial navigation and browser launch ar
 each limited to at most 30 seconds. Only HTTP(S) URLs without embedded credentials
 are accepted; private initial targets require `--allow-private-network`.
 `login` accepts `--session`, `--session-dir`, `--timeout`,
-`--allow-private-network`, `--json`, `--quiet`, `--verbose` and `--no-color`.
+`--allow-private-network`, `--insecure`, `--secure`, `--json`, `--quiet`, `--verbose` and `--no-color`.
 Prompts stay on stderr, including with `--json`/`--quiet`; stdout contains only the
 result or is suppressed by `--quiet`.
 
@@ -950,6 +952,33 @@ browser cache entries remain separate. Separate CLI executions start empty.
 `capturedAt` preserves the snapshot time, while `extractedAt` is the result time.
 The [library](LIBRARY.md#capture-cache) exposes TTL overrides, disabling, clients,
 and clearing. There are no CLI cache flags or disk cache.
+
+## TLS certificates
+
+Fetchary accepts broken TLS certificates by default for OSINT collection:
+
+```bash
+fetchary extract favicon https://www.faktor3.de
+fetchary extract text https://example.com --mode browser
+fetchary analyse https://example.com
+fetchary login https://example.com --session research
+fetchary extract text https://example.com --session research
+fetchary extract text https://example.com --secure
+```
+
+The default accepts self-signed, expired, untrusted, incomplete-chain and
+hostname-mismatched certificates. It works with every extraction type and the
+compatibility aliases, in HTTP, browser and auto modes. The policy applies to
+the webpage, redirects, manifests, favicon/avatar downloads and rendered browser
+resources. No CA-file setup or extra flag is required. `--insecure` explicitly
+selects this default; `--secure` enables certificate and hostname verification.
+Both flags take no value and cannot be combined.
+
+TLS flags apply to the current command. Login does not store the verification
+policy in its saved session; use `--secure` again for verified extraction.
+Verified and unverified captures and HTTPS connection pools are separate. TLS handshakes,
+HTTP status handling, URL/DNS restrictions, request limits and cancellation still
+apply. For local/internal targets, also pass `--allow-private-network`.
 
 ## Compatibility and exit codes
 
