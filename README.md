@@ -58,6 +58,27 @@ fetchary extract links https://oliverjessner.at/sitemap.xml --list
 
 See the [CLI documentation](docs/CLI.md) for all commands and options.
 
+## Library
+
+Use Fetchary in your own Node.js scripts to extract page content:
+
+```bash
+npm install fetchary
+```
+
+```js
+const { extractText } = require('fetchary');
+
+async function main() {
+    const result = await extractText('https://example.com');
+    console.log(result.data);
+}
+
+main().catch(console.error);
+```
+
+See the [library documentation](docs/LIBRARY.md) for all methods and options.
+
 ## Read pages and discover assets
 
 Read a page as plain text, keep its HTML or select a specific element.
