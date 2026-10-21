@@ -52,6 +52,13 @@ and `result.data.metrics.posts` for the post count from
 `await extractSocialInsights(url)`. Both are `number | null`; the full result
 retains metric sources and availability reasons.
 
+For YouTube channels, `result.data.metrics.posts` is the reported video total;
+`result.data.metrics.subscribers` is the subscriber count. Embedded channel-header
+data and rendered video-count metadata are supported. For example, `14.361 Videos`
+becomes `14361`; missing totals remain `null` with
+`result.data.unavailable.posts === 'not_exposed'`. Compact totals such as
+`14.3K videos` carry `result.data.sources.posts.approximate === true`.
+
 | Type | Function | `data` |
 | --- | --- | --- |
 | `text` | `extractText(url, options?)` | String |

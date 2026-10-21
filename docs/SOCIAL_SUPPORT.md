@@ -1,13 +1,13 @@
 # Social platform support
 
 This matrix describes implemented, fixture-tested patterns in Fetchary.
-Attention: Social sites can change their
-public markup, hide metrics, or require login. No live social-site verification
-was performed for this refactor.
+Social sites can change their public markup, hide metrics, or require login.
+YouTube channel video totals were also checked live on **2026-10-21**, using the
+default and browser modes. Other platform coverage below is based on fixtures.
 
 | Platform    | URL Recognition | Social Link Detection | Avatar Extraction | Follower Extraction     | Likes       | Comments    | Views       | Shares      | Profile Support | Post Support | Status  | Notes                                                                      |
 | ----------- | --------------- | --------------------- | ----------------- | ----------------------- | ----------- | ----------- | ----------- | ----------- | --------------- | ------------ | ------- | -------------------------------------------------------------------------- |
-| YouTube     | SUPPORTED       | SUPPORTED             | SUPPORTED         | SUPPORTED (subscribers) | SUPPORTED   | SUPPORTED   | SUPPORTED   | UNSUPPORTED | PARTIAL         | PARTIAL      | PARTIAL | Channel subscribers; matching video player state, primary actions, JSON-LD |
+| YouTube     | SUPPORTED       | SUPPORTED             | SUPPORTED         | SUPPORTED (subscribers) | SUPPORTED   | SUPPORTED   | SUPPORTED   | UNSUPPORTED | PARTIAL         | PARTIAL      | PARTIAL | Channel subscribers and video totals as posts; scoped video metrics, JSON-LD |
 | TikTok      | SUPPORTED       | SUPPORTED             | SUPPORTED         | SUPPORTED               | SUPPORTED   | SUPPORTED   | SUPPORTED   | SUPPORTED   | PARTIAL         | PARTIAL      | PARTIAL | Scoped user/video state; saves also supported when collectCount is exposed |
 | Instagram   | SUPPORTED       | SUPPORTED             | SUPPORTED         | SUPPORTED               | SUPPORTED   | SUPPORTED   | SUPPORTED   | UNSUPPORTED | PARTIAL         | PARTIAL      | PARTIAL | Scoped user/media state; views only when a video count exists              |
 | Facebook    | SUPPORTED       | SUPPORTED             | UNSUPPORTED       | UNSUPPORTED             | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED     | UNSUPPORTED  | PARTIAL | URL recognition and links only                                             |
@@ -20,7 +20,7 @@ was performed for this refactor.
 | Vimeo       | SUPPORTED       | SUPPORTED             | UNSUPPORTED       | UNSUPPORTED             | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED     | UNSUPPORTED  | PARTIAL | URL recognition and links only                                             |
 | Bluesky     | SUPPORTED       | SUPPORTED             | UNSUPPORTED       | UNSUPPORTED             | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED     | UNSUPPORTED  | PARTIAL | bsky.app profile/post URLs only; no firehose/API access                    |
 
-Fixture verification date: **2026-10-16**. This date refers to offline tests,
+Fixture verification date: **2026-10-21**. This date refers to offline tests,
 including real Chromium serving local/injected HTML, not public-site requests.
 
 ## Shared behavior
@@ -50,7 +50,11 @@ Tests: `test/semantic.test.js`,
   `/watch?v=id`, `/shorts/id`, `/embed/id`, `/live/id`, and `youtu.be/id`.
 - Channel insights: `subscribers`, not `followers`. The old top-level `followers`
   compatibility field can contain this subscriber count; `data.metrics` keeps
-  their distinction.
+  their distinction. `posts` is the channel's reported video total, read from
+  legacy header counts, modern embedded header metadata, or rendered channel
+  metadata. English/German labels, grouped totals such as `14.361 Videos`, zero,
+  and compact totals are supported. Recommendations and channel descriptions do
+  not supply this count; hidden rendered metadata is ignored.
 - Video insights: `views` from matching `videoDetails.videoId`; `likes` from scoped
   primary video actions; `comments` from scoped comment headers. Matching
   VideoObject JSON-LD supplies supported interaction statistics/comment counts.
@@ -65,10 +69,12 @@ Tests: `test/semantic.test.js`,
   a short wait or unavailable/disabled comments can leave the total unknown.
 - Limits: only the documented player/header variants are implemented. Alternate
   mobile/modern button variants may expose no metric. Likes may be rounded or
-  hidden; comment totals and subscriber counts may not be exposed. No shares,
-  saves, following, or post-count extraction.
+  hidden; comment totals, subscriber counts and channel video totals may not be
+  exposed. No shares, saves, following, or community-post totals.
 - Fixtures: `test/fixtures/social/youtube-video.html`,
-  `test/fixtures/social/youtube-channel.html`, `test/fixtures/social/youtube-comments.html`;
+  `test/fixtures/social/youtube-channel.html`, `test/fixtures/social/youtube-channel-header.html`,
+  `test/fixtures/social/youtube-comments.html`;
+  `test/youtube-posts.test.js` covers channel video totals and metadata scope;
   `test/youtube-comments.test.js` covers lazy loading in real Chromium and CLI output.
   Their exact and compact
   fields, case-sensitive IDs, wrong videos and malformed scripts are tested.

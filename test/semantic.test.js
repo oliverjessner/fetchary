@@ -84,7 +84,7 @@ test('social links recognize all platforms from links, rel-me, sameAs and metada
 
 for (const [platform, target, file, expected] of [
   ['youtube','https://www.youtube.com/watch?v=AbC123','youtube-video.html',{views:12345,likes:1200,comments:56}],
-  ['youtube','https://www.youtube.com/@example','youtube-channel.html',{subscribers:12500}],
+  ['youtube','https://www.youtube.com/@example','youtube-channel.html',{subscribers:12500,posts:14361}],
   ['tiktok','https://www.tiktok.com/@example','tiktok-profile.html',{followers:12345,following:12,posts:42}],
   ['tiktok','https://www.tiktok.com/@example/video/123','tiktok-video.html',{likes:0,comments:123,views:123456,shares:45,saves:67}],
   ['instagram','https://www.instagram.com/example/','instagram-profile.html',{followers:12345,following:123,posts:42}],

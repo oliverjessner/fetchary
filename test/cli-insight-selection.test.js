@@ -48,6 +48,21 @@ test('follower selection retains GitHub followers, YouTube subscriber fallback a
   assert.equal(instagram.code, 0, instagram.stderr); assert.equal(instagram.stdout, '42\n');
 });
 
+test('YouTube channel videos appear as posts in full results and selected CLI output', async () => {
+  const target = 'https://www.youtube.com/channel/UCrM7B7SL_g1edFOnmj-SDKg';
+  const html = fixture('youtube-channel-header.html');
+  const full = await run(target, [], settings(html));
+  assert.equal(full.code, 0, full.stderr); assert.equal(JSON.parse(full.stdout).data.metrics.posts, 14361);
+  for (const format of [[], ['--json'], ['--list']]) {
+    const selected = await run(target, ['--posts', ...format], settings(html));
+    assert.equal(selected.code, 0, selected.stderr); assert.equal(selected.stdout, '14361\n');
+  }
+  const combined = await run('https://www.youtube.com/@example', ['--follower', '--posts'], settings(fixture('youtube-channel.html')));
+  assert.equal(combined.code, 0, combined.stderr); assert.deepEqual(JSON.parse(combined.stdout), { followers: 12500, posts: 14361 });
+  assert.equal((await run(target, ['--posts'], settings(html.replace('14.361 Videos', '0 Videos')))).stdout, '0\n');
+  assert.equal((await run(target, ['--posts'], settings(html.replace('14.361 Videos', 'Videos')))).stdout, 'null\n');
+});
+
 test('zero counts stay zero; unavailable, blocked and unsupported counts remain null', async () => {
   const zero = settings(fixture('tiktok-profile.html').replace('"followerCount":12345', '"followerCount":0').replace('"videoCount":42', '"videoCount":0'));
   assert.equal((await run(tiktok, ['--follower'], zero)).stdout, '0\n');

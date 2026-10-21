@@ -621,12 +621,13 @@ fetchary extract social-insights https://www.instagram.com/example/
 fetchary extract social-insights https://github.com/oliverjessner --follower
 fetchary extract social-insights https://www.linkedin.com/in/oliverjessner --follower --mode browser --session linkedin
 fetchary extract social-insights https://www.tiktok.com/@example --posts
+fetchary extract social-insights https://www.youtube.com/channel/UCrM7B7SL_g1edFOnmj-SDKg --posts
 ```
 
 `--follower` selects only the follower count, using subscribers for YouTube.
-`--posts` selects only the profile's post count (TikTok videos or Instagram
-posts, where supported). Each flag is a boolean and applies only to
-`social-insights`; using it with another type is an argument error (exit 2).
+`--posts` selects only the profile's post count (YouTube channel videos, TikTok
+videos, or Instagram posts, where supported). Each flag is a boolean and applies
+only to `social-insights`; using it with another type is an argument error (exit 2).
 
 With one flag, stdout contains just the number or literal `null`, followed by
 a newline. `--json` keeps this scalar result. Missing, unsupported, or blocked
@@ -642,6 +643,10 @@ stderr diagnostics work as usual. Selection changes output formatting; capture,
 extraction, caching, and platform support follow the same rules.
 
 Return public metrics scoped to the requested profile/channel/post/video.
+YouTube channel video totals appear in `data.metrics.posts`, including localized
+headers such as `14.361 Videos` (14361). Modern embedded channel metadata and
+legacy header counts are supported, with rendered channel metadata as a fallback.
+An absent video total remains `null` with reason `not_exposed`.
 YouTube, TikTok, and Instagram have additional structured metric parsers; existing
 adapters retain profile follower extraction. Every missing metric remains `null`
 with an availability reason. Abbreviated counts carry approximation metadata.

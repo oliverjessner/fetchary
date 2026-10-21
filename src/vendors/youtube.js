@@ -117,15 +117,42 @@ function renderedComments(document, videoId, builder) {
   }
 }
 
+function renderedChannelPosts(document, builder) {
+  const elements = [...document.querySelectorAll(
+    'ytd-c4-tabbed-header-renderer #videos-count, ytd-channel-header-renderer #videos-count, ' +
+    'yt-page-header-renderer yt-content-metadata-view-model span, ' +
+    'ytd-page-header-renderer yt-content-metadata-view-model span, ' +
+    'yt-page-header-view-model yt-content-metadata-view-model span, ' +
+    '.ytPageHeaderViewModelContentMetadata span',
+  )].filter(element => !element.closest('[hidden], [aria-hidden="true"], [inert]'));
+  // Accessibility labels can report an exact total while visible text is rounded.
+  for (const attribute of ['aria-label', 'textContent']) for (const element of elements) {
+    const value = attribute === 'textContent' ? element.textContent : element.getAttribute(attribute);
+    if (labeledCount(value, 'videos?') !== null) builder.set('posts', value, 'vendor', 'channelHeader.videoCount');
+  }
+}
+
 function socialInsights(document, url) {
   const identity = classifyUrl(url);
-  const builder = insightBuilder(url, identity.kind === 'video' ? ['views','likes','comments'] : identity.kind === 'channel' ? ['subscribers'] : []);
+  const builder = insightBuilder(url, identity.kind === 'video' ? ['views','likes','comments'] : identity.kind === 'channel' ? ['subscribers','posts'] : []);
   if (identity.kind === 'channel') {
-    for (const root of jsonRoots(document, ['ytInitialData'])) for (const object of objects(root)) {
-      const header = object.header?.c4TabbedHeaderRenderer || object.header?.pageHeaderRenderer;
-      if (header?.channelId && identity.id !== header.channelId && !url.includes('/@')) continue;
+    for (const root of jsonRoots(document, ['ytInitialData'])) {
+      const header = root?.header?.c4TabbedHeaderRenderer || root?.header?.pageHeaderRenderer;
+      if (!header) continue;
+      const channelId = header.channelId || root.metadata?.channelMetadataRenderer?.externalId;
+      if (channelId && new URL(url).pathname.startsWith('/channel/') && identity.id !== channelId) continue;
       if (header?.subscriberCountText) builder.set('subscribers', header.subscriberCountText, 'embedded-json', 'header.subscriberCountText');
+      for (const field of ['videosCountText', 'videoCountText']) builder.set('posts', header[field], 'embedded-json', `header.${field}`);
+      const metadata = header.content?.pageHeaderViewModel?.metadata?.contentMetadataViewModel;
+      for (const row of metadata?.metadataRows || []) for (const part of row.metadataParts || []) {
+        for (const value of [part.accessibilityLabel, part.text?.content]) {
+          for (const [name, labels] of [['subscribers', 'subscribers?|abonnenten'], ['posts', 'videos?']]) {
+            if (labeledCount(value, labels) !== null) builder.set(name, value, 'embedded-json', 'header.content.pageHeaderViewModel.metadata.contentMetadataViewModel');
+          }
+        }
+      }
     }
+    renderedChannelPosts(document, builder);
     legacyFollower(document, url, builder, followerCount, 'subscribers');
   } else if (identity.kind === 'video') {
     renderedComments(document, identity.id, builder);
