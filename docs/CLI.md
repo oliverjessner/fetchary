@@ -618,6 +618,7 @@ to that social URL and does not prove the account/post exists.
 fetchary extract social-insights 'https://www.youtube.com/watch?v=VIDEO_ID'
 fetchary extract social-insights https://www.tiktok.com/@example
 fetchary extract social-insights https://www.instagram.com/example/
+fetchary extract social-insights https://www.instagram.com/reel/DeCHfZaMmPc/ --mode http
 fetchary extract social-insights https://github.com/oliverjessner --follower
 fetchary extract social-insights https://www.linkedin.com/in/oliverjessner --follower --mode browser --session linkedin
 fetchary extract social-insights https://www.tiktok.com/@example --posts
@@ -654,6 +655,16 @@ Unsupported platforms produce an explicit `unsupported` result, not invented
 metrics. HTML login/CAPTCHA walls and HTTP 401/403/429 return explicit availability.
 Other transport failures use a nonzero exit code. An inspectable unavailable or
 blocked insight result is a successful command (exit 0).
+
+Instagram post/reel descriptions can supply public likes and comments even when
+media JSON is absent. The page's canonical/Open Graph URLs must match the
+case-sensitive shortcode, including URLs with the owner's username before
+`/reel/` or `/p/`. Caption numbers are ignored. Views remain `null` when they are
+not exposed, so a result with likes/comments alone has status `partial`.
+`--mode http` reads these metadata counts without launching Chromium. In auto
+mode, a failed optional browser capture preserves an existing partial HTTP
+insight result. Explicit browser failures, cancellation and access denials keep
+their normal error/availability behavior.
 
 LinkedIn follower extraction includes signed-in profile headers with the current
 SDUI layout. Counts are tied to the matching profile header; connections and

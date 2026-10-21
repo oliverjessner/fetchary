@@ -1,5 +1,7 @@
 # 2.0.7
 
+- Extract public Instagram post/reel likes and comments from matching page-description metadata when media JSON is absent. Recognize owner-prefixed post URLs, preserve shortcode case, zero counts and approximation, and ignore caption numbers or mismatched page identities. Keep usable partial HTTP insights when optional auto rendering fails, while preserving explicit browser errors, cancellation and access-denial behavior.
+
 - Extract YouTube channel video totals as social-insights `posts`, including `--posts` output. Support modern embedded channel metadata, rendered English/German video labels such as `14.361 Videos`, and legacy header counts. Preserve zero, approximation and unavailable reasons; ignore unrelated recommendations, descriptions and hidden rendered counters. Read modern embedded subscriber totals alongside video totals so complete HTTP data needs no browser fallback.
 
 # 2.0.6

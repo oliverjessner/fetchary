@@ -129,8 +129,17 @@ async function withCapture(url, options, type, operation) {
       if (!(error instanceof FetcharyNotFoundError) || settings.mode !== 'auto' || !shouldRender(page.contentType) || accessStatus(page)) throw error;
     }
     if (settings.mode === 'auto' && (!result || fallbackNeeded(page, result, type))) {
-      page = await capture.capture({ ...source, captureMode: 'browser', httpCapture: page });
-      result = await operation(page, settings);
+      let rendered;
+      try { rendered = await capture.capture({ ...source, captureMode: 'browser', httpCapture: page }); }
+      catch (error) {
+        // Optional rendering must not discard public metrics already read from
+        // HTTP. Explicit browser captures and entirely unavailable results fail.
+        if (type !== 'social-insights' || result?.data.status !== 'partial' || !(error instanceof FetcharyBrowserError) || [401,403,429].includes(error.status)) throw error;
+      }
+      if (rendered) {
+        page = rendered;
+        result = await operation(page, settings);
+      }
     }
     settings.signal?.throwIfAborted();
     return { ...pageMetadata(page), type, ...result };

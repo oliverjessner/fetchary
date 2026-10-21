@@ -29,7 +29,7 @@ function classifyUrl(value) {
     if ((match = p.match(/^\/@([^/]+)\/video\/(\d+)$/))) { kind = 'video'; id = match[2]; }
     else if ((match = p.match(/^\/@([^/]+)$/))) { kind = 'profile'; id = match[1]; }
   } else if (platform === 'instagram') {
-    if ((match = p.match(/^\/(p|reel|reels|tv)\/([^/]+)$/))) { kind = match[1] === 'p' ? 'post' : 'video'; id = match[2]; }
+    if ((match = p.match(/^\/(?:[\w.]+\/)?(p|reel|reels|tv)\/([^/]+)$/))) { kind = match[1] === 'p' ? 'post' : 'video'; id = match[2]; }
     else if ((match = p.match(/^\/([\w.]+)$/)) && !['accounts','explore','direct','stories','reels','about'].includes(match[1])) { kind = 'profile'; id = match[1]; }
   } else if (platform === 'x') {
     if ((match = p.match(/^\/[^/]+\/status\/(\d+)$/))) { kind = 'post'; id = match[1]; }

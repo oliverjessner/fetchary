@@ -59,6 +59,18 @@ becomes `14361`; missing totals remain `null` with
 `result.data.unavailable.posts === 'not_exposed'`. Compact totals such as
 `14.3K videos` carry `result.data.sources.posts.approximate === true`.
 
+Instagram posts/reels can supply `data.metrics.likes` and `comments` from public
+description metadata when matching media JSON/JSON-LD is absent. Canonical/Open
+Graph URLs must identify the same case-sensitive shortcode; owner-prefixed URLs
+such as `/username/reel/shortcode/` are accepted. These fallback sources have
+`type: 'vendor'` and a metadata selector in `field`. Missing views remain `null`
+with reason `not_exposed`, and the result stays `partial`.
+
+For social insights in `mode: 'auto'`, optional browser-capture failures retain
+an already usable partial HTTP result with its original capture metadata.
+`mode: 'browser'` still rejects browser failures. Cancellation and browser
+401/403/429 responses are not converted into a partial HTTP success.
+
 | Type | Function | `data` |
 | --- | --- | --- |
 | `text` | `extractText(url, options?)` | String |

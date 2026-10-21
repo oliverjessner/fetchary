@@ -3,7 +3,8 @@
 This matrix describes implemented, fixture-tested patterns in Fetchary.
 Social sites can change their public markup, hide metrics, or require login.
 YouTube channel video totals were also checked live on **2026-10-21**, using the
-default and browser modes. Other platform coverage below is based on fixtures.
+default and browser modes. Instagram reel description counts were checked live
+with HTTP and auto mode on the same date. Other coverage below is based on fixtures.
 
 | Platform    | URL Recognition | Social Link Detection | Avatar Extraction | Follower Extraction     | Likes       | Comments    | Views       | Shares      | Profile Support | Post Support | Status  | Notes                                                                      |
 | ----------- | --------------- | --------------------- | ----------------- | ----------------------- | ----------- | ----------- | ----------- | ----------- | --------------- | ------------ | ------- | -------------------------------------------------------------------------- |
@@ -102,21 +103,30 @@ Tests: `test/semantic.test.js`,
 ## Instagram
 
 - URLs: username profiles, `/p/shortcode`, `/reel/shortcode`, `/reels/shortcode`,
-  and `/tv/shortcode`. Shortcode case is significant.
+  and `/tv/shortcode`, including owner-prefixed `/username/reel/shortcode` and
+  corresponding post/video forms. Shortcode case is significant.
 - Profile metrics: `followers`, `following`, `posts` from matching user JSON;
   the existing matching follower-link/description parser remains a fallback.
 - Post/reel metrics: `likes`, `comments`, `views` from matching shortcode media
-  fields. JSON-LD can supply supported public interaction statistics.
+  fields. JSON-LD can supply supported public interaction statistics. A fallback
+  reads labelled like/comment totals from Open Graph, standard or Twitter
+  descriptions only when the page's declared URLs match the requested media.
+  English/German labels, grouped/compact counts and reported zero are covered;
+  caption numbers and unrelated media never supply these description totals.
 - Avatar: matching profile JSON, account-named image elements and verified square
   metadata fallback. Banners and rectangular preview images are excluded.
 - Browser: optional for public embedded state; otherwise may be required for
   rendered content. Localized optional-cookie and dismissible login-dialog
-  handling is tested. Login pages and inaccessible controls remain intact.
+  handling is tested. If optional auto rendering fails, usable partial HTTP
+  insights are retained. Explicit browser failures and login/access walls retain
+  their existing behavior.
 - Limits: photos often have no view count, likes can be hidden, and login walls
   are common constraints. Shares/saves and private metrics are unsupported.
 - Fixtures: `test/fixtures/social/instagram-profile.html`,
-  `test/fixtures/social/instagram-post.html`, including unrelated accounts
-  and case-sensitive wrong-post checks.
+  `test/fixtures/social/instagram-post.html`, `test/fixtures/social/instagram-reel-metadata.html`,
+  including unrelated accounts and case-sensitive wrong-post checks.
+  `test/instagram-insights.test.js` covers metadata scope, source precedence,
+  HTTP fallback, cancellation/access guards, real Chromium and CLI output.
 
 ## X / Twitter
 

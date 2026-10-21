@@ -1,6 +1,6 @@
 'use strict';
 const { jsonRoots, objects, insightBuilder, jsonLdMetrics, legacyFollower } = require('../metrics/insights');
-const { classifyUrl } = require('../utils/social');
+const { classifyUrl, sameEntity } = require('../utils/social');
 const { profilePictures } = require('../metrics/profile-pictures');
 
 const { parseCount, linkCount, descriptionCount, jsonObjects, profileName } = require('../metrics/followers');
@@ -109,6 +109,38 @@ function profilePicture(document, url) {
   });
 }
 
+function postDescriptionMetrics(document, url, builder) {
+  // Page-wide descriptions need a matching post identity; caption text and
+  // recommendations alone cannot establish which media these totals describe.
+  const targets = [...document.querySelectorAll('link[rel~="canonical"][href], meta[property="og:url"][content], meta[name="twitter:url"][content]')]
+    .map(element => (element.getAttribute('href') || element.getAttribute('content') || '').trim()).filter(Boolean);
+  if (!targets.length || targets.some(target => {
+    try { return !sameEntity(new URL(target, url).href, url); } catch { return true; }
+  })) return;
+
+  const count = String.raw`(\d[\d., '’\u00a0\u202f]*(?:k|m|b|tsd\.?|mio\.?|mrd\.?|thousand|million|billion)?)`;
+  const patterns = [
+    ['likes', String.raw`likes?|[„“”"']?gefällt\s+mir[„“”"']?[-\s]*angaben?`],
+    ['comments', 'comments?|kommentare?'],
+  ].map(([name, labels]) => [name, new RegExp(`^${count}\\s+(?:${labels})$`, 'i')]);
+  for (const selector of ['meta[property="og:description"]', 'meta[name="description"]', 'meta[name="twitter:description"]']) {
+    for (const element of document.querySelectorAll(selector)) {
+      // Instagram puts the reported counts before " - author ...: caption".
+      // Validate the whole prefix so numbers later in a caption are never metrics.
+      const prefix = (element.getAttribute('content') || '').trim().split(/\s+[-–—]\s+/, 1)[0];
+      const stats = prefix.split(/,\s+/).map(part => {
+        for (const [name, pattern] of patterns) {
+          const match = part.trim().match(pattern);
+          if (match && parseCount(match[1]) !== null) return { name, value: match[1] };
+        }
+        return null;
+      });
+      if (stats.some(stat => stat === null) || new Set(stats.map(stat => stat.name)).size !== stats.length) continue;
+      for (const { name, value } of stats) builder.set(name, value, 'vendor', selector);
+    }
+  }
+}
+
 function socialInsights(document, url) {
   const identity = classifyUrl(url);
   const isProfile = identity.kind === 'profile';
@@ -126,7 +158,10 @@ function socialInsights(document, url) {
     }
   }
   if (isProfile) legacyFollower(document, url, builder, followerCount);
-  else jsonLdMetrics(document, url, builder);
+  else {
+    jsonLdMetrics(document, url, builder);
+    postDescriptionMetrics(document, url, builder);
+  }
   return builder.finish();
 }
 
