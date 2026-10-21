@@ -110,7 +110,7 @@ export type TrackerEvidence = { source: string; document: 'raw' | 'rendered'; fi
 export type DetectedTracker = { provider: TrackerProvider; category: 'tag-manager' | 'analytics' | 'advertising'; identifiers: TrackerIdentifier[]; detection: 'confirmed_configuration' | 'provider_reference'; evidence: TrackerEvidence[]; configuration?: { trackedDomains: string[] } };
 export type TrackerIntelligenceData = { trackers: DetectedTracker[]; externalHosts: string[]; summary: { providers: number; uniqueIdentifiers: number } };
 export type TrackerIntelligenceResult = ExtractionResult<TrackerIntelligenceData, 'tracker-intelligence'>;
-export type Metric = 'likes' | 'comments' | 'views' | 'shares' | 'saves' | 'followers' | 'following' | 'posts' | 'subscribers';
+export type Metric = 'likes' | 'comments' | 'views' | 'shares' | 'saves' | 'followers' | 'following' | 'posts' | 'subscribers' | 'score';
 export type InsightStatus = 'available' | 'partial' | 'unavailable' | 'unsupported' | 'login_required' | 'blocked' | 'extraction_error';
 export type SocialInsightsData = {
   platform: Platform | null; kind: SocialKind; url: string;

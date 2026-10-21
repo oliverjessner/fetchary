@@ -1,7 +1,7 @@
 'use strict';
 const { parseCount } = require('./followers');
 const { sameEntity, classifyUrl } = require('../utils/social');
-const metricNames = ['likes','comments','views','shares','saves','followers','following','posts','subscribers'];
+const metricNames = ['likes','comments','views','shares','saves','followers','following','posts','subscribers','score'];
 
 function countDetails(value) {
   if (value && typeof value === 'object') value = value.simpleText ?? value.runs?.map(run => run.text).join('');
@@ -49,9 +49,12 @@ function insightBuilder(url, supported = []) {
   const sources = {};
   function set(name, value, type, field, approximate) {
     if (!supported.includes(name) || metrics[name] !== null) return;
-    const parsed = countDetails(value);
+    // Reddit's reported net score can be negative; ordinary counts cannot.
+    const negative = name === 'score' && (typeof value === 'number' ? value < 0 : typeof value === 'string' && /^[-−]/.test(value.trim()));
+    const unsigned = negative ? (typeof value === 'number' ? -value : value.trim().slice(1)) : value;
+    const parsed = countDetails(unsigned);
     if (!parsed) return;
-    metrics[name] = parsed.value;
+    metrics[name] = negative && parsed.value !== 0 ? -parsed.value : parsed.value;
     sources[name] = { type, field, approximate: approximate === undefined ? parsed.approximate : approximate };
   }
   function finish(reason) {

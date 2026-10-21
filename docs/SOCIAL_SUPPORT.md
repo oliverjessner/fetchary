@@ -4,7 +4,9 @@ This matrix describes implemented, fixture-tested patterns in Fetchary.
 Social sites can change their public markup, hide metrics, or require login.
 YouTube channel video totals were also checked live on **2026-10-21**, using the
 default and browser modes. Instagram reel description counts were checked live
-with HTTP and auto mode on the same date. Other coverage below is based on fixtures.
+with HTTP and auto mode on the same date. Reddit post attributes were inspected
+in a live browser capture on that date; later requests encountered a Reddit
+access block. Other coverage below is based on fixtures.
 
 | Platform    | URL Recognition | Social Link Detection | Avatar Extraction | Follower Extraction     | Likes       | Comments    | Views       | Shares      | Profile Support | Post Support | Status  | Notes                                                                      |
 | ----------- | --------------- | --------------------- | ----------------- | ----------------------- | ----------- | ----------- | ----------- | ----------- | --------------- | ------------ | ------- | -------------------------------------------------------------------------- |
@@ -16,7 +18,7 @@ with HTTP and auto mode on the same date. Other coverage below is based on fixtu
 | Threads     | SUPPORTED       | SUPPORTED             | SUPPORTED         | SUPPORTED               | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED | PARTIAL         | UNSUPPORTED  | PARTIAL | Public profile JSON/description followers; no engagement parser            |
 | LinkedIn    | SUPPORTED       | SUPPORTED             | SUPPORTED         | SUPPORTED               | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED | PARTIAL         | UNSUPPORTED  | PARTIAL | Public/signed-in profile headers or matching JSON-LD followers             |
 | Twitch      | SUPPORTED       | SUPPORTED             | SUPPORTED         | SUPPORTED               | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED | PARTIAL         | UNSUPPORTED  | PARTIAL | Channel followers; subscriptions/viewers are not followers                 |
-| Reddit      | SUPPORTED       | SUPPORTED             | UNSUPPORTED       | UNSUPPORTED             | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED     | UNSUPPORTED  | PARTIAL | URL recognition and links only                                             |
+| Reddit      | SUPPORTED       | SUPPORTED             | UNSUPPORTED       | UNSUPPORTED             | UNSUPPORTED | SUPPORTED   | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED     | PARTIAL      | PARTIAL | Matching post score and comment total; score is separate from likes        |
 | GitHub      | SUPPORTED       | SUPPORTED             | SUPPORTED         | SUPPORTED               | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED | PARTIAL         | UNSUPPORTED  | PARTIAL | User follower links; repositories are not profiles                         |
 | Vimeo       | SUPPORTED       | SUPPORTED             | UNSUPPORTED       | UNSUPPORTED             | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED     | UNSUPPORTED  | PARTIAL | URL recognition and links only                                             |
 | Bluesky     | SUPPORTED       | SUPPORTED             | UNSUPPORTED       | UNSUPPORTED             | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED     | UNSUPPORTED  | PARTIAL | bsky.app profile/post URLs only; no firehose/API access                    |
@@ -26,11 +28,11 @@ including real Chromium serving local/injected HTML, not public-site requests.
 
 ## Shared behavior
 
-Insight metrics are always the same nine fields: `likes`, `comments`, `views`,
-`shares`, `saves`, `followers`, `following`, `posts`, `subscribers`. Missing values
+Insight metrics are always the same ten fields: `likes`, `comments`, `views`,
+`shares`, `saves`, `followers`, `following`, `posts`, `subscribers`, `score`. Missing values
 stay `null`; unsupported combinations have an explicit reason. `available` means
 all metrics implemented for this platform and URL kind were found, rather than
-all nine fields. Compact counts have approximation metadata; some legacy
+all ten fields. Compact counts have approximation metadata; some legacy
 follower parsers retain unknown precision (`approximate: null`).
 
 Authentication walls, challenge pages, entity mismatches, parser errors and
@@ -201,7 +203,27 @@ Tests: `test/semantic.test.js`,
 - Tests: `followers.test.js`, avatar cases in `extract.test.js`, and shared-cache
   avatar/follower cases in `capture-cache.test.js`.
 
-## Facebook, Reddit, Vimeo, and Bluesky
+## Reddit
+
+- URLs: post/comment permalinks and `redd.it/id` links; `/user/name` and `/u/name`
+  profiles remain recognized for link discovery.
+- Post metrics: `score` and `comments` from the matching `shreddit-post` ID and
+  permalink, or embedded `t3` post records with `score` and `num_comments`.
+  Recommendations, comment scores and conflicting post identities are ignored.
+- `score` is Reddit's reported net vote score, not an individual upvote total or
+  like count. It can be negative. Hidden scores remain `null`, even when another
+  source for the same post contains a number. The `likes` field is unsupported.
+- Browser: optional when counters are present in HTTP; auto mode uses ordinary
+  rendering for JavaScript-only pages. Reddit access blocks and login walls are
+  preserved. Recognized JavaScript challenge pages are not cached.
+- Limits: post-level metrics only, including when opened through a comment
+  permalink. No profile/community metrics, individual upvotes/downvotes, views,
+  shares, saves, avatar extraction, API requests, or comment pagination.
+- Fixtures: `test/fixtures/social/reddit-post.html`, reduced from the observed
+  post attributes; `test/reddit-insights.test.js` covers scoping, embedded JSON,
+  missing/hidden counts, signed scores, Chromium, CLI and auto rendering.
+
+## Facebook, Vimeo, and Bluesky
 
 These adapters currently provide URL recognition and social link discovery only.
 They expose no avatar or metric capability. Profile/post insights return
@@ -210,7 +232,6 @@ capability the adapter lacks.
 
 - Facebook: recognized profile/page, post/story/permalink, watch/video/reel URL
   patterns on facebook.com/fb.com. No scraping of authenticated Facebook data.
-- Reddit: `/user/name`, `/u/name`, comment/post paths, and redd.it post links.
 - Vimeo: numeric video IDs and simple profile paths.
 - Bluesky: bsky.app `/profile/handle` and `/profile/handle/post/id`. Custom external
   domains are not treated as Bluesky URLs, and there is no firehose or API access.

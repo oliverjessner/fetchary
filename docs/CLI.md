@@ -619,6 +619,7 @@ fetchary extract social-insights 'https://www.youtube.com/watch?v=VIDEO_ID'
 fetchary extract social-insights https://www.tiktok.com/@example
 fetchary extract social-insights https://www.instagram.com/example/
 fetchary extract social-insights https://www.instagram.com/reel/DeCHfZaMmPc/ --mode http
+fetchary extract social-insights https://www.reddit.com/r/ANBERNIC/comments/1xbdac6/i_did_the_impossible/
 fetchary extract social-insights https://github.com/oliverjessner --follower
 fetchary extract social-insights https://www.linkedin.com/in/oliverjessner --follower --mode browser --session linkedin
 fetchary extract social-insights https://www.tiktok.com/@example --posts
@@ -665,6 +666,14 @@ not exposed, so a result with likes/comments alone has status `partial`.
 mode, a failed optional browser capture preserves an existing partial HTTP
 insight result. Explicit browser failures, cancellation and access denials keep
 their normal error/availability behavior.
+
+Reddit posts expose `data.metrics.score` and `comments` from the matching post's
+page attributes or embedded post JSON. `score` is the reported net vote score,
+can be negative, and is separate from `likes`. Individual upvotes/downvotes,
+views and account metrics are not inferred. Hidden or missing scores stay
+`null`. Auto mode can load a JavaScript-only HTTP page in Chromium; HTTP-only
+mode may leave those counters unavailable. Reddit profiles and communities have
+no metric parser.
 
 LinkedIn follower extraction includes signed-in profile headers with the current
 SDUI layout. Counts are tied to the matching profile header; connections and

@@ -71,6 +71,13 @@ an already usable partial HTTP result with its original capture metadata.
 `mode: 'browser'` still rejects browser failures. Cancellation and browser
 401/403/429 responses are not converted into a partial HTTP success.
 
+Reddit post insights expose `data.metrics.score` (the reported net vote score)
+and `data.metrics.comments`. `score` can be negative and remains separate from
+`likes`; individual upvotes/downvotes are not calculated from it. Both fields
+are scoped to the requested post ID. Modern `shreddit-post` attributes and
+matching embedded `t3` post records are supported, with hidden scores left
+`null`. Profile/community metrics remain unsupported.
+
 | Type | Function | `data` |
 | --- | --- | --- |
 | `text` | `extractText(url, options?)` | String |
@@ -799,6 +806,7 @@ data: {
         likes: number | null; comments: number | null; views: number | null;
         shares: number | null; saves: number | null; followers: number | null;
         following: number | null; posts: number | null; subscribers: number | null;
+        score: number | null;
     };
     status: 'available' | 'partial' | 'unavailable' | 'unsupported'
         | 'login_required' | 'blocked' | 'extraction_error';
@@ -934,6 +942,8 @@ missing metric to `not_exposed`, `unsupported`, `identity_mismatch`,
 responses (401/403/429) become structured insight availability; other network
 errors reject. No account/post is substituted after an identity mismatch. Missing rendered metrics can retain public values from the same capture's matching HTTP page; their source field starts with `rawHTTP:`. LinkedIn preserves its guarded public HTTP follower fallback at a browser login wall, while retaining `login_required` status.
 
+`score` is the only signed metric; all ordinary counts remain nonnegative.
+It reports Reddit's net score and cannot establish individual vote totals.
 Structured integers are exact as reported by the page. Compact counts such as
 `12K`, `12.5K`, `1.2M`, and `1,2 Mio.` are normalized with `approximate: true`.
 With a suffix, comma/period is a decimal separator; without one, only integers

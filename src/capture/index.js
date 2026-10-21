@@ -22,7 +22,7 @@ function cacheableCapture(page) {
     if (shouldRender(page.contentType) && !/<[a-z!][\s\S]*>/i.test(html)) return false;
     // Recognizable interstitials are returned normally, but never retained.
     if (/<title[^>]*>\s*(?:just a moment|[^<]*(?:captcha|sign in|log in|access denied|verify you are human))\b/i.test(html)
-      || /(?:\b(?:g-recaptcha|h-captcha|cf-turnstile|cf-chl-|captcha-container)\b|id=["']challenge-form|\/cdn-cgi\/challenge-platform\/|<input\b[^>]*type\s*=\s*["']?password\b)/i.test(html)) return false;
+      || /(?:\b(?:g-recaptcha|h-captcha|cf-turnstile|cf-chl-|captcha-container)\b|id=["']challenge-form|\/cdn-cgi\/challenge-platform\/|<input\b[^>]*type\s*=\s*["']?password\b|<input\b[^>]*name\s*=\s*["']?js_challenge\b)/i.test(html)) return false;
   }
   return true;
 }

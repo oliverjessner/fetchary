@@ -414,6 +414,7 @@ test('sensitive, partial, challenged and invalid HTML responses are returned wit
     ['<title>Sign in</title>', {}],
     ['<div class="g-recaptcha">Verify</div>', {}],
     ['<form><input type="password"></form>', {}],
+    ['<title>Reddit</title><form hidden><input name="js_challenge" value="1"></form>', {}],
   ]) {
     const fixture = httpFixture(body, init);
     const client = api.createExtractor({ fetch: fixture.fetch, mode: 'http' });

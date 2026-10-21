@@ -1,17 +1,11 @@
 # 2.0.7
 
+- Add Reddit post insights for reported net `score` and comment totals from matching `shreddit-post` attributes or embedded `t3` post JSON. Extend the normalized metrics and TypeScript `Metric` union with signed `score`, separate from `likes`. Preserve zero, compact precision and hidden/missing scores; ignore recommendations and comment scores. Enable ordinary auto rendering for JavaScript-only post pages and exclude recognized JavaScript challenge pages from the capture cache.
+
 - Extract public Instagram post/reel likes and comments from matching page-description metadata when media JSON is absent. Recognize owner-prefixed post URLs, preserve shortcode case, zero counts and approximation, and ignore caption numbers or mismatched page identities. Keep usable partial HTTP insights when optional auto rendering fails, while preserving explicit browser errors, cancellation and access-denial behavior.
-
 - Extract YouTube channel video totals as social-insights `posts`, including `--posts` output. Support modern embedded channel metadata, rendered English/German video labels such as `14.361 Videos`, and legacy header counts. Preserve zero, approximation and unavailable reasons; ignore unrelated recommendations, descriptions and hidden rendered counters. Read modern embedded subscriber totals alongside video totals so complete HTTP data needs no browser fallback.
-
-# 2.0.6
-
 - Default to `insecure: true` for OSINT extraction despite self-signed, expired, untrusted, incomplete-chain or hostname-mismatched TLS certificates. Support explicit `--insecure` and `--secure` CLI flags and typed library `insecure: false` for verification. Apply the policy to HTTP/browser/auto capture, redirects, image candidates, analysis and login, with separate verified/unverified caches and HTTPS pools. Cover default extraction, explicit verification, native HTTPS, Chromium, CLI and session extraction.
-
-# 2.0.5
-
 - Preserve original Chromium POST bytes through the guarded transport instead of decoding binary/compressed bodies as UTF-8. Fix HTTP 400 responses for YouTube's gzip-compressed comment API requests, with byte-level and real Chromium/native HTTP regression coverage.
-
 - Extract YouTube comment totals from the rendered header for the matching watch video, including German headings and reported zero counts. Add optional generic vendor snapshot preparation; YouTube keeps its lazy comment heading in view during the existing post-load wait, without pagination or sort changes. Cover structured-count fallback, unrelated/hidden headers, scroll restoration, Chromium lazy loading and CLI output.
 
 # 2.0.4
