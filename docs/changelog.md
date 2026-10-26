@@ -1,4 +1,4 @@
-# Unreleased
+# 2.1.0
 
 - Add `extractPrice()`, `extract(..., { type: 'price' })`, isolated-client methods and a price section in `analyse()`. Collect JSON-LD, product DOM, Microdata and price metadata in the shared guarded capture pipeline. Preserve decimal amounts, original values, product/offer conditions and exact raw/rendered evidence; expose consistent, conflict, single_source, ambiguous and unavailable states without choosing a winner on disagreement.
 - Add default JSON and candidate/evidence list output for `extract price`, optional product/price CSS selectors, typed public schemas and capture-aware regression coverage. Keep current/list/unit/range/subscription/installment roles separate and avoid cross-currency or uncertain-product comparisons. No tracking storage, scheduling, dependency or cache-default changes.
