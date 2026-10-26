@@ -12,6 +12,7 @@ exports.extractLinks = extraction.extractLinks;
 exports.extractDocuments = extraction.extractDocuments;
 exports.extractMetadata = extraction.extractMetadata;
 exports.extractStructuredData = extraction.extractStructuredData;
+exports.extractPrice = extraction.extractPrice;
 exports.extractTrackerIntelligence = extraction.extractTrackerIntelligence;
 exports.extractEmails = extraction.extractEmails;
 exports.extractTelephone = extraction.extractTelephone;

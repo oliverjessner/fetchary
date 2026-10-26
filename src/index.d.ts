@@ -2,7 +2,7 @@ import type { LookupAddress } from 'node:dns';
 import type { Buffer } from 'node:buffer';
 import type { CountryCode } from 'libphonenumber-js';
 
-export type ExtractionType = 'text' | 'html' | 'favicon' | 'images' | 'videos' | 'avatar' | 'selector' | 'social-links' | 'social-insights' | 'emails' | 'telephone' | 'links' | 'documents' | 'metadata' | 'structured-data' | 'tracker-intelligence';
+export type ExtractionType = 'text' | 'html' | 'favicon' | 'images' | 'videos' | 'avatar' | 'selector' | 'social-links' | 'social-insights' | 'emails' | 'telephone' | 'links' | 'documents' | 'metadata' | 'structured-data' | 'tracker-intelligence' | 'price';
 export type CaptureMode = 'auto' | 'http' | 'browser';
 export type Platform = 'youtube' | 'tiktok' | 'instagram' | 'facebook' | 'x' | 'threads' | 'linkedin' | 'twitch' | 'reddit' | 'github' | 'vimeo' | 'bluesky';
 export type SocialKind = 'profile' | 'channel' | 'post' | 'video' | 'unknown';
@@ -47,6 +47,7 @@ export type ExtractionOptions = {
   /** Default 45000. Zero bypasses both cache and in-flight deduplication. */
   cacheTtlMs?: number;
 };
+export type PriceOptions = ExtractionOptions & { productSelector?: string; priceSelector?: string };
 export type ContentOptions = ExtractionOptions & { includeSelectors?: string[]; ignoreSelectors?: string[]; format?: 'html' | 'text' };
 export type ContactOptions = ExtractionOptions & { includeSelectors?: string[]; ignoreSelectors?: string[] };
 export type LinksOptions = ExtractionOptions & { includeSelectors?: string[]; ignoreSelectors?: string[] };
@@ -104,6 +105,25 @@ export type StructuredDataIssue = { source: 'json-ld' | 'microdata'; index: numb
 export type StructuredData = { jsonLd: JsonObject[]; microdata: MicrodataItem[]; errors: StructuredDataIssue[] };
 export type MetadataResult = ExtractionResult<PageMetadata, 'metadata'> & { metadata: PageMetadata };
 export type StructuredDataResult = ExtractionResult<StructuredData, 'structured-data'> & { structuredData: StructuredData };
+export type PriceStatus = 'consistent' | 'conflict' | 'single_source' | 'ambiguous' | 'unavailable';
+export type PriceRole = 'current' | 'list' | 'unit' | 'subscription' | 'installment' | 'range-min' | 'range-max';
+export type PriceProduct = { id: string | null; name: string | null; url: string | null; sku: string | null };
+export type PriceEvidence = {
+  source: 'json-ld' | 'visible-dom' | 'microdata' | 'meta';
+  document: 'raw' | 'rendered'; locator: string; url: string; raw: string;
+  capturedAt: string; captureMode: 'http' | 'browser';
+  scriptIndex?: number; attribute?: string;
+  /** Markup checks only; computed CSS visibility is not established. */
+  visibility?: 'static-not-hidden' | 'rendered-not-hidden';
+};
+export type PriceCandidate = {
+  amount: string; currency: string | null; role: PriceRole; raw: string;
+  product: PriceProduct | null; association: 'matched' | 'uncertain';
+  conditions: Record<string, string>; evidence: PriceEvidence[];
+};
+export type PriceIssue = { code: string; message: string; document?: 'raw' | 'rendered'; scriptIndex?: number; locator?: string; raw?: string | null };
+export type PriceData = { status: PriceStatus; selected: PriceCandidate | null; product: PriceProduct | null; candidates: PriceCandidate[]; issues: PriceIssue[] };
+export type PriceResult = ExtractionResult<PriceData, 'price'>;
 export type TrackerProvider = 'google-tag-manager' | 'google-analytics' | 'google-ads' | 'meta-pixel' | 'tiktok-pixel' | 'linkedin-insight' | 'pinterest-tag' | 'microsoft-clarity' | 'microsoft-advertising-uet' | 'hotjar' | 'yandex-metrica' | 'matomo' | 'plausible';
 export type TrackerIdentifier = { kind: 'container-id' | 'measurement-id' | 'tracking-id' | 'conversion-id' | 'pixel-id' | 'partner-id' | 'tag-id' | 'project-id' | 'site-id' | 'counter-id'; value: string; /** Matomo server endpoint; null means unscoped, unsuitable for correlation. */ scope?: string | null };
 export type TrackerEvidence = { source: string; document: 'raw' | 'rendered'; field: string; index: number; tokenIndex?: number };
@@ -120,9 +140,9 @@ export type SocialInsightsData = {
   unavailable: Partial<Record<Metric, string>>;
 };
 export type SocialInsightsResult = ExtractionResult<SocialInsightsData, 'social-insights'> & { vendor: Platform | null; followers: number | null };
-export type ResultMap = { text: ContentResult<'text'>; html: ContentResult<'html'>; favicon: FaviconResult<boolean>; images: ImagesResult; videos: VideosResult; avatar: ProfilePictureResult; selector: SelectorResult; 'social-links': SocialLinksResult; 'social-insights': SocialInsightsResult; emails: EmailsResult; telephone: TelephoneResult; links: LinksResult; documents: DocumentsResult; metadata: MetadataResult; 'structured-data': StructuredDataResult; 'tracker-intelligence': TrackerIntelligenceResult };
-export type OptionsMap = { text: ContentOptions; html: ContentOptions; favicon: FaviconOptions; images: ImagesOptions; videos: LinksOptions; avatar: ExtractionOptions; selector: SelectorOptions; 'social-links': SocialLinksOptions; 'social-insights': ExtractionOptions; emails: ContactOptions; telephone: TelephoneOptions; links: LinksOptions; documents: LinksOptions; metadata: ExtractionOptions; 'structured-data': ExtractionOptions; 'tracker-intelligence': ExtractionOptions };
-export type AnalysisType = 'favicon' | 'links' | 'social-links' | 'emails' | 'telephone' | 'images' | 'documents' | 'structured-data' | 'metadata' | 'tracker-intelligence';
+export type ResultMap = { text: ContentResult<'text'>; html: ContentResult<'html'>; favicon: FaviconResult<boolean>; images: ImagesResult; videos: VideosResult; avatar: ProfilePictureResult; selector: SelectorResult; 'social-links': SocialLinksResult; 'social-insights': SocialInsightsResult; emails: EmailsResult; telephone: TelephoneResult; links: LinksResult; documents: DocumentsResult; metadata: MetadataResult; 'structured-data': StructuredDataResult; 'tracker-intelligence': TrackerIntelligenceResult; price: PriceResult };
+export type OptionsMap = { text: ContentOptions; html: ContentOptions; favicon: FaviconOptions; images: ImagesOptions; videos: LinksOptions; avatar: ExtractionOptions; selector: SelectorOptions; 'social-links': SocialLinksOptions; 'social-insights': ExtractionOptions; emails: ContactOptions; telephone: TelephoneOptions; links: LinksOptions; documents: LinksOptions; metadata: ExtractionOptions; 'structured-data': ExtractionOptions; 'tracker-intelligence': ExtractionOptions; price: PriceOptions };
+export type AnalysisType = 'favicon' | 'links' | 'social-links' | 'emails' | 'telephone' | 'images' | 'documents' | 'structured-data' | 'metadata' | 'tracker-intelligence' | 'price';
 export type AnalysisOptions = ExtractionOptions & { defaultCountry?: CountryCode };
 export type AnalysisResults = { [K in AnalysisType]: (K extends 'favicon' ? FaviconResult : ResultMap[K]) | null };
 export type AnalysisIssue = { error: string; message: string; status?: number; phase?: string };
@@ -136,6 +156,7 @@ export declare function extractHtml(url: string, options?: ContentOptions): Prom
 export declare function extractLinks(url: string, options?: LinksOptions): Promise<LinksResult>;
 export declare function extractDocuments(url: string, options?: LinksOptions): Promise<DocumentsResult>;
 export declare function extractVideos(url: string, options?: LinksOptions): Promise<VideosResult>;
+export declare function extractPrice(url: string, options?: PriceOptions): Promise<PriceResult>;
 export declare function extractMetadata(url: string, options?: ExtractionOptions): Promise<MetadataResult>;
 export declare function extractTrackerIntelligence(url: string, options?: ExtractionOptions): Promise<TrackerIntelligenceResult>;
 export declare function extractStructuredData(url: string, options?: ExtractionOptions): Promise<StructuredDataResult>;
@@ -150,7 +171,7 @@ export declare function extractSocialInsights(url: string, options?: ExtractionO
 export declare function extractSocialAvatar(url: string, options?: ExtractionOptions): Promise<ProfilePictureResult>;
 export declare const extractProfilePicture: typeof extractSocialAvatar;
 export type ExtractorOptions = ExtractionOptions & { maxEntries?: number; maxCacheBytes?: number };
-export type Extractor = { analyse: typeof analyse; extract: typeof extract; extractText: typeof extractText; extractHtml: typeof extractHtml; extractLinks: typeof extractLinks; extractDocuments: typeof extractDocuments; extractVideos: typeof extractVideos; extractMetadata: typeof extractMetadata; extractStructuredData: typeof extractStructuredData; extractTrackerIntelligence: typeof extractTrackerIntelligence; extractEmails: typeof extractEmails; extractTelephone: typeof extractTelephone; extractFavicon: typeof extractFavicon; extractImages: typeof extractImages; extractSelector: typeof extractSelector; extractSocialLinks: typeof extractSocialLinks; extractSocialInsights: typeof extractSocialInsights; extractSocialAvatar: typeof extractSocialAvatar; extractProfilePicture: typeof extractProfilePicture; clearCache(): void };
+export type Extractor = { analyse: typeof analyse; extract: typeof extract; extractText: typeof extractText; extractHtml: typeof extractHtml; extractLinks: typeof extractLinks; extractDocuments: typeof extractDocuments; extractVideos: typeof extractVideos; extractPrice: typeof extractPrice; extractMetadata: typeof extractMetadata; extractStructuredData: typeof extractStructuredData; extractTrackerIntelligence: typeof extractTrackerIntelligence; extractEmails: typeof extractEmails; extractTelephone: typeof extractTelephone; extractFavicon: typeof extractFavicon; extractImages: typeof extractImages; extractSelector: typeof extractSelector; extractSocialLinks: typeof extractSocialLinks; extractSocialInsights: typeof extractSocialInsights; extractSocialAvatar: typeof extractSocialAvatar; extractProfilePicture: typeof extractProfilePicture; clearCache(): void };
 export declare function createExtractor(options?: ExtractorOptions): Extractor;
 export declare function clearCache(): void;
 export type SessionOptions = { sessionDir?: string; signal?: AbortSignal };

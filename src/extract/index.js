@@ -25,11 +25,12 @@ const { videoLinks } = require('./videos');
 const { pageMetadata: extractPageMetadata } = require('./metadata');
 const { structuredData } = require('./structured-data');
 const { trackerIntelligence } = require('./tracker-intelligence');
+const { extractPrices } = require('./price');
 
 const clientCache = Symbol('captureCache');
 const analysisSession = Symbol('analysisSession');
 const sessionCookies = Symbol('sessionCookies');
-const types = ['text','html','favicon','images','videos','avatar','selector','social-links','social-insights','emails','telephone','links','documents','metadata','structured-data','tracker-intelligence'];
+const types = ['text','html','favicon','images','videos','avatar','selector','social-links','social-insights','emails','telephone','links','documents','metadata','structured-data','tracker-intelligence','price'];
 
 function extractionOptions(options = {}) {
   if (!options || typeof options !== 'object' || Array.isArray(options)) throw new FetcharyValidationError('options must be an object');
@@ -99,6 +100,8 @@ function fallbackNeeded(page, result, type) {
   if (!shouldRender(page.contentType) || accessStatus(page)) return false;
   const html = pageHtml(page);
   const scripts = /<script\b/i.test(html);
+  if (type === 'price') return result.data.status === 'unavailable' && /price|preis|product|__next|id=["'](?:root|app)["']/i.test(html) && [...pageDocument(page).querySelectorAll('script')]
+    .some(script => /^(?:|module|(?:text|application)\/(?:java|ecma)script)$/.test((script.getAttribute('type') || '').trim().toLowerCase()));
   if (type === 'metadata' || type === 'structured-data') {
     const executable = [...pageDocument(page).querySelectorAll('script')].some(script => /^(?:|module|(?:text|application)\/(?:java|ecma)script)$/.test((script.getAttribute('type') || '').trim().toLowerCase()));
     return executable && (type === 'metadata' ? Object.values(result.data).every(value => value === null) : !result.data.jsonLd.length && !result.data.microdata.length);
@@ -154,7 +157,7 @@ async function analyse(url, options = {}) {
   const settings = extractionOptions(options);
   contacts.validateDefaultCountry(options.defaultCountry);
   if (options.binary) throw new FetcharyValidationError('binary is not supported for analyse');
-  for (const name of ['selector','all','attribute','format','platform','unique','includeMetadata','sources','includeSelectors','ignoreSelectors']) {
+  for (const name of ['selector','all','attribute','format','platform','unique','includeMetadata','sources','includeSelectors','ignoreSelectors','productSelector','priceSelector']) {
     if (Object.hasOwn(options, name)) throw new FetcharyValidationError(`${name} is not supported for analyse`);
   }
   if (settings.cookieFile || settings.cookiesFromBrowser || settings.session) settings.cookieJar = await loadSessionCookies(settings, requestedUrl);
@@ -163,7 +166,7 @@ async function analyse(url, options = {}) {
   const session = createCaptureSession(requestedUrl, settings);
   const methods = { favicon: extractFavicon, links: extractLinks, 'social-links': extractSocialLinks,
     emails: extractEmails, telephone: extractTelephone, images: extractImages, documents: extractDocuments,
-    'structured-data': extractStructuredData, metadata: extractMetadata, 'tracker-intelligence': extractTrackerIntelligence };
+    'structured-data': extractStructuredData, metadata: extractMetadata, 'tracker-intelligence': extractTrackerIntelligence, price: extractPrice };
   try {
     // Fail once for a failed primary capture; retain section-specific failures.
     await session.capture({ captureMode: settings.mode === 'browser' ? 'browser' : 'http' });
@@ -212,6 +215,19 @@ async function extractStructuredData(url, options = {}) {
     const jsonLd = page.contentType?.split(';')[0].trim().toLowerCase() === 'application/ld+json';
     const data = structuredData(shouldRender(page.contentType) ? pageDocument(page) : null, pageMetadata(page).finalUrl, settings.maxResponseBytes, jsonLd ? pageHtml(page) : undefined);
     return { data, structuredData: data };
+  });
+}
+
+async function extractPrice(url, options = {}) {
+  extractionOptions(options);
+  for (const name of ['productSelector','priceSelector']) if (options[name] !== undefined) validateSelectors([options[name]],name === 'productSelector' ? 'product' : 'price');
+  return withCapture(url, options, 'price', page => {
+    const documents = [];
+    if (shouldRender(page.contentType)) {
+      documents.push({ html:page.rawHtml ?? page.rawBody.toString('utf8'),url:page.rawFinalUrl,document:'raw',capturedAt:page.rawCapturedAt });
+      if (page.renderedHtml != null) documents.push({ html:page.renderedHtml,url:page.browserFinalUrl || page.rawFinalUrl,document:'rendered',capturedAt:page.renderedCapturedAt });
+    }
+    return { data:extractPrices(documents,options) };
   });
 }
 
@@ -421,7 +437,7 @@ async function extract(url, options = {}) {
   const type = options.type ?? (options.format === 'text' ? 'text' : 'html');
   if (options.format !== undefined && !['text','html'].includes(options.format)) throw new FetcharyValidationError('format must be text or html');
   const methods = { text: extractText, html: extractHtml, favicon: extractFavicon, images: extractImages, videos: extractVideos, avatar: extractSocialAvatar,
-    selector: extractSelector, 'social-links': extractSocialLinks, 'social-insights': extractSocialInsights, emails: extractEmails, telephone: extractTelephone, links: extractLinks, documents: extractDocuments, metadata: extractMetadata, 'structured-data': extractStructuredData, 'tracker-intelligence': extractTrackerIntelligence };
+    selector: extractSelector, 'social-links': extractSocialLinks, 'social-insights': extractSocialInsights, emails: extractEmails, telephone: extractTelephone, links: extractLinks, documents: extractDocuments, metadata: extractMetadata, 'structured-data': extractStructuredData, 'tracker-intelligence': extractTrackerIntelligence, price:extractPrice };
   if (!types.includes(type)) throw new FetcharyValidationError(`unknown extraction type: ${type}`);
   return methods[type](url, options);
 }
@@ -431,11 +447,11 @@ function createExtractor(options = {}) {
   const cache = createCaptureCache({ maxEntries: options.maxEntries, maxCacheBytes: options.maxCacheBytes });
   const defaults = { ...options, headers: settings.headers };
   const client = { clearCache: () => cache.clear() };
-  for (const [name, method] of Object.entries({ analyse, extract, extractText, extractHtml, extractFavicon, extractImages, extractVideos, extractSocialLinks, extractSocialAvatar, extractProfilePicture, extractSocialInsights, extractEmails, extractTelephone, extractLinks, extractDocuments, extractMetadata, extractStructuredData, extractTrackerIntelligence })) client[name] = (url, overrides = {}) => method(url, { ...defaults, ...overrides, [clientCache]: cache });
+  for (const [name, method] of Object.entries({ analyse, extract, extractText, extractHtml, extractFavicon, extractImages, extractVideos, extractSocialLinks, extractSocialAvatar, extractProfilePicture, extractSocialInsights, extractEmails, extractTelephone, extractLinks, extractDocuments, extractMetadata, extractStructuredData, extractTrackerIntelligence, extractPrice })) client[name] = (url, overrides = {}) => method(url, { ...defaults, ...overrides, [clientCache]: cache });
   client.extractSelector = (url, selectorOrOptions = {}, overrides = {}) => typeof selectorOrOptions === 'string'
     ? extractSelector(url, { ...defaults, ...overrides, selector: selectorOrOptions, [clientCache]: cache })
     : extractSelector(url, { ...defaults, ...selectorOrOptions, [clientCache]: cache });
   return client;
 }
-module.exports = { analyse, extract, extractText, extractHtml, extractFavicon, extractImages, extractVideos, extractSelector, extractSocialLinks, extractEmails, extractTelephone, extractLinks, extractDocuments, extractMetadata, extractStructuredData, extractTrackerIntelligence,
+module.exports = { analyse, extract, extractText, extractHtml, extractFavicon, extractImages, extractVideos, extractSelector, extractSocialLinks, extractEmails, extractTelephone, extractLinks, extractDocuments, extractMetadata, extractStructuredData, extractTrackerIntelligence, extractPrice,
   extractSocialAvatar, extractProfilePicture, extractSocialInsights, createExtractor, clearCache };

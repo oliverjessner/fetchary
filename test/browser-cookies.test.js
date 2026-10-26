@@ -216,7 +216,7 @@ test('analyse imports Chrome once and authenticates the shared document and favi
       return new Response(url === root ? '<html><head><title>Profile</title><link rel="icon" href="/icon.svg"></head><body>Profile</body></html>' : '<svg width="32" height="32"></svg>', {headers:{'content-type':url === root ? 'text/html' : 'image/svg+xml'}});
     }});
   assert.equal(calls(), 1); assert.equal(seen.filter(request => request.url === root).length, 1);
-  assert.equal(result.summary.succeeded, 10); assert.ok(seen.every(request => request.cookie === 'li_at=fixture-login'));
+  assert.equal(result.summary.succeeded, 11); assert.ok(seen.every(request => request.cookie === 'li_at=fixture-login'));
   assert.equal(result.cache.ttlMs, 0); assert.ok(!JSON.stringify(result).includes('fixture-login'));
 });
 

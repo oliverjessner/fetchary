@@ -11,7 +11,7 @@ const { listItems } = require('../cli/list');
 const url = 'https://example.test/page';
 const html = fs.readFileSync(path.join(__dirname,'fixtures/analyse/page.html'),'utf8');
 const svg = '<svg width="64" height="64"></svg>';
-const types = ['favicon','links','social-links','emails','telephone','images','documents','structured-data','metadata','tracker-intelligence'];
+const types = ['favicon','links','social-links','emails','telephone','images','documents','structured-data','metadata','tracker-intelligence','price'];
 function fixture(body = html, extra = {}) {
   const requests = [];
   const options = { mode:'http', allowPrivateNetwork:true, fetch:async (target, init) => {
@@ -28,11 +28,11 @@ async function cli(args, options) {
   return {code,stdout,stderr};
 }
 
-test('analyse combines exactly the ten extractors with unchanged section payloads and metadata', async () => {
+test('analyse combines exactly the eleven extractors with unchanged section payloads and metadata', async () => {
   const site = fixture(); const result = await api.analyse(url,site.options);
   assert.equal(result.type,'analyse');assert.equal(result.requestedUrl,url);assert.equal(result.finalUrl,url);
   assert.equal(result.status,200);assert.equal(result.captureMode,'http');assert.equal(site.count(),1);
-  assert.deepEqual(Object.keys(result.results),types);assert.deepEqual(result.summary,{succeeded:10,failed:0});assert.deepEqual(result.errors,{});
+  assert.deepEqual(Object.keys(result.results),types);assert.deepEqual(result.summary,{succeeded:11,failed:0});assert.deepEqual(result.errors,{});
   for (const type of types) {
     const single = await api.extract(url,{...site.options,type});
     assert.deepEqual(result.results[type].data,single.data,type);
@@ -50,13 +50,13 @@ test('analyse combines exactly the ten extractors with unchanged section payload
 test('auto analysis stays on HTTP when every extractor has static results', async () => {
   const site = fixture(html,{mode:'auto',launchBrowser:async()=>{throw new Error('unnecessary rendering');}});
   const result = await api.analyse(url,site.options);
-  assert.deepEqual(result.summary,{succeeded:10,failed:0});assert.equal(result.captureMode,'http');assert.equal(site.count(),1);
+  assert.deepEqual(result.summary,{succeeded:11,failed:0});assert.equal(result.captureMode,'http');assert.equal(site.count(),1);
 });
 
 test('disabled cache, abortable captures and authenticated requests still share one document within an analysis', async () => {
   for (const extra of [{cacheTtlMs:0},{signal:new AbortController().signal},{headers:{Authorization:'Bearer test-only'}}]) {
     const site = fixture(html,extra); const result=await api.analyse(url,site.options);
-    assert.equal(result.summary.succeeded,10);assert.equal(site.count(),1);assert.equal(result.cache.hit,false);
+    assert.equal(result.summary.succeeded,11);assert.equal(site.count(),1);assert.equal(result.cache.hit,false);
   }
 });
 
@@ -72,10 +72,10 @@ test('isolated clients reuse captures, clear cache and return independent nested
   const module=await import('../src/index.js');assert.equal(module.analyse,api.analyse);
 });
 
-test('missing favicon is a section failure and preserves the other nine extraction results', async () => {
+test('missing favicon is a section failure and preserves the other ten extraction results', async () => {
   const site=fixture('<html><title>No icon</title><a href="/about">About</a></html>');
   const report=await api.analyse(url,site.options);
-  assert.deepEqual(report.summary,{succeeded:9,failed:1});assert.equal(report.results.favicon,null);
+  assert.deepEqual(report.summary,{succeeded:10,failed:1});assert.equal(report.results.favicon,null);
   assert.equal(report.errors.favicon.error,'FetcharyNotFoundError');assert.equal(report.results.metadata.data.title,'No icon');assert.deepEqual(report.results.emails.data,[]);
   const output=await cli(['analyse',url],site.options);assert.equal(output.code,0);assert.equal(output.stderr,'');assert.equal(JSON.parse(output.stdout).summary.failed,1);
   assert.equal(site.count(),1);
@@ -153,7 +153,7 @@ test('browser analysis shares a single passive rendering and captures dynamicall
   }});
   assert.equal(launches,1);assert.equal(closes,1);assert.equal(site.requests.filter(target=>target==='/page').length,1);
   assert.ok(site.requests.every(target=>['/page','/icon.svg','/favicon.ico'].includes(target)));
-  assert.equal(report.captureMode,'browser');assert.equal(report.summary.succeeded,10);assert.equal(report.results.metadata.data.title,'Rendered title');
+  assert.equal(report.captureMode,'browser');assert.equal(report.summary.succeeded,11);assert.equal(report.results.metadata.data.title,'Rendered title');
   assert.ok(report.results.documents.data.some(item=>item.url.endsWith('/dynamic.pdf')));
   assert.equal(report.results['tracker-intelligence'].data.summary.uniqueIdentifiers,2);
   assert.ok(Object.values(report.results).every(result=>result.captureMode==='browser'));
@@ -174,10 +174,10 @@ test('a failed auto fallback preserves complete sections while explicit browser 
   await assert.rejects(api.analyse(url,{...site.options,mode:'browser'}),api.FetcharyBrowserError);
 });
 
-test('spawned CLI analyses a local page using native HTTP and serializes all ten results', async t => {
+test('spawned CLI analyses a local page using native HTTP and serializes all eleven results', async t => {
   const site=await localSite(t,html);
   const child=spawn(process.execPath,[path.join(__dirname,'../cli/index.js'),'analyse',site.url,'--mode','http','--allow-private-network']);
   let stdout='';let stderr='';child.stdout.on('data',chunk=>stdout+=chunk);child.stderr.on('data',chunk=>stderr+=chunk);
   const code=await new Promise(resolve=>child.on('close',resolve));assert.equal(code,0,stderr);assert.equal(stderr,'');
-  const report=JSON.parse(stdout);assert.deepEqual(report.summary,{succeeded:10,failed:0});assert.deepEqual(Object.keys(report.results),types);assert.equal(site.requests.filter(target=>target==='/page').length,1);
+  const report=JSON.parse(stdout);assert.deepEqual(report.summary,{succeeded:11,failed:0});assert.deepEqual(Object.keys(report.results),types);assert.equal(site.requests.filter(target=>target==='/page').length,1);
 });

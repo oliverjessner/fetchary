@@ -114,7 +114,7 @@ test('authenticated favicon and analysis use scoped cookies without persisting s
     return new Response('',{status:404});
   };
   const result=await api.analyse(root,{mode:'http',cookieFile,lookup:publicLookup,fetch});
-  assert.equal(result.summary.succeeded,10);assert.equal(seen.filter(request=>request.target===root).length,1);
+  assert.equal(result.summary.succeeded,11);assert.equal(seen.filter(request=>request.target===root).length,1);
   assert.equal(seen.find(request=>request.target.endsWith('/icon.svg')).headers.cookie,'session=test-session');
   assert.ok(!JSON.stringify(result).includes('test-session'));
   assert.equal(fs.readdirSync(path.dirname(cookieFile)).length,1);
