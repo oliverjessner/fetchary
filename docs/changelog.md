@@ -1,3 +1,7 @@
+# Unreleased
+
+- Raise Puppeteer to `^25.16.0` and refresh its compatible browser-protocol dependencies, replacing transitive Zod 3 with Zod 4.6.7 to address GHSA-mrhx-c7xc-m3w5 (CVE-2023-54404). Keep the package version unchanged and align the lockfile's root metadata with 2.1.0.
+
 # 2.1.0
 
 - Add `extractPrice()`, `extract(..., { type: 'price' })`, isolated-client methods and a price section in `analyse()`. Collect JSON-LD, product DOM, Microdata and price metadata in the shared guarded capture pipeline. Preserve decimal amounts, original values, product/offer conditions and exact raw/rendered evidence; expose consistent, conflict, single_source, ambiguous and unavailable states without choosing a winner on disagreement.
