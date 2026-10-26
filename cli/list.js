@@ -40,6 +40,8 @@ function listItems(result, options = {}) {
     case 'links': case 'documents': case 'videos': return [...new Set(result.data.map(item => item.url))];
     case 'emails': case 'telephone': return result.data;
     case 'metadata': return Object.values(result.data).filter(value => value !== null);
+    case 'price': return result.data.candidates.map(candidate => [candidate.amount,candidate.currency || '-',candidate.role,
+      JSON.stringify(candidate.evidence)].join('\t'));
     case 'tracker-intelligence': return result.data.trackers.flatMap(tracker => tracker.identifiers.length
       ? tracker.identifiers.map(id => id.kind === 'site-id' && tracker.provider === 'matomo'
         ? `matomo:${id.scope ? encodeURIComponent(id.scope) : 'unscoped'}:${id.value}` : `${tracker.provider}:${id.value}`)

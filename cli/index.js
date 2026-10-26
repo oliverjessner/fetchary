@@ -5,7 +5,7 @@ const pkg = require('../package.json');
 const { listItems, listCaptureOptions } = require('./list');
 const { prepareOutput, saveOutput } = require('./output');
 const { historyFile, readHistory, recordHistory, historyItems } = require('./history');
-const types = ['text','html','favicon','images','videos','avatar','selector','social-links','social-insights','emails','telephone','links','documents','metadata','structured-data','tracker-intelligence'];
+const types = ['text','html','favicon','images','videos','avatar','selector','social-links','social-insights','emails','telephone','links','documents','metadata','structured-data','tracker-intelligence','price'];
 const HELP = `Fetchary ${pkg.version} — Extract what matters.
 
 Usage: fetchary extract <type> <url> [options]
@@ -32,6 +32,7 @@ Types:
   metadata         Title, description, canonical URL, language and dates
   structured-data  JSON-LD and Microdata objects, including Schema.org data
   tracker-intelligence  Public tracker references and scoped identifiers
+  price            Product prices with conflict detection and source evidence
 
 Options:
   --json                         Structured extraction result
@@ -54,6 +55,8 @@ Options:
   --browser-profile <name|path>  Chrome profile directory (default: Default)
   --include-selector <css>       Include first matching section (repeatable)
   --ignore-selector <css>        Remove matching elements (repeatable)
+  --product-selector <css>       Scope price extraction to a product container
+  --price-selector <css>         Select price elements explicitly (price only)
   --selector <css>               Required for selector extraction
   --all                          Select all matching elements
   --attribute <name>             Read an attribute instead of element content
@@ -83,6 +86,7 @@ Examples:
   fetchary history
   fetchary extract documents https://example.com --list
   fetchary extract videos https://example.com --list
+  fetchary extract price https://example.com/product --json
   fetchary extract metadata https://example.com
   fetchary extract structured-data https://example.com
   fetchary extract tracker-intelligence https://example.com --list
@@ -104,7 +108,7 @@ Compatibility aliases:
   fetchary profile-picture <url>
 `;
 const flags = new Set(['json','list','binary','all','youtube','follower','posts','urls-only','exclude-metadata','duplicates','quiet','verbose','no-color','allow-private-network','insecure','secure','help','version','text','no-history']);
-const values = new Set(['mode','timeout','user-agent','wait-after-load','max-response-bytes','cookies','cookies-from-browser','browser-profile','session','session-dir','selector','attribute','format','platform','default-country','filepath']);
+const values = new Set(['mode','timeout','user-agent','wait-after-load','max-response-bytes','cookies','cookies-from-browser','browser-profile','session','session-dir','selector','product-selector','price-selector','attribute','format','platform','default-country','filepath']);
 const repeated = new Set(['include-selector','ignore-selector','source']);
 function invalid(message) { throw new api.FetcharyValidationError(message); }
 
@@ -175,7 +179,7 @@ async function execute(argv, io, state) {
     else invalid(`unknown command "${command}"; use "fetchary extract <type> <url>"`);
     state.type = type;
     if (args.length !== 1) invalid('exactly one URL is required');
-    for (const [key, allowed] of Object.entries({ binary:['favicon'], selector:['selector'], all:['selector'], attribute:['selector'], format:['selector'], platform:['social-links'], 'default-country':['telephone','analyse'], youtube:['social-links'], follower:['social-insights'], posts:['social-insights'], 'exclude-metadata':['images'], source:['images'], duplicates:['images'], 'include-selector':['text','html','emails','telephone','links','documents','videos'], 'ignore-selector':['text','html','emails','telephone','links','documents','videos'], text:['text','html'] })) {
+    for (const [key, allowed] of Object.entries({ binary:['favicon'], 'product-selector':['price'], 'price-selector':['price'], selector:['selector'], all:['selector'], attribute:['selector'], format:['selector'], platform:['social-links'], 'default-country':['telephone','analyse'], youtube:['social-links'], follower:['social-insights'], posts:['social-insights'], 'exclude-metadata':['images'], source:['images'], duplicates:['images'], 'include-selector':['text','html','emails','telephone','links','documents','videos'], 'ignore-selector':['text','html','emails','telephone','links','documents','videos'], text:['text','html'] })) {
       if (Object.hasOwn(options, key) && !allowed.includes(type)) invalid(`--${key} is not supported for ${type}`);
     }
     if (options.text && type !== 'text') invalid('--text conflicts with the selected extraction type');
@@ -184,7 +188,7 @@ async function execute(argv, io, state) {
     if (options.binary && (options.list || options['urls-only'])) invalid('--binary conflicts with --list/--urls-only');
     const list = !options.json && (options.list || options['urls-only']);
     const settings = { ...(io.options || {}), type };
-    for (const [key, name] of Object.entries({ binary:'binary', mode:'mode', timeout:'timeout', 'user-agent':'userAgent', 'wait-after-load':'waitAfterLoad', 'max-response-bytes':'maxResponseBytes', cookies:'cookieFile', 'cookies-from-browser':'cookiesFromBrowser', 'browser-profile':'browserProfile', session:'session', 'session-dir':'sessionDir', selector:'selector', all:'all', attribute:'attribute', format:'format', platform:'platform', 'default-country':'defaultCountry', 'allow-private-network':'allowPrivateNetwork', insecure:'insecure', 'include-selector':'includeSelectors', 'ignore-selector':'ignoreSelectors', source:'sources' })) {
+    for (const [key, name] of Object.entries({ binary:'binary', mode:'mode', timeout:'timeout', 'user-agent':'userAgent', 'wait-after-load':'waitAfterLoad', 'max-response-bytes':'maxResponseBytes', cookies:'cookieFile', 'cookies-from-browser':'cookiesFromBrowser', 'browser-profile':'browserProfile', session:'session', 'session-dir':'sessionDir', selector:'selector', 'product-selector':'productSelector', 'price-selector':'priceSelector', all:'all', attribute:'attribute', format:'format', platform:'platform', 'default-country':'defaultCountry', 'allow-private-network':'allowPrivateNetwork', insecure:'insecure', 'include-selector':'includeSelectors', 'ignore-selector':'ignoreSelectors', source:'sources' })) {
       if (options[key] !== undefined) settings[name] = ['timeout','maxResponseBytes'].includes(name) ? Number(options[key]) : options[key];
     }
     if (options.secure) settings.insecure = false;
@@ -205,7 +209,7 @@ async function execute(argv, io, state) {
     }
     else if (options.binary) stdout.write(result.data);
     else if (list) { const items = listItems(result, settings); if (items.length) stdout.write(`${items.join('\n')}\n`); }
-    else if (options.json || type === 'analyse' || ['images','videos','social-links','social-insights','emails','telephone','links','documents','metadata','structured-data','tracker-intelligence'].includes(type)) stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    else if (options.json || type === 'analyse' || ['images','videos','social-links','social-insights','emails','telephone','links','documents','metadata','structured-data','tracker-intelligence','price'].includes(type)) stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     else if (type === 'favicon' || type === 'avatar') stdout.write(`${result.image.url}\n`);
     else stdout.write(result.content);
     return 0;

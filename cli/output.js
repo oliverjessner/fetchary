@@ -23,7 +23,7 @@ function extension(state) {
   if (options.binary) return { 'image/png':'png', 'image/jpeg':'jpg', 'image/gif':'gif', 'image/webp':'webp', 'image/svg+xml':'svg', 'image/x-icon':'ico', 'image/vnd.microsoft.icon':'ico' }[result?.image?.contentType] || 'bin';
   if (options.json) return 'json';
   if (options.list || options['urls-only']) return 'txt';
-  if (type === 'analyse' || ['images','videos','social-links','social-insights','emails','telephone','links','documents','metadata','structured-data','tracker-intelligence'].includes(type)) return 'json';
+  if (type === 'analyse' || ['images','videos','social-links','social-insights','emails','telephone','links','documents','metadata','structured-data','tracker-intelligence','price'].includes(type)) return 'json';
   return type === 'html' || type === 'selector' && options.format === 'html' ? 'html' : 'txt';
 }
 async function saveOutput(plan, body, state) {
