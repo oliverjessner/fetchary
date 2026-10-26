@@ -96,6 +96,7 @@ matching embedded `t3` post records are supported, with hidden scores left
 | `metadata` | `extractMetadata(url, options?)` | Page metadata fields, with nulls for missing values |
 | `structured-data` | `extractStructuredData(url, options?)` | JSON-LD objects, Microdata items, and diagnostics |
 | `tracker-intelligence` | `extractTrackerIntelligence(url, options?)` | Tracker configurations, public identifiers, evidence and resource hosts |
+| `price` | `extractPrice(url, options?)` | Product price candidates, provenance and resolution |
 
 Without `type`, `extract(url)` returns HTML. `extract(url, { format: 'text' })`
 remains a compatibility path. `extractProfilePicture` aliases
@@ -106,7 +107,7 @@ remains a compatibility path. `extractProfilePicture` aliases
 
 `analyse(url, options?)` returns one report combining `favicon`, `links`,
 `social-links`, `emails`, `telephone`, `images`, `documents`, `structured-data`,
-`metadata`, and `tracker-intelligence`. `createExtractor().analyse()` uses the
+`metadata`, `tracker-intelligence`, and `price`. `createExtractor().analyse()` uses the
 client's isolated cache. Named CommonJS and ESM exports are available.
 
 ```js
@@ -126,7 +127,7 @@ main().catch(console.error);
 
 ```ts
 type AnalysisType = 'favicon' | 'links' | 'social-links' | 'emails' | 'telephone'
-    | 'images' | 'documents' | 'structured-data' | 'metadata' | 'tracker-intelligence';
+    | 'images' | 'documents' | 'structured-data' | 'metadata' | 'tracker-intelligence' | 'price';
 type AnalysisOptions = ExtractionOptions & { defaultCountry?: CountryCode };
 type AnalysisResults = {
     [K in AnalysisType]: (K extends 'favicon' ? FaviconResult : ResultMap[K]) | null;
@@ -150,7 +151,7 @@ retains its own capture metadata, including raw/rendered provenance. Result keys
 have the stable order shown above, regardless of completion order.
 
 Analysis accepts common capture options and the telephone `defaultCountry`.
-All ten extractors run without selection/filter flags. It is a separate aggregate
+All eleven extractors run without selection/filter flags. It is a separate aggregate
 API, rather than an `extract()` dispatcher type. It reads only the supplied page;
 linked documents and social profiles are not fetched. Favicon manifests and
 candidates are fetched and validated through the existing bounded transport.
@@ -349,7 +350,7 @@ main().catch(console.error);
 `cookieFile?: string` is a common `ExtractionOptions` field, available on explicit
 methods, the dispatcher, analysis and isolated clients. The file is read afresh
 per operation, never modified or copied into persistent application state. An
-analysis imports it once and shares that session among its ten extractors.
+analysis imports it once and shares that session among its eleven extractors.
 Authenticated page captures bypass completed cache entries and in-flight work
 in both global and private-client caches; `cache.ttlMs` is 0. Anonymous cache
 entries are neither overwritten nor reused for cookie-file calls.
@@ -1136,3 +1137,241 @@ resource-limit, contact and one-shot browser fixtures allow 15 seconds per
 capture, including startup, navigation and snapshotting. Explicit short timeout
 and cancellation tests retain their own budgets. Production capture timeouts
 continue to come from the caller's `timeout` option.
+
+## Product prices
+
+```js
+const { extractPrice, extract, createExtractor } = require('fetchary');
+
+async function main() {
+    const url = 'https://example.com/product';
+    const price = await extractPrice(url);
+    const generic = await extract(url, { type: 'price' });
+    const client = createExtractor({ cacheTtlMs: 45000 });
+    const cached = await client.extractPrice(url);
+    const scoped = await client.extractPrice(url, {
+        mode: 'browser',
+        productSelector: '#product-detail',
+        priceSelector: '.current-price',
+    });
+    console.log(price.data, generic.data, cached.cache, scoped.data);
+}
+main().catch(console.error);
+```
+
+All entry points share one implementation. `PriceOptions` extends
+`ExtractionOptions` with optional `productSelector` and `priceSelector` strings.
+Selectors use the existing CSS validation before capture; empty or malformed
+selectors reject with `FetcharyValidationError`. A valid selector matching
+nothing succeeds. Product scope applies to DOM prices; structured evidence is
+still examined and associated independently. No selector makes unrelated
+products comparable. `analyse()` includes `results.price` after
+`results['tracker-intelligence']`; unavailable prices count as a successful section.
+
+### Matching and conflicting snapshots
+
+This runnable fixture needs no live shop or browser:
+
+```js
+const { extractPrice } = require('fetchary');
+
+async function snapshot(declared) {
+    const html = `<script type="application/ld+json">${JSON.stringify({
+        '@context': 'https://schema.org', '@type': 'Product',
+        name: 'Example Product',
+        offers: { '@type': 'Offer', price: declared, priceCurrency: 'EUR' },
+    })}</script><main><h1>Example Product</h1>
+    <span class="current-price">89,90 €</span></main>`;
+    return extractPrice('https://example.com/product', {
+        mode: 'http', cacheTtlMs: 0,
+        fetch: async () => new Response(html, {
+            headers: { 'content-type': 'text/html; charset=utf-8' },
+        }),
+    });
+}
+async function main() {
+    const conflict = await snapshot('99.90');
+    console.log(conflict.data.status);   // conflict
+    console.log(conflict.data.selected); // null
+    console.log(conflict.data.candidates.map(p => [p.amount, p.currency]));
+    // [ [ '99.90', 'EUR' ], [ '89.90', 'EUR' ] ]
+    const matching = await snapshot('89.90');
+    console.log(matching.data.status);   // consistent
+    console.log(matching.data.selected.evidence.length); // 2
+}
+main().catch(console.error);
+```
+
+Complete serialized examples are available for a [conflicting snapshot](examples/price-conflict.json)
+and a [matching snapshot](examples/price-consistent.json), generated with an
+injected fixture response rather than a live product page.
+
+Neither JSON-LD nor page text wins a disagreement. A conflict is a successful
+extraction, with `selected: null` and a `PRICE_MISMATCH` issue. The top-level
+numeric `status` is the HTTP status; `data.status` is the price resolution:
+
+| Status | Resolution |
+| --- | --- |
+| `consistent` | Comparable current values agree across different source categories; all locations remain |
+| `single_source` | One normalized current value from one source category, possibly with repeated locations |
+| `conflict` | Same product, current role, currency and declared conditions have different amounts |
+| `ambiguous` | Unknown currency, uncertain product, incompatible conditions/identities, ambiguous number format or extraction limits prevent selection |
+| `unavailable` | No usable current price; candidates may still contain list, unit or range prices |
+
+`selected` is a complete candidate or `null`. Agreement merges normalized
+amounts only when product, currency, role, association and conditions match.
+`candidate.raw` is the first original spelling; `evidence[].raw` preserves each
+spelling separately, including display qualifiers removed for parsing. Repeated
+DOM elements and identical raw/rendered markup do not establish independent
+confirmation. `consistent` requires agreement across source categories, such as
+JSON-LD and DOM. A range-only page has no selected current price.
+
+### Complete provenance schema
+
+Every price result has the ordinary `ExtractionMetadata` fields (`requestedUrl`,
+`finalUrl`, `rawFinalUrl`, `capturedAt`, `extractedAt`, `status`, `contentType`,
+`captureMode`, `dismissedOverlays`, `cache`) and `type: 'price'`:
+
+```ts
+type PriceProduct = {
+    id: string | null; name: string | null;
+    url: string | null; sku: string | null;
+};
+type PriceEvidence = {
+    source: 'json-ld' | 'visible-dom' | 'microdata' | 'meta';
+    document: 'raw' | 'rendered';
+    locator: string;
+    url: string;                 // source document's final URL
+    raw: string;                 // exact original extracted value
+    capturedAt: string;          // source snapshot timestamp, preserved on cache hits
+    captureMode: 'http' | 'browser';
+    scriptIndex?: number;        // zero-based JSON-LD block index, including malformed blocks
+    attribute?: string;          // content, textContent, data-price, etc.
+    visibility?: 'static-not-hidden' | 'rendered-not-hidden';
+};
+type PriceCandidate = {
+    amount: string;              // decimal string, never a floating-point amount
+    currency: string | null;    // ISO 4217 or unknown
+    role: 'current' | 'list' | 'unit' | 'subscription' | 'installment'
+        | 'range-min' | 'range-max';
+    raw: string;
+    product: PriceProduct | null;
+    association: 'matched' | 'uncertain';
+    conditions: Record<string, string>;
+    evidence: PriceEvidence[];
+};
+type PriceIssue = {
+    code: string; message: string;
+    document?: 'raw' | 'rendered'; scriptIndex?: number;
+    locator?: string; raw?: string | null;
+};
+type PriceData = {
+    status: 'consistent' | 'conflict' | 'single_source' | 'ambiguous' | 'unavailable';
+    selected: PriceCandidate | null;
+    product: PriceProduct | null; // associated current product, null when uncertain
+    candidates: PriceCandidate[];
+    issues: PriceIssue[];
+};
+type PriceResult = ExtractionResult<PriceData, 'price'>;
+```
+
+JSON-LD `locator` is rooted at `$` in its originating script. Identifier-like
+properties use dot notation, other keys use JSON-quoted brackets, and arrays use
+zero-based indexes: `$["@graph"][0].offers.price`. DOM/Microdata/meta locations
+are deterministic CSS paths with `:nth-child` positions. Combined with
+`attribute`, document, URL and raw value they identify the exact extraction
+location. These selectors locate the captured snapshot, not a future page.
+
+Conditions preserve declared Schema.org tax, customer/region/quantity/member,
+billing, unit, validity, seller, availability and shipping terms as JSON-encoded
+strings, plus recognized DOM condition attributes/display text. Conditions must
+agree exactly for comparison. Unspecified terms cannot prove equivalence to a
+different explicit condition. Empty conditions mean no qualifiers were found;
+they do not verify tax treatment or customer eligibility.
+
+Issue codes include `PRICE_MISMATCH`, `PRICE_AMBIGUOUS`, `INVALID_AMOUNT`,
+`AMBIGUOUS_NUMBER`, `AMBIGUOUS_CURRENCY`, `INVALID_JSON_LD`, and
+`EXTRACTION_LIMIT`. Invalid monetary values are diagnosed rather than emitted as
+usable candidates. Issues include the raw value and location where available.
+
+### Sources, identity and limits
+
+JSON-LD supports Products, Offers and AggregateOffers, nested arrays/objects,
+multiple blocks, `@graph`, `@id` references within a document, type arrays,
+Schema.org URL-form types/properties, price specifications and unit/range roles.
+Offers remain attached to their products; document URL/canonical identity,
+`mainEntity`, product heading and explicit Microdata scope help identify the
+current product. Conflicting product identities or variants remain separate.
+External product URLs and recognized recommendation containers are excluded;
+listing pages without a unique association stay ambiguous. A lone unassociated
+Offer is scoped to the page; multiple unassociated current offers are uncertain.
+
+DOM extraction looks for price-related classes/IDs, monetary leaf text, semantic
+price attributes and explicit selectors. Crossed-out/old/list prices, units,
+subscriptions and installments have separate roles. Explicit display ranges
+using an en/em dash, spaced hyphen or `to` retain both endpoints. Microdata
+prices preserve their property element and attribute; metadata supports `price`
+with `priceCurrency`, `product:price:amount`, `og:price:amount`,
+`product:sale_price:amount` and `product:original_price:amount`, paired with their
+corresponding `:currency` meta values. These remain separate source categories.
+
+Scripts/styles/templates, navigation, footers, advertisements and recognized
+recommendations are excluded from DOM prices. Hidden/aria-hidden and inline
+`display:none`/`visibility:hidden` elements are ignored. Class-based computed CSS,
+viewport position and occlusion are **not established**, even on rendered HTML.
+`visible-dom` names the source category, and its qualified `visibility` records
+only markup checks; it is not a guarantee that a human saw that price.
+
+There are no retailer adapters or AI guesses. Unrecognized condition wording,
+complex price displays or identities may require selectors or remain unavailable
+or ambiguous. The extractor cannot establish that an offer is purchasable,
+that taxes/shipping are complete, or that a displayed price is legally valid.
+
+Amounts use decimal strings and preserve zero. Examples: `€ 99,90` → `99.90`
+EUR, `1.299,95 €` → `1299.95` EUR, `CHF 49.50` → `49.50` CHF,
+`$1,299.95` → `1299.95` with unknown currency. Explicit ISO codes and unambiguous
+symbols/prefixes identify currencies; bare `$` and `¥` do not. No exchange-rate
+conversion occurs. Comma/dot decimal formats and validated groups of three
+using whitespace/apostrophes are supported. A single separator followed by
+three digits in display text (`1.299`) is ambiguous and not guessed. Machine
+Schema.org/meta decimal tokens allow that precision. At least two fractional
+digits are returned, retaining additional significant fractional digits.
+JSON numeric tokens retain their source digits rather than passing through
+floating-point arithmetic. Unsupported/malformed formats produce issues.
+
+Extraction is bounded per snapshot: at most 10000 DOM elements (128 levels),
+128 JSON-LD blocks, 10000 JSON-LD traversal steps (64 levels), 10000 Microdata
+property steps and offer steps (32 offer levels), 2048 collected schema prices,
+256 normalized candidates, 2048 evidence entries, and 128 issues. Values longer
+than 2048 characters are not treated as monetary values. Limits yield an
+`EXTRACTION_LIMIT` issue and prevent an unjustified selection; already observed
+conflicts remain conflicts. The ordinary response byte limit applies first.
+
+### Capture and external tracking
+
+`http` captures only the server response. `browser` retains both raw and rendered
+documents with their individual URLs and timestamps. Changed current prices
+remain available even if the raw node disappears after rendering. A redirect or
+product identity change cannot manufacture a comparable current price.
+`auto` falls back once for unavailable prices only when executable scripts and
+price/product/application-shell hints suggest dynamic content. Usable HTTP
+prices, including conflicts, stay on HTTP. Request `browser` explicitly to inspect
+dynamic content on pages already containing static prices.
+
+JSON-LD is parsed as data; contexts are never fetched and scripts are never
+evaluated by the extractor. Ordinary Chromium rendering executes the page's
+executable scripts through the existing guarded capture pipeline. Price
+extraction makes no offer/context/product requests. Shared capture caching,
+45-second default TTL, abort/timeout/byte bounds, TLS policy, private-network
+protections and per-client isolation are unchanged. Analysis shares its existing
+single HTTP capture and at most one passive rendering; its rendering blocks
+external resources, so some JavaScript applications cannot populate prices
+there. Standalone browser extraction uses the normal resource policy.
+
+For an external tracker, store the complete result in your own system and
+handle `conflict`/`ambiguous` explicitly before recording a selected price.
+Keep source evidence, conditions, currencies and capture timestamps when
+comparing snapshots. `capturedAt` may be older than `extractedAt` on a cache hit;
+use `cacheTtlMs: 0` when your workflow needs a new capture. Fetchary does not
+store price history, schedule captures or monitor products. One snapshot is an
+observed declaration, not a verified historical selling price.

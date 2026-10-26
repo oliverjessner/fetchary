@@ -21,7 +21,8 @@ to share them or continue your research later.
 - Collect email addresses, phone numbers and social profile links.
 - Read available follower counts, post totals and engagement metrics.
 - Inspect page metadata, structured data and public analytics or advertising tags.
-- Combine ten kinds of extraction in one page analysis report.
+- Read product prices and keep the evidence when page sources disagree.
+- Combine eleven kinds of extraction in one page analysis report.
 - Reuse signed-in sessions, save output and revisit recent commands.
 
 See the [social platform support matrix](docs/SOCIAL_SUPPORT.md) for available
@@ -91,10 +92,21 @@ Collect email addresses, phone numbers and social profile links from a page.
 On supported social pages, read available follower counts, post totals and
 engagement metrics; unavailable values include a reason instead of becoming zero.
 
+## Check a product price
+
+```bash
+fetchary extract price https://example.com/product --json
+```
+
+If a page declares one price in its structured data and shows another in its
+product content, Fetchary returns both prices and where it found each one. A
+conflict leaves the selected price empty so your own tool can decide how to
+handle it. See the [price reference](docs/LIBRARY.md#product-prices) for examples.
+
 ## Inspect a page in one report
 
 Use `analyse` to gather contacts, links, images, documents, metadata, structured
-data, a favicon and public tracking integrations from one page.
+data, product prices, a favicon and public tracking integrations from one page.
 Tracking IDs can help investigate connections between websites, but do not prove
 common ownership.
 

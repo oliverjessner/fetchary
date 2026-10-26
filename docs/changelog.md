@@ -1,3 +1,8 @@
+# Unreleased
+
+- Add `extractPrice()`, `extract(..., { type: 'price' })`, isolated-client methods and a price section in `analyse()`. Collect JSON-LD, product DOM, Microdata and price metadata in the shared guarded capture pipeline. Preserve decimal amounts, original values, product/offer conditions and exact raw/rendered evidence; expose consistent, conflict, single_source, ambiguous and unavailable states without choosing a winner on disagreement.
+- Add default JSON and candidate/evidence list output for `extract price`, optional product/price CSS selectors, typed public schemas and capture-aware regression coverage. Keep current/list/unit/range/subscription/installment roles separate and avoid cross-currency or uncertain-product comparisons. No tracking storage, scheduling, dependency or cache-default changes.
+
 # 2.0.7
 
 - Add Reddit post insights for reported net `score` and comment totals from matching `shreddit-post` attributes or embedded `t3` post JSON. Extend the normalized metrics and TypeScript `Metric` union with signed `score`, separate from `likes`. Preserve zero, compact precision and hidden/missing scores; ignore recommendations and comment scores. Enable ordinary auto rendering for JavaScript-only post pages and exclude recognized JavaScript challenge pages from the capture cache.

@@ -108,7 +108,7 @@ fetchary analyse https://oliverjessner.at --default-country AT > analysis.json
 
 `analyse` combines these extractors, in this order: `favicon`, `links`,
 `social-links`, `emails`, `telephone`, `images`, `documents`, `structured-data`,
-`metadata`, `tracker-intelligence`. It inspects one supplied page without crawling
+`metadata`, `tracker-intelligence`, `price`. It inspects one supplied page without crawling
 its links, downloading linked documents or collecting social profile metrics.
 
 The default output is a complete JSON report, identical to `--json`:
@@ -120,10 +120,10 @@ The default output is a complete JSON report, identical to `--json`:
     results: {
         favicon: { type: 'favicon', data: { /* image metadata */ }, /* capture metadata */ },
         links: { type: 'links', data: [/* link occurrences */], /* capture metadata */ },
-        // The other eight named extraction results follow in the order above.
+        // The other nine named extraction results follow in the order above.
     },
     errors: {},
-    summary: { succeeded: 10, failed: 0 },
+    summary: { succeeded: 11, failed: 0 },
 }
 ```
 
@@ -131,7 +131,7 @@ Each successful section keeps the complete standalone result and its original
 schema, including metadata and convenience aliases. A failed section is `null`
 and `errors[section]` contains `{ error, message, status?, phase? }`.
 `summary` counts successful and failed extractors, not individual findings.
-Empty lists count as successful results. A missing favicon therefore gives nine
+Empty lists count as successful results. A missing favicon therefore gives ten
 successful sections and one failure, with a valid report and exit code 0.
 Failure of the primary capture, invalid input, or cancellation fails the command
 using the regular error/exit-code contract. `--quiet` suppresses success output;
@@ -140,7 +140,7 @@ using the regular error/exit-code contract. `--quiet` suppresses success output;
 `--list` and its alias `--urls-only` combine each successful section's normal
 list output and remove exact duplicate lines in first-occurrence order. Values
 can include URLs, contacts, metadata strings, compact structured-data JSON and
-tracker identifiers. Failed sections contribute no lines. `--json` overrides
+tracker identifiers and price candidate/evidence rows. Failed sections contribute no lines. `--json` overrides
 both list flags; use the full report to inspect section errors.
 
 Common capture/safety flags and `--default-country` apply. Individual extractor
@@ -184,6 +184,7 @@ their existing rendering behavior. Analysis does not persist its results.
 | `metadata`        | `fetchary extract metadata https://example.com`                    | JSON result        |
 | `structured-data` | `fetchary extract structured-data https://example.com`             | JSON result        |
 | `tracker-intelligence` | `fetchary extract tracker-intelligence https://example.com` | JSON result |
+| `price` | `fetchary extract price https://example.com/product` | JSON with all prices, provenance and resolution status |
 
 Text and HTML contain exactly the extracted string, with no extra newline or
 status message. Image URLs end with a newline. Unfiltered JSON results are objects with
@@ -217,6 +218,7 @@ fetchary extract selector https://example.com --selector a --attribute href --li
 | `links`, `documents`, `videos` | Unique discovered URLs in first-occurrence order; JSON retains every occurrence |
 | `metadata` | Present values in title, description, canonical, language, publishedAt, modifiedAt order; nulls omitted |
 | `structured-data` | One compact JSON object per line, JSON-LD first and Microdata items second |
+| `price` | One tab-separated candidate per line: amount, currency (or `-`), role, JSON evidence array |
 | `tracker-intelligence` | Provider/identifier pairs; provider name alone when no identifiers exist; Matomo includes its scope |
 
 Text/HTML link lists resolve relative URLs against the document base and final
@@ -922,6 +924,64 @@ Fetchary does not solve CAPTCHA, perform an automatic login, change its user
 agent to impersonate a browser, or expose account credentials in extraction
 metadata. Without `--follower`, the full social-insights result retains the
 availability reason. See [LinkedIn's sign-in security guidance](https://www.linkedin.com/help/linkedin/answer/a1339220/security-verification-when-signing-in?lang=en).
+
+## Product prices
+
+```bash
+fetchary extract price https://example.com/product
+fetchary extract price https://example.com/product --json
+fetchary extract price https://example.com/product --list
+fetchary extract price https://example.com/product --mode browser
+fetchary extract price https://example.com/product --product-selector '#product-detail' --price-selector '.current-price'
+fetchary extract price https://example.com/product --filepath ./price.json
+```
+
+Default output and `--json` contain the complete library extraction result:
+standard capture metadata and `data: { status, selected, product, candidates,
+issues }`. Every candidate and evidence location survives serialization. A price
+conflict succeeds with exit code **0**, `status: "conflict"` inside `data`, and
+`selected: null`. The top-level `status` remains the HTTP status code.
+Empty or ambiguous results also succeed. No source automatically wins.
+
+| `data.status` | Meaning |
+| --- | --- |
+| `consistent` | Comparable current prices agree across source categories |
+| `conflict` | Comparable current prices disagree; no selection |
+| `single_source` | One normalized current value from one source category |
+| `ambiguous` | Identity, currency, formatting or conditions prevent safe resolution |
+| `unavailable` | No usable current price; a range or list price alone is insufficient |
+
+`--list` (also `--urls-only`) writes one row per normalized candidate in discovery
+order, including list/unit/range candidates. Each row has four tab-separated
+columns: decimal amount, ISO currency or `-`, role, and a compact JSON evidence
+array. Embedded tabs/newlines in evidence are JSON-escaped. Example (the final
+column below is abbreviated for readability):
+
+```text
+99.90	EUR	current	[{"source":"json-ld","document":"raw","locator":"$.offers.price",...}]
+89.90	EUR	current	[{"source":"visible-dom","document":"raw","locator":"main:nth-child(2) > span:nth-child(2)",...}]
+```
+
+`--json` overrides `--list`. `--filepath` saves the selected output format; default
+directory exports use `.json`, lists use `.txt`. `--quiet`, `--verbose`,
+`--no-history`, sessions and ordinary capture flags work as for other types.
+`--product-selector` scopes DOM candidates and `--price-selector` selects price
+elements within that scope; both are optional CSS selectors for `price` only.
+Invalid, empty or unsupported flags/selectors use exit 2. A valid selector with
+no matches is not a validation error. Structured evidence is still examined.
+Selectors do not authorize comparing unrelated products.
+
+`http` parses server HTML only. `browser` keeps raw and rendered evidence.
+`auto` renders once only when no current price was found and executable scripts
+plus product/price or application-shell hints suggest dynamic pricing. It keeps
+HTTP when usable prices or conflicts already exist; use `browser` when you need
+to check dynamic content even on an otherwise complete page. Non-HTML responses
+return an empty unavailable result. Ordinary browser capture may load resources;
+price extraction itself fetches no offers, contexts or linked product pages.
+
+See the [library price reference](LIBRARY.md#product-prices) for the complete
+schema, matching and conflicting fixtures, normalization rules, visibility
+qualifications and external tracking guidance.
 
 ## Capture, network access, and cache
 

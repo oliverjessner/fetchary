@@ -1,0 +1,103 @@
+{
+  "requestedUrl": "https://example.com/product",
+  "finalUrl": "https://example.com/product",
+  "rawFinalUrl": "https://example.com/product",
+  "capturedAt": "2026-10-26T00:51:50.599Z",
+  "extractedAt": "2026-10-26T00:51:50.601Z",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "captureMode": "http",
+  "dismissedOverlays": [],
+  "cache": {
+    "hit": false,
+    "ageMs": 0,
+    "ttlMs": 0
+  },
+  "type": "price",
+  "data": {
+    "status": "consistent",
+    "selected": {
+      "amount": "89.90",
+      "currency": "EUR",
+      "role": "current",
+      "raw": "89.90",
+      "product": {
+        "id": null,
+        "name": "Example Product",
+        "url": "https://example.com/product",
+        "sku": null
+      },
+      "association": "matched",
+      "conditions": {},
+      "evidence": [
+        {
+          "source": "json-ld",
+          "locator": "$.offers.price",
+          "scriptIndex": 0,
+          "document": "raw",
+          "url": "https://example.com/product",
+          "raw": "89.90",
+          "capturedAt": "2026-10-26T00:51:50.599Z",
+          "captureMode": "http"
+        },
+        {
+          "source": "visible-dom",
+          "locator": "main:nth-child(2) > span:nth-child(2)",
+          "attribute": "textContent",
+          "visibility": "static-not-hidden",
+          "document": "raw",
+          "url": "https://example.com/product",
+          "raw": "89,90 €",
+          "capturedAt": "2026-10-26T00:51:50.599Z",
+          "captureMode": "http"
+        }
+      ]
+    },
+    "product": {
+      "id": null,
+      "name": "Example Product",
+      "url": "https://example.com/product",
+      "sku": null
+    },
+    "candidates": [
+      {
+        "amount": "89.90",
+        "currency": "EUR",
+        "role": "current",
+        "raw": "89.90",
+        "product": {
+          "id": null,
+          "name": "Example Product",
+          "url": "https://example.com/product",
+          "sku": null
+        },
+        "association": "matched",
+        "conditions": {},
+        "evidence": [
+          {
+            "source": "json-ld",
+            "locator": "$.offers.price",
+            "scriptIndex": 0,
+            "document": "raw",
+            "url": "https://example.com/product",
+            "raw": "89.90",
+            "capturedAt": "2026-10-26T00:51:50.599Z",
+            "captureMode": "http"
+          },
+          {
+            "source": "visible-dom",
+            "locator": "main:nth-child(2) > span:nth-child(2)",
+            "attribute": "textContent",
+            "visibility": "static-not-hidden",
+            "document": "raw",
+            "url": "https://example.com/product",
+            "raw": "89,90 €",
+            "capturedAt": "2026-10-26T00:51:50.599Z",
+            "captureMode": "http"
+          }
+        ]
+      }
+    ],
+    "issues": []
+  }
+}
