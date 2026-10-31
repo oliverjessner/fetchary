@@ -3,11 +3,12 @@
 <div id="sp_message_container_456" style="position:fixed;inset:0;background:white">
   <iframe id="sp_message_iframe_456" title="SP Consent Message" src="__CMP_ORIGIN__/wrapper/messaging" style="width:100%;height:100%"></iframe>
 </div>
+<p id="status"></p>
 <script>
 window.addEventListener('message', async event => {
   if (event.origin !== '__CMP_ORIGIN__' || event.source !== document.querySelector('iframe').contentWindow || event.data.action !== 'accept') return;
-  document.body.dataset.trusted = String(event.isTrusted);
   document.body.dataset.steps = String(Number(document.body.dataset.steps || 0) + 1);
+  document.getElementById('status').textContent = 'Zustimmung erteilt.';
   try { document.querySelector('iframe').contentWindow.document.body; }
   catch (error) { document.body.dataset.crossOrigin = String(error.name === 'SecurityError'); }
   await fetch('/consent/decision', {

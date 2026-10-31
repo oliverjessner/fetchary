@@ -1,5 +1,6 @@
 # 2.1.1
 
+- Preserve separate `Set-Cookie` headers in browser captures so multi-cookie consent decisions can complete and redirect to the page content.
 - Add automatic browser consent handling with default rejection, explicit acceptance
 - Detect strong HTTP consent walls in auto mode before treating banner text as page content.
 - `--consent`, typed library options, reference documentation and realistic Chromium fixture coverage.

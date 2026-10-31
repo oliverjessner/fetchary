@@ -16,7 +16,9 @@ async function serve(t, handle) {
   return `http://127.0.0.1:${server.address().port}`;
 }
 
-test('accept preserves multiple response cookies and completes a cross-origin CMP redirect', async t => {
+for (const complete of [true, false]) test(complete
+  ? 'accept preserves multiple response cookies and completes a cross-origin CMP redirect'
+  : 'an acceptance message without all required cookies is failed and never cacheable', async t => {
   const requests = [];
   const decisions = [];
   const cmpOrigin = await serve(t, (request, response) => {
@@ -33,7 +35,7 @@ test('accept preserves multiple response cookies and completes a cross-origin CM
       const expires = new Date(Date.now() + 86400000).toUTCString();
       response.writeHead(200, { 'content-type': 'text/plain', 'set-cookie': [
         `consent_date=recorded; Path=/; SameSite=Lax; Expires=${expires}`,
-        `consent=accepted; Path=/; SameSite=Lax; Expires=${expires}`,
+        ...(complete ? [`consent=accepted; Path=/; SameSite=Lax; Expires=${expires}`] : []),
       ] });
       return response.end('saved');
     }
@@ -52,6 +54,14 @@ test('accept preserves multiple response cookies and completes a cross-origin CM
   assert.equal(result.consent.detected, true);
   assert.equal(result.consent.provider, 'sourcepoint');
   assert.equal(result.consent.action, 'accept');
+  if (!complete) {
+    assert.equal(result.consent.status, 'failed');
+    assert.equal(result.cacheable, false);
+    assert.equal(new URL(result.browserFinalUrl).pathname, '/consent/');
+    assert.match(result.renderedHtml, /Zustimmung erteilt/);
+    assert.equal(requests.some(request => request.pathname === '/editorial'), false);
+    return;
+  }
   assert.equal(result.consent.status, 'handled');
   assert.equal(new URL(result.browserFinalUrl).pathname, '/editorial');
   assert.match(result.renderedHtml, /Researchers publish a new climate observation/);

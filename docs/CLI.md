@@ -800,6 +800,10 @@ dialog offered “Zustimmen und weiter”; its Privacy Center footer offered
 released the editorial content. Fetchary reports unresolved consent instead
 of claiming successful article extraction.
 
+Explicit `--consent accept` was also verified against both pages: Golem stored
+its consent cookies, returned to the requested page and exposed the editorial
+content with `consent.status: "handled"` and exit code `0`.
+
 ## Signed-in sessions
 
 Session imports work with any extraction type, the standalone aliases and
