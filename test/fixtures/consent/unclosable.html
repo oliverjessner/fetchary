@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Privacy choice required</title></head><body>
+<main hidden><article><h1>Researchers publish a new climate observation</h1></article></main>
+<div id="cookie-consent" role="dialog" aria-modal="true"><h1>Your privacy matters</h1><p>We use cookies and process personal data for personalized advertising and audience measurement. Choose the optional cookies you permit.</p><button id="reject">Reject all</button><button id="accept">Accept all cookies</button></div>
+<script>
+document.body.dataset.steps='0';
+document.getElementById('reject').onclick=event=>{
+  document.body.dataset.steps=String(Number(document.body.dataset.steps)+1);
+  document.body.dataset.trusted=String(event.isTrusted);
+};
+document.getElementById('accept').onclick=()=>{document.body.dataset.action='accept';};
+</script></body></html>

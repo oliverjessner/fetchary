@@ -1,6 +1,7 @@
 'use strict';
 const { insightBuilder, legacyFollower } = require('../metrics/insights');
 const { classifyUrl } = require('../utils/social');
+const { clickConsentControl } = require('../capture/consent-click');
 
 const { parseCount, descriptionCount, jsonObjects, profileName } = require('../metrics/followers');
 const { profilePictures } = require('../metrics/profile-pictures');
@@ -20,17 +21,16 @@ const overlays = [
   {
     id: COOKIE_CONSENT,
     async dismiss(page) {
-      return page.evaluate(() => {
+      return clickConsentControl(page, () => {
         const normalize = value => String(value || '').replace(/\s+/g, ' ').trim();
         const dialogs = [...document.querySelectorAll('[role="dialog"][aria-modal="true"]')];
         for (const dialog of dialogs) {
           const button = [...dialog.querySelectorAll('button, [role="button"]')]
             .find(element => normalize(element.innerText || element.textContent) === 'Decline optional cookies');
           if (!button) continue;
-          button.click();
-          return true;
+          return button;
         }
-        return false;
+        return null;
       });
     },
   },

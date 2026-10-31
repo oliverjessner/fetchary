@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Daily science</title></head><body>
+<main hidden><article><h1>Researchers publish a new climate observation</h1><p>Scientists shared a detailed record of changing weather patterns today. The editorial report explains the measurements, their limitations, and what the evidence means for readers.</p></article></main>
+<div id="onetrust-banner-sdk" role="dialog" aria-modal="true" aria-label="Privacy Preference Center">
+  <div id="onetrust-policy"><h2>We value your privacy</h2><p>We and our partners use cookies to store information and personalize advertising. Choose whether to allow optional cookies on this device.</p></div>
+  <div id="onetrust-button-group">
+    <button disabled onclick="document.body.dataset.unwanted='true'">Reject all cookies</button>
+    <button style="display:none" onclick="document.body.dataset.unwanted='true'">Reject all cookies</button>
+    <button id="onetrust-accept-btn-handler">Accept all cookies</button>
+    <button id="onetrust-reject-all-handler">Reject all cookies</button>
+  </div>
+</div>
+<script>
+for (const [id, action] of [['onetrust-reject-all-handler', 'reject'], ['onetrust-accept-btn-handler', 'accept']]) {
+  document.getElementById(id).addEventListener('click', event => {
+    document.body.dataset.action = action;
+    document.body.dataset.trusted = String(event.isTrusted);
+    document.getElementById('onetrust-banner-sdk').remove();
+    document.querySelector('main').hidden = false;
+  });
+}
+</script></body></html>

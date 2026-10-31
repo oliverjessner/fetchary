@@ -1,5 +1,9 @@
 # Unreleased
 
+- Add automatic browser consent handling with default rejection, explicit acceptance
+- Detect strong HTTP consent walls in auto mode before treating banner text as page content.
+- `--consent`, typed library options, reference documentation and realistic Chromium fixture coverage.
+
 - Raise Puppeteer to `^25.16.0` and refresh its compatible browser-protocol dependencies, replacing transitive Zod 3 with Zod 4.6.7 to address GHSA-mrhx-c7xc-m3w5 (CVE-2023-54404). Keep the package version unchanged and align the lockfile's root metadata with 2.1.0.
 
 # 2.1.0

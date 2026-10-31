@@ -26,6 +26,7 @@ const { pageMetadata: extractPageMetadata } = require('./metadata');
 const { structuredData } = require('./structured-data');
 const { trackerIntelligence } = require('./tracker-intelligence');
 const { extractPrices } = require('./price');
+const { consentMetadata } = require('../capture/consent-wall');
 
 const clientCache = Symbol('captureCache');
 const analysisSession = Symbol('analysisSession');
@@ -41,10 +42,12 @@ function extractionOptions(options = {}) {
     lookup: options.lookup, allowPrivateNetwork: options.allowPrivateNetwork, insecure: options.insecure ?? true,
     timeout: options.timeout ?? 30_000, userAgent: options.userAgent ?? 'fetchary/2.0',
     browserUserAgent: options.userAgent ?? 'fetchary/2.0', mode: options.mode ?? 'auto',
+    consent: options.consent === undefined ? 'reject' : options.consent,
     waitAfterLoadMs: parseWaitAfterLoad(options.waitAfterLoad), maxResponseBytes: options.maxResponseBytes ?? 45 * 1024 * 1024,
     cacheTtlMs: validateCacheTtl(options.cacheTtlMs), captureCache: options[clientCache],
   };
   if (!['auto','http','browser'].includes(settings.mode)) throw new FetcharyValidationError('mode must be auto, http or browser');
+  if (!['reject','accept','off'].includes(settings.consent)) throw new FetcharyValidationError('consent must be reject, accept or off');
   for (const name of ['fetch','launchBrowser','lookup']) if (settings[name] !== undefined && typeof settings[name] !== 'function') throw new FetcharyValidationError(`${name} must be a function`);
   if (!Number.isFinite(settings.timeout) || settings.timeout <= 0) throw new FetcharyValidationError('timeout must be greater than zero');
   if (!Number.isSafeInteger(settings.maxResponseBytes) || settings.maxResponseBytes < 1) throw new FetcharyValidationError('maxResponseBytes must be a positive safe integer');
@@ -79,7 +82,8 @@ function loadSessionCookies(settings, url) {
 function pageMetadata(page) {
   return { requestedUrl: page.requestedUrl, finalUrl: page.browserFinalUrl || page.rawFinalUrl, rawFinalUrl: page.rawFinalUrl,
     capturedAt: page.renderedCapturedAt || page.rawCapturedAt, extractedAt: new Date().toISOString(), status: page.status,
-    contentType: page.contentType, captureMode: page.captureMode, dismissedOverlays: [...page.dismissedOverlays], cache: { ...page.cache } };
+    contentType: page.contentType, captureMode: page.captureMode, dismissedOverlays: [...page.dismissedOverlays],
+    consent: { ...page.consent }, cache: { ...page.cache } };
 }
 function pageHtml(page) { return page.renderedHtml ?? page.rawHtml ?? page.rawBody.toString('utf8'); }
 function pageDocument(page) { return parseHTML(pageHtml(page)).document; }
@@ -95,9 +99,10 @@ function accessStatus(page) {
   return null;
 }
 
-function fallbackNeeded(page, result, type) {
+function fallbackNeeded(page, result, type, settings) {
   if (type === 'tracker-intelligence') return false;
   if (!shouldRender(page.contentType) || accessStatus(page)) return false;
+  if (page.consent?.detected && settings.consent !== 'off') return true;
   const html = pageHtml(page);
   const scripts = /<script\b/i.test(html);
   if (type === 'price') return result.data.status === 'unavailable' && /price|preis|product|__next|id=["'](?:root|app)["']/i.test(html) && [...pageDocument(page).querySelectorAll('script')]
@@ -131,7 +136,7 @@ async function withCapture(url, options, type, operation) {
     try { result = await operation(page, settings); } catch (error) {
       if (!(error instanceof FetcharyNotFoundError) || settings.mode !== 'auto' || !shouldRender(page.contentType) || accessStatus(page)) throw error;
     }
-    if (settings.mode === 'auto' && (!result || fallbackNeeded(page, result, type))) {
+    if (settings.mode === 'auto' && (!result || fallbackNeeded(page, result, type, settings))) {
       let rendered;
       try { rendered = await capture.capture({ ...source, captureMode: 'browser', httpCapture: page }); }
       catch (error) {
@@ -427,6 +432,7 @@ async function extractSocialInsights(url, options = {}) {
     const data = insightBuilder(requestedUrl).finish(error.status === 401 ? 'login_required' : 'blocked');
     return { requestedUrl, finalUrl: requestedUrl, rawFinalUrl: requestedUrl, extractedAt: new Date().toISOString(), capturedAt: null,
       captureMode: error instanceof FetcharyBrowserError ? 'browser' : 'http', status: error.status, contentType: null, dismissedOverlays: [], cache: { hit: false, ageMs: 0, ttlMs: validateCacheTtl(options.cacheTtlMs) },
+      consent: consentMetadata({ detected: false, provider: null }, options.consent ?? 'reject'),
       type: 'social-insights', data, vendor: data.platform, followers: null };
   });
 }

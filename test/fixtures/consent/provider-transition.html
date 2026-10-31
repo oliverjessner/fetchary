@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Cookie preferences</title></head><body>
+<main hidden><article><h1>Researchers publish a new climate observation</h1><p>Scientists shared a detailed record of changing weather patterns today. The editorial report explains the measurements, their limitations, and what the evidence means for readers.</p></article></main>
+<section role="dialog" aria-modal="true" id="privacy-choice"><h1>Your cookie preferences</h1><p>We use cookies for personalized advertising and audience measurement. Manage your privacy choices.</p><button id="settings">Cookie settings</button></section>
+<script>
+document.body.dataset.steps='0';
+const step=()=>{document.body.dataset.steps=String(Number(document.body.dataset.steps)+1);};
+document.getElementById('settings').onclick=()=>{
+  step();
+  document.getElementById('privacy-choice').outerHTML='<section id="onetrust-banner-sdk" role="dialog" aria-modal="true"><h1>Cookie preferences</h1><p>Reject optional cookies to continue with necessary cookies only.</p><button id="onetrust-reject-all-handler">Reject all cookies</button></section>';
+  document.getElementById('onetrust-reject-all-handler').onclick=step;
+};
+</script></body></html>

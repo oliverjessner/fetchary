@@ -2,6 +2,7 @@
 const { insightBuilder, legacyFollower } = require('../metrics/insights');
 const { classifyUrl } = require('../utils/social');
 const { profilePictures } = require('../metrics/profile-pictures');
+const { clickConsentControl } = require('../capture/consent-click');
 
 const { parseCount, elementCount, labeledCount, jsonObjects } = require('../metrics/followers');
 const followerLabels = String.raw`followers?(?::innen|\*innen)?|abonnenten`;
@@ -21,7 +22,7 @@ const overlays = [
   {
     id: 'linkedin-cookie-consent',
     async dismiss(page) {
-      return page.evaluate(() => {
+      return clickConsentControl(page, () => {
         const normalize = value => String(value || '').replace(/\s+/g, ' ').trim().toLowerCase();
         const enabled = element => !element.disabled && element.getAttribute('aria-disabled') !== 'true' &&
           !element.closest('[inert]') && element.getClientRects().length > 0 &&
@@ -32,20 +33,16 @@ const overlays = [
         const stable = [...document.querySelectorAll('button[data-control-name], button[data-tracking-control-name]')]
           .find(element => enabled(element) && ['data-control-name', 'data-tracking-control-name']
             .some(attribute => /^ga-cookie\.consent\.(deny|reject)(?:\.|$)/.test(element.getAttribute(attribute) || '')));
-        if (stable) {
-          stable.click();
-          return true;
-        }
+        if (stable) return stable;
         const labels = new Set(['reject', 'reject all', 'decline optional cookies', 'ablehnen', 'alle ablehnen', 'optionale cookies ablehnen']);
         for (const banner of document.querySelectorAll('.artdeco-global-alert--COOKIE_CONSENT, [data-test-id="cookie-banner"], [data-test-id="cookie-policy-dialog"], #onetrust-banner-sdk')) {
           const button = [...banner.querySelectorAll('button, [role="button"]')].find(element => enabled(element) &&
             (element.id === 'onetrust-reject-all-handler' ||
              [element.textContent, element.getAttribute('aria-label')].some(label => labels.has(normalize(label)))));
           if (!button) continue;
-          button.click();
-          return true;
+          return button;
         }
-        return false;
+        return null;
       });
     },
   },

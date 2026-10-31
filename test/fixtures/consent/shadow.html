@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Privacy settings example</title></head><body>
+<main hidden><article><h1>Researchers publish a new climate observation</h1><p>Scientists shared a detailed record of changing weather patterns today. The editorial report explains the measurements, their limitations, and what the evidence means for readers.</p></article></main>
+<privacy-center></privacy-center>
+<script>
+const host = document.querySelector('privacy-center');
+const outer = host.attachShadow({mode:'open'});
+const innerHost = document.createElement('privacy-choice');
+outer.append(innerHost);
+const root = innerHost.attachShadow({mode:'open'});
+root.innerHTML = '<section role="dialog" aria-modal="true" aria-label="Cookie consent"><h2>Cookies and your privacy</h2><p>We use cookies for advertising and analytics. You can reject all optional cookies.</p><button id="accept">Accept all</button><button id="reject">Reject all</button></section>';
+for (const action of ['reject','accept']) root.getElementById(action).onclick = event => {
+  document.body.dataset.action = action;
+  document.body.dataset.trusted = String(event.isTrusted);
+  host.remove();
+  document.querySelector('main').hidden = false;
+};
+</script></body></html>

@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Daily science</title></head><body>
+<main hidden><article><h1>Researchers publish a new climate observation</h1><p>Scientists shared a detailed record of changing weather patterns today. The editorial report explains the measurements, their limitations, and what the evidence means for readers.</p></article></main>
+<div id="CybotCookiebotDialog" role="dialog" aria-modal="true" aria-label="Cookie consent">
+  <h2>This website uses cookies</h2><p>Cookies help us remember your settings. With your consent, our partners also use statistics and marketing cookies. You can reject optional cookies and continue with necessary cookies only.</p>
+  <button id="CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll">Allow all</button>
+  <button id="CybotCookiebotDialogBodyButtonDecline">Deny</button>
+</div>
+<script>
+for (const [id, action] of [['CybotCookiebotDialogBodyButtonDecline', 'reject'], ['CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll', 'accept']]) {
+  document.getElementById(id).onclick = event => {
+    document.body.dataset.action = action;
+    document.body.dataset.trusted = String(event.isTrusted);
+    document.getElementById('CybotCookiebotDialog').remove();
+    document.querySelector('main').hidden = false;
+  };
+}
+</script></body></html>

@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="de"><head><meta charset="utf-8"><title>Wissenschaft aktuell</title></head><body>
+<main hidden><article><h1>Neue Erkenntnisse aus der Klimaforschung</h1><p>Ein Forschungsteam hat heute umfangreiche Beobachtungen veröffentlicht. Der redaktionelle Bericht erklärt die Messungen, ihre Grenzen und die Bedeutung der Ergebnisse für die Öffentlichkeit.</p></article></main>
+<div id="cmpbox" class="cmpbox" role="dialog" aria-modal="true"><h2>Datenschutzeinstellungen</h2><p>Wir nutzen Cookies und ähnliche Technologien für personalisierte Werbung und Reichweitenmessung. Sie können optionale Cookies ablehnen und nur erforderliche Funktionen nutzen.</p><button class="cmpboxbtnyes" id="accept">Alle akzeptieren</button><button class="cmpboxbtnno" id="reject">Alle ablehnen</button></div>
+<script>
+for (const action of ['reject','accept']) document.getElementById(action).onclick = event => {
+  document.body.dataset.action = action;
+  document.body.dataset.trusted = String(event.isTrusted);
+  document.getElementById('cmpbox').remove();
+  document.querySelector('main').hidden = false;
+};
+</script></body></html>

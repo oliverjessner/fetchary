@@ -41,6 +41,7 @@ Options:
   --list                         Print URLs/selected values, one per line
   --binary                       Write favicon bytes to stdout (favicon only)
   --mode auto|http|browser        Capture strategy (default: auto, HTTP first)
+  --consent reject|accept|off     Cookie consent policy (default: reject)
   --timeout <ms>                 Request timeout (default: 30000)
   --user-agent <text>            Request user agent
   --wait-after-load <duration>   Browser wait, e.g. 500ms or 5s (default: 5s)
@@ -80,6 +81,7 @@ Examples:
   fetchary extract social-insights https://www.linkedin.com/in/oliverjessner --follower --session linkedin
   fetchary analyse https://oliverjessner.at
   fetchary extract text https://example.com
+  fetchary extract text https://golem.de --consent reject
   fetchary extract links https://example.com
   fetchary extract links https://oliverjessner.at/sitemap.xml --list
   fetchary extract links https://oliverjessner.at/sitemap.xml --list --filepath .
@@ -108,7 +110,7 @@ Compatibility aliases:
   fetchary profile-picture <url>
 `;
 const flags = new Set(['json','list','binary','all','youtube','follower','posts','urls-only','exclude-metadata','duplicates','quiet','verbose','no-color','allow-private-network','insecure','secure','help','version','text','no-history']);
-const values = new Set(['mode','timeout','user-agent','wait-after-load','max-response-bytes','cookies','cookies-from-browser','browser-profile','session','session-dir','selector','product-selector','price-selector','attribute','format','platform','default-country','filepath']);
+const values = new Set(['mode','consent','timeout','user-agent','wait-after-load','max-response-bytes','cookies','cookies-from-browser','browser-profile','session','session-dir','selector','product-selector','price-selector','attribute','format','platform','default-country','filepath']);
 const repeated = new Set(['include-selector','ignore-selector','source']);
 function invalid(message) { throw new api.FetcharyValidationError(message); }
 
@@ -188,7 +190,7 @@ async function execute(argv, io, state) {
     if (options.binary && (options.list || options['urls-only'])) invalid('--binary conflicts with --list/--urls-only');
     const list = !options.json && (options.list || options['urls-only']);
     const settings = { ...(io.options || {}), type };
-    for (const [key, name] of Object.entries({ binary:'binary', mode:'mode', timeout:'timeout', 'user-agent':'userAgent', 'wait-after-load':'waitAfterLoad', 'max-response-bytes':'maxResponseBytes', cookies:'cookieFile', 'cookies-from-browser':'cookiesFromBrowser', 'browser-profile':'browserProfile', session:'session', 'session-dir':'sessionDir', selector:'selector', 'product-selector':'productSelector', 'price-selector':'priceSelector', all:'all', attribute:'attribute', format:'format', platform:'platform', 'default-country':'defaultCountry', 'allow-private-network':'allowPrivateNetwork', insecure:'insecure', 'include-selector':'includeSelectors', 'ignore-selector':'ignoreSelectors', source:'sources' })) {
+    for (const [key, name] of Object.entries({ binary:'binary', mode:'mode', consent:'consent', timeout:'timeout', 'user-agent':'userAgent', 'wait-after-load':'waitAfterLoad', 'max-response-bytes':'maxResponseBytes', cookies:'cookieFile', 'cookies-from-browser':'cookiesFromBrowser', 'browser-profile':'browserProfile', session:'session', 'session-dir':'sessionDir', selector:'selector', 'product-selector':'productSelector', 'price-selector':'priceSelector', all:'all', attribute:'attribute', format:'format', platform:'platform', 'default-country':'defaultCountry', 'allow-private-network':'allowPrivateNetwork', insecure:'insecure', 'include-selector':'includeSelectors', 'ignore-selector':'ignoreSelectors', source:'sources' })) {
       if (options[key] !== undefined) settings[name] = ['timeout','maxResponseBytes'].includes(name) ? Number(options[key]) : options[key];
     }
     if (options.secure) settings.insecure = false;
@@ -212,6 +214,11 @@ async function execute(argv, io, state) {
     else if (options.json || type === 'analyse' || ['images','videos','social-links','social-insights','emails','telephone','links','documents','metadata','structured-data','tracker-intelligence','price'].includes(type)) stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     else if (type === 'favicon' || type === 'avatar') stdout.write(`${result.image.url}\n`);
     else stdout.write(result.content);
+    if (result.consent?.detected && result.consent.status !== 'handled') {
+      stderr.write(options.json ? `${JSON.stringify({ warning: 'Consent not resolved', consent: result.consent })}\n`
+        : `Warning: consent not resolved (${result.consent.status}${result.consent.provider ? `, ${result.consent.provider}` : ''}); captured output may contain only the consent dialog.\n`);
+      return 1;
+    }
     return 0;
   } catch (error) {
     stderr.write(options.json ? `${JSON.stringify({ error: error.name, message: error.message })}\n` : `Error: ${error.message}\n`);

@@ -86,6 +86,11 @@ Read a page as plain text, keep its HTML or select a specific element.
 Find image and video URLs, embedded players and linked documents, or save a
 favicon's original image with `--binary`.
 
+When browser rendering finds a cookie banner, Fetchary tries to reject optional
+cookies before reading the page. You can choose `--consent accept` explicitly or
+disable this interaction with `--consent off`. See [consent handling](docs/CLI.md#cookie-consent)
+for the available controls and limits.
+
 ## Find contacts and social metrics
 
 Collect email addresses, phone numbers and social profile links from a page.

@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Daily science</title></head><body>
+<main hidden><article><h1>Researchers publish a new climate observation</h1><p>Scientists shared a detailed record of changing weather patterns today. The editorial report explains the measurements, their limitations, and what the evidence means for readers.</p></article></main>
+<div id="usercentrics-root"><section data-testid="uc-default-wall" role="dialog" aria-modal="true"><h2>Privacy settings</h2><p>We use cookies for marketing and analytics with your consent. You can reject optional cookies and continue with necessary services.</p><button data-testid="uc-accept-all-button" id="accept">Accept all</button><button data-testid="uc-deny-all-button" id="reject">Deny</button></section></div>
+<script>
+for (const action of ['reject','accept']) document.getElementById(action).onclick = event => {
+  document.body.dataset.action = action;
+  document.body.dataset.trusted = String(event.isTrusted);
+  document.getElementById('usercentrics-root').remove();
+  document.querySelector('main').hidden = false;
+};
+</script></body></html>

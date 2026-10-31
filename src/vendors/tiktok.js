@@ -2,6 +2,7 @@
 const { jsonRoots, objects, insightBuilder, jsonLdMetrics, legacyFollower } = require('../metrics/insights');
 const { classifyUrl } = require('../utils/social');
 const { profilePictures } = require('../metrics/profile-pictures');
+const { clickConsentControl } = require('../capture/consent-click');
 
 const { parseCount, elementCount, jsonObjects, profileName } = require('../metrics/followers');
 
@@ -18,7 +19,7 @@ const overlays = [
   {
     id: 'tiktok-cookie-consent',
     async dismiss(page) {
-      return page.evaluate(() => {
+      return clickConsentControl(page, () => {
         const normalize = value => String(value || '').replace(/\s+/g, ' ').trim().toLowerCase();
         const declineLabels = new Set([
           'decline all', 'reject all', 'decline optional cookies', 'reject optional cookies',
@@ -40,11 +41,10 @@ const overlays = [
                 .some(label => declineLabels.has(normalize(label)));
             });
             if (!button) continue;
-            button.click();
-            return true;
+            return button;
           }
         }
-        return false;
+        return null;
       });
     },
   },

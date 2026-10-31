@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Daily science</title></head><body>
+<main hidden><article><h1>Researchers publish a new climate observation</h1><p>Scientists shared a detailed record of changing weather patterns today. The editorial report explains the measurements, their limitations, and what the evidence means for readers.</p></article></main>
+<section role="dialog" aria-modal="true" aria-label="Your privacy choices" id="privacy-choice">
+  <h2>Your privacy choices</h2><p>We use cookies and similar technologies to store information on your device, personalize advertisements and measure our audience. Reject optional cookies to continue with necessary cookies only.</p>
+  <button disabled>Reject all</button><button style="display:none">Reject all</button>
+  <button id="accept">Accept all</button><div role="button" tabindex="0" id="reject" aria-label="Reject all">Choose essential cookies</div>
+</section>
+<script>
+for (const action of ['reject', 'accept']) document.getElementById(action).onclick = event => {
+  document.body.dataset.action = action;
+  document.body.dataset.trusted = String(event.isTrusted);
+  document.getElementById('privacy-choice').remove();
+  document.querySelector('main').hidden = false;
+};
+</script></body></html>

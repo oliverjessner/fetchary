@@ -178,6 +178,7 @@ not store the report, crawl other pages, monitor the site or infer ownership.
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `mode` | `'auto'` | `'auto'`, `'http'`, or `'browser'` |
+| `consent` | `'reject'` | `'reject'`, `'accept'`, or `'off'`; generic browser consent policy |
 | `timeout` | `30000` | Positive milliseconds per request/phase |
 | `userAgent` | `'fetchary/2.0'` | Non-empty HTTP and browser user agent |
 | `headers` | none | `HeadersInit`; caller headers are scoped to the original origin |
@@ -198,7 +199,7 @@ not store the report, crawl other pages, monitor the site or infer ownership.
 
 HTTP mode returns the decoded response and never substitutes rendered HTML.
 Browser mode preserves raw bytes and rendered HTML independently; non-HTML skips
-Chromium. Auto mode tries HTTP first, then falls back for an empty scripted app,
+Chromium. Auto mode tries HTTP first, then falls back for strong consent-wall evidence, an empty scripted app,
 missing selectors/lists on a scripted page, absent favicon/avatar candidates,
 or unavailable/partial insights on scripted pages. Static usable content stays
 HTTP-only. HTTP errors and recognizable access walls do not trigger a bypass.
@@ -209,6 +210,80 @@ The page HTTP status/content type remain the original HTTP response metadata,
 even when the browser subsequently renders or redirects. UTF-8 is the default;
 declared supported HTTP charsets and simple HTML meta charset declarations use
 `TextDecoder`, with UTF-8 fallback for unsupported labels.
+
+### Cookie consent
+
+```js
+const { extractText, createExtractor } = require('fetchary');
+
+async function main() {
+    const result = await extractText('https://golem.de', {
+        mode: 'auto', consent: 'reject',
+    });
+    console.log(result.consent, result.data);
+
+    const client = createExtractor({ consent: 'reject' });
+    const untouched = await client.extractHtml('https://example.com', { consent: 'off' });
+    console.log(untouched.consent);
+}
+main().catch(console.error);
+```
+
+`consent` applies to standalone methods, `extract()`, `analyse()` and isolated
+clients. The default `'reject'` policy uses real browser clicks to reject
+optional cookies, or opens settings and disables optional purposes before
+saving. It never clicks an accept-all control as a fallback. `'accept'` permits
+accept-all only when explicitly selected. `'off'` disables the generic handler;
+non-consent vendor overlay handling remains active.
+
+The handler recognizes Sourcepoint, OneTrust, Cookiebot, Usercentrics, Didomi,
+consentmanager and generic German/English consent patterns in the DOM, frames
+and open shadow roots. It watches for delayed banners during `waitAfterLoad`,
+allows at most three interaction steps per dialog, and respects capture
+cancellation/timeouts. A result is `handled` only after the dialog disappears
+following a completed interaction and readable page content is verified. These
+patterns are verified against local Chromium fixtures. A known provider can
+still present an unsupported or blocked dialog on an individual site.
+
+`mode: 'auto'` examines HTTP HTML for strong consent-wall evidence and renders
+such pages even if their banner text is lengthy. This fallback reuses the
+existing HTTP capture and launches at most one browser. `mode: 'http'` never
+launches a browser; `consent: 'off'` disables consent-specific fallback. Browser
+captures finish consent handling before taking their HTML snapshot. Existing
+passive tracker/analysis capture remains interaction-free and blocks additional
+browser resources; those operations do not click consent controls. This also
+prevents externally loaded CMPs from running. Use a standalone text/HTML
+extraction when you need active consent handling.
+
+Every result's `consent` field has this shape:
+
+```ts
+type ConsentMode = 'reject' | 'accept' | 'off';
+type ConsentStatus = 'not_detected' | 'handled' | 'failed' | 'unsupported' | 'blocked';
+type ConsentMetadata = {
+    detected: boolean;
+    provider: string | null; // provider name, 'generic', or null
+    action: ConsentMode;     // requested policy, not proof of success
+    status: ConsentStatus;
+    reason?: string;        // explanation for unresolved consent
+};
+```
+
+`not_detected` means no banner was recognized; with `'off'` generic browser inspection
+is disabled. `handled` confirms completed interaction, disappearance and readable content;
+`failed` reports an unsuccessful attempt, `unsupported` a recognized dialog
+without a supported way to finish (including HTTP-only walls), and `blocked`
+an access/consent barrier that cannot be completed under the requested policy.
+Inspect the status before treating output as editorial content. HTTP-only/off
+results can still contain the banner. The library keeps the structured result
+available; the CLI additionally warns and exits with code `1` for detected
+unresolved consent. Browser handling cannot unlock content
+withheld after rejection or replace a site's paid subscription, login or CAPTCHA.
+This also applies to Golem pages that require tracking consent or a subscription.
+The [Golem live-check notes](CLI.md#cookie-consent) record the homepage and article
+limitations observed on 2026-10-31.
+Unresolved consent captures are not retained in the capture cache. Cache keys
+isolate `'reject'`, `'accept'` and `'off'` policies.
 
 ### Browser-cookie authentication
 
@@ -739,6 +814,7 @@ type ExtractionMetadata = {
     status: number;
     contentType: string | null;
     dismissedOverlays: string[];
+    consent: ConsentMetadata;
     cache: { hit: boolean; ageMs: number; ttlMs: number };
     data: unknown;
 };
@@ -1013,7 +1089,7 @@ without cancelling it; old work cannot refill the cleared cache.
 Compatibility includes normalized requested URL (query and fragment preserved),
 actual capture mode, headers/user agent, timeout, response limit, fetch/browser
 implementation identity, DNS implementation identity, private-network policy,
-TLS certificate-verification policy, and browser wait settings. HTTP and browser
+TLS certificate-verification policy, consent policy, and browser wait settings. HTTP and browser
 snapshots are separate. Extraction selectors and formats do not change a page
 snapshot's key.
 
@@ -1023,7 +1099,7 @@ cache. Private clients isolate their authenticated entries by complete headers.
 Never change a custom transport's hidden session while retaining its entries;
 clear the client or create a new one when switching contexts. Responses setting
 cookies, private/no-store/no-cache responses, partial content, recognizable login
-or CAPTCHA pages, and invalid/incomplete captures are not retained. URL, DNS,
+or CAPTCHA pages, unresolved consent captures, and invalid/incomplete captures are not retained. URL, DNS,
 and redirect-target validation still run on cache hits.
 
 The cache is process-local. Separate CLI executions start empty. Image candidate

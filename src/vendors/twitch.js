@@ -2,6 +2,7 @@
 const { insightBuilder, legacyFollower } = require('../metrics/insights');
 const { classifyUrl } = require('../utils/social');
 const { profilePictures } = require('../metrics/profile-pictures');
+const { clickConsentControl } = require('../capture/consent-click');
 
 const { parseCount, elementCount, labeledCount, jsonObjects, profileName } = require('../metrics/followers');
 
@@ -18,7 +19,7 @@ const overlays = [
   {
     id: 'twitch-cookie-consent',
     async dismiss(page) {
-      return page.evaluate(() => {
+      return clickConsentControl(page, () => {
         const normalize = value => String(value || '').replace(/\s+/g, ' ').trim().toLowerCase();
         const declineLabels = new Set(['reject', 'reject all', 'decline all', 'ablehnen', 'alle ablehnen']);
         for (const banner of document.querySelectorAll('[data-a-target="consent-banner"], #onetrust-banner-sdk, #onetrust-pc-sdk')) {
@@ -30,10 +31,9 @@ const overlays = [
                 .some(label => declineLabels.has(normalize(label)));
           });
           if (!button) continue;
-          button.click();
-          return true;
+          return button;
         }
-        return false;
+        return null;
       });
     },
   },

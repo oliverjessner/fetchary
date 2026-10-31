@@ -1,0 +1,11 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Cookie preferences</title></head><body>
+<main hidden><article><h1>Researchers publish a new climate observation</h1><p>Scientists shared a detailed record of changing weather patterns today. The editorial report explains the measurements, their limitations, and what the evidence means for readers.</p></article></main>
+<section id="cookie-consent" role="dialog" aria-modal="true"><h1>Cookie preferences</h1><p>Choose how we may process cookies for personalized advertising.</p><label>Strictly necessary cookies <input type="checkbox" checked disabled></label><label>Marketing cookies <input type="checkbox" checked disabled></label><button id="save">Save choices</button><button onclick="document.body.dataset.action='accept'">Accept all</button></section>
+<script>
+document.getElementById('save').onclick=()=>{
+  document.body.dataset.action='unsafe-save';
+  document.getElementById('cookie-consent').remove();
+  document.querySelector('main').hidden=false;
+};
+</script></body></html>

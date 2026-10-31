@@ -1,6 +1,7 @@
 'use strict';
 const { insightBuilder, legacyFollower } = require('../metrics/insights');
 const { classifyUrl } = require('../utils/social');
+const { clickConsentControl } = require('../capture/consent-click');
 
 const { linkCount, profileName } = require('../metrics/followers');
 const { profilePictures } = require('../metrics/profile-pictures');
@@ -22,7 +23,7 @@ const overlays = [
   {
     id: COOKIE_CONSENT,
     async dismiss(page) {
-      return page.evaluate(() => {
+      return clickConsentControl(page, () => {
         const normalize = value => String(value || '').replace(/\s+/g, ' ').trim();
         const declineLabels = new Set([
           'Refuse non-essential cookies',
@@ -31,9 +32,7 @@ const overlays = [
         ]);
         const button = [...document.querySelectorAll('button, [role="button"]')]
           .find(element => declineLabels.has(normalize(element.innerText || element.textContent)));
-        if (!button) return false;
-        button.click();
-        return true;
+        return button || null;
       });
     },
   },

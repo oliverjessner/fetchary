@@ -5,6 +5,7 @@ const { readResource, abortable } = require('./http');
 const { FetcharyBrowserError } = require('../errors');
 const { browserInstallHint } = require('./browser-install');
 const { browserRequestBodies } = require('./browser-request-body');
+const { createConsentHandler } = require('./consent');
 const { discoverVendors, prepareVendorPage, dismissVendorOverlays, prepareVendorSnapshot } = require('../vendors');
 
 function browserError(message, options, cause, phase) {
@@ -35,17 +36,25 @@ async function waitAfterLoad(page, options, vendors) {
   const dismissedOverlays = [];
   const prepared = new Set();
   const deadline = Date.now() + options.waitAfterLoadMs;
+  const consent = createConsentHandler({ ...options, deadline });
+  const vendorConsent = options.consent == null || options.consent === 'reject';
+  const activeVendors = vendorConsent ? vendors : vendors.map(vendor => ({ ...vendor,
+    overlays: vendor.overlays.filter(overlay => !overlay.id.endsWith('-cookie-consent')) }));
   do {
     options.signal?.throwIfAborted();
     const currentUrl = typeof page.url === 'function' ? page.url() : options.url;
-    const dismissed = await dismissVendorOverlays(page, currentUrl, dismissedOverlays, vendors);
+    const hasVendorConsent = vendorConsent && vendors.some(vendor => vendor.matches(currentUrl)
+      && vendor.overlays.some(overlay => overlay.id.endsWith('-cookie-consent')));
+    if (hasVendorConsent && !options.passiveTrackerCapture) await consent.scan(page, { interact: false });
+    const dismissed = await dismissVendorOverlays(page, currentUrl, dismissedOverlays, activeVendors);
     dismissedOverlays.push(...dismissed);
+    if (!options.passiveTrackerCapture) await consent.scan(page, { externalAction: dismissed.some(id => id.endsWith('-cookie-consent')) ? 'reject' : undefined });
     await prepareVendorSnapshot(page, typeof page.url === 'function' ? page.url() : options.url, prepared, vendors);
     const remaining = deadline - Date.now();
     if (remaining <= 0) break;
     await new Promise(resolve => setTimeout(resolve, Math.min(100, remaining)));
   } while (true);
-  return dismissedOverlays;
+  return { dismissedOverlays, consent: consent.result() };
 }
 
 class BrowserCapture {
@@ -165,9 +174,9 @@ class BrowserCapture {
       }
 
       checkRequestErrors();
-      let dismissedOverlays;
+      let postLoad;
       try {
-        dismissedOverlays = await abortable(waitAfterLoad(page, { ...options, signal }, vendors), signal);
+        postLoad = await abortable(waitAfterLoad(page, { ...options, signal }, vendors), signal);
       } catch (cause) {
         throw browserError(`post-load wait failed for ${options.url}`, options, cause, 'post-load-wait');
       }
@@ -189,9 +198,10 @@ class BrowserCapture {
         renderedHtml,
         browserFinalUrl,
         renderedCapturedAt: new Date().toISOString(),
-        dismissedOverlays,
+        ...postLoad,
         cacheable: navigation?.status?.() !== 206 && !navigation?.headers?.()['set-cookie']
-          && !/\b(?:private|no-store|no-cache)\b/i.test(navigation?.headers?.()['cache-control'] || ''),
+          && !/\b(?:private|no-store|no-cache)\b/i.test(navigation?.headers?.()['cache-control'] || '')
+          && (!postLoad.consent.detected || postLoad.consent.status === 'handled'),
       };
     } finally {
       clearTimeout(timer);

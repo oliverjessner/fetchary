@@ -1,0 +1,11 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Privacy choice</title></head><body>
+<main hidden><article><h1>The editorial page is still unavailable</h1><p>The publisher has not released its actual article content after the consent decision.</p></article></main>
+<section id="cookie-consent" role="dialog" aria-modal="true"><h1>Your privacy choices</h1><p>We use cookies for personalized advertising and audience measurement. You may reject optional cookies.</p><button id="reject">Reject all</button></section>
+<script>
+document.getElementById('reject').onclick=event=>{
+  document.body.dataset.action='reject';
+  document.body.dataset.trusted=String(event.isTrusted);
+  document.getElementById('cookie-consent').remove();
+};
+</script></body></html>

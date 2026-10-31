@@ -701,6 +701,7 @@ See [Social support](SOCIAL_SUPPORT.md) for implemented patterns and fixtures an
 | `--list`                       | URLs/selected values, one per line, for every extraction type |
 | `--urls-only`                  | Alias for `--list` |
 | `--mode auto\|http\|browser`   | Default `auto`: HTTP first, optional browser fallback                          |
+| `--consent reject\|accept\|off` | Default `reject`: reject optional cookies; explicitly accept all, or disable generic consent interaction |
 | `--timeout <ms>`               | Positive milliseconds per request/phase; default 30000                         |
 | `--user-agent <text>`          | HTTP and browser user agent; default `fetchary/2.0`                            |
 | `--wait-after-load <duration>` | Browser post-load wait; default `5s`; accepts `500ms`, `5s`, or `0ms`          |
@@ -721,6 +722,83 @@ See [Social support](SOCIAL_SUPPORT.md) for implemented patterns and fixtures an
 Value options support both `--option value` and `--option=value`. Use `--` to
 end option parsing. Unknown options and operation-specific options used with the
 wrong type are rejected. There is no data-directory or monitoring configuration.
+
+## Cookie consent
+
+```bash
+fetchary extract text https://golem.de --consent reject
+fetchary extract html https://golem.de --consent reject
+fetchary extract text https://golem.de --consent off
+fetchary extract text https://golem.de --mode browser --consent reject --json
+fetchary extract text https://example.com --consent accept --json
+```
+
+`--consent` is a shared extraction/analysis option. `reject` is the default. In
+browser captures, Fetchary tries visible reject/necessary-only controls and may
+open settings to disable optional purposes before saving. It uses real browser
+clicks, waits for the dialog to disappear, and never substitutes acceptance when
+rejection is unavailable. `accept` permits accepting all only when you select it
+explicitly. `off` disables generic consent interaction. Existing non-consent
+vendor overlay handlers continue to run.
+
+Recognition covers known Sourcepoint, OneTrust, Cookiebot, Usercentrics, Didomi
+and consentmanager patterns, plus German and English consent dialogs. Browser
+inspection includes frames (through Puppeteer's Frame API), open shadow roots
+and banners appearing during the post-load wait. Attempts are bounded by the
+capture timeout/wait and at most three interaction steps per dialog. Detection
+and interaction are verified against local Chromium fixtures; individual sites
+and provider configurations can differ.
+
+In `auto`, strong consent-wall evidence triggers the existing browser fallback
+even when the banner contains a long text. `http` stays HTTP-only, and `off` does
+not trigger consent-specific rendering. A browser capture handles consent before
+taking the rendered snapshot. No additional browser is started for this feature.
+
+Use `--json` to inspect the shared `consent` metadata:
+
+```json
+{
+  "consent": {
+    "detected": true,
+    "provider": "sourcepoint",
+    "action": "reject",
+    "status": "handled"
+  }
+}
+```
+
+`action` records the requested policy. `provider` is a detected provider name,
+`generic`, or `null`. `status` is `not_detected`, `handled`, `failed`,
+`unsupported`, or `blocked`; unresolved results may include `reason`.
+Only `handled` confirms a completed decision, disappeared dialog and verified
+readable page content.
+`not_detected` with `off` means no generic browser inspection was requested. HTTP-only
+captures can report a detected wall as `unsupported`, since they cannot click.
+HTTP/off output may still contain banner text; inspect the metadata before
+treating it as editorial content. A detected unresolved wall emits a warning on
+stderr and exits with code `1`, including deliberate HTTP/off inspection. The
+captured stdout remains available; `--json` uses a structured warning containing
+the consent metadata. `--quiet` still suppresses stdout. As with other failed
+commands, `--filepath` does not save this output. Unresolved consent captures are not cached.
+Separate consent policies never reuse each other's capture cache entries.
+
+Tracker intelligence and website analysis keep their existing passive capture
+policy: no consent controls are clicked, and additional browser requests remain
+blocked. Inspect a page with a standalone text/HTML extraction when you need
+active consent handling.
+
+Fetchary does not bypass a subscription, paywall, login or CAPTCHA. A site that
+requires consent or a paid subscription, including some Golem pages, may keep
+its content blocked after rejection. That state is not a successful consent
+decision; selecting `reject` never falls back to accepting tracking.
+
+Live checks on **2026-10-31** of the [Golem homepage](https://www.golem.de/) and
+[a Golem article](https://www.golem.de/news/stromnetzschwankung-periodische-leistungsspitze-im-netz-hat-dezentrale-ursache-2610-214694.html)
+both redirected to `/sonstiges/zustimmung/auswahl.html`. The initial Sourcepoint
+dialog offered “Zustimmen und weiter”; its Privacy Center footer offered
+“Schließen” and “Zustimmen”. These checks exposed no safe rejection path that
+released the editorial content. Fetchary reports unresolved consent instead
+of claiming successful article extraction.
 
 ## Signed-in sessions
 
@@ -987,7 +1065,7 @@ qualifications and external tracking guidance.
 
 `http` uses only the server response. `browser` performs HTTP capture and renders
 HTML through Chromium; non-HTML responses skip rendering. `auto` starts with HTTP
-and falls back for JavaScript shells, missing selectors/lists on scripted pages,
+and falls back for strong consent-wall evidence, JavaScript shells, missing selectors/lists on scripted pages,
 missing favicon/avatar candidates, or incomplete insights on scripted pages.
 It does not launch Chromium for usable static content or to bypass access walls.
 A fallback reuses the original HTTP capture and launches at most one browser.
@@ -1081,8 +1159,8 @@ directories are neither read nor deleted.
 
 | Code | Meaning                                                                            |
 | ---- | ---------------------------------------------------------------------------------- |
-| 0    | Successful extraction or analysis report, including empty matches, section failures and explicit insight unavailability |
-| 1    | Unexpected error                                                                   |
+| 0    | Successful extraction or analysis report without unresolved consent, including empty matches, section failures and explicit insight unavailability |
+| 1    | Detected unresolved consent wall (captured stdout plus warning), or unexpected error |
 | 2    | Invalid input, unsupported options, unsafe URL, or unsupported avatar platform     |
 | 3    | HTTP, DNS, timeout, or cancellation failure                                        |
 | 4    | Browser launch/navigation/snapshot failure                                         |

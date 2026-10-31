@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="de"><head><meta charset="utf-8"><title>Wissenschaft aktuell</title></head><body>
+<main hidden><article><h1>Neue Erkenntnisse aus der Klimaforschung</h1><p>Ein Forschungsteam hat heute umfangreiche Beobachtungen veröffentlicht. Der redaktionelle Bericht erklärt die Messungen, ihre Grenzen und die Bedeutung der Ergebnisse für die Öffentlichkeit.</p></article></main>
+<section role="dialog" aria-modal="true" aria-label="Datenschutzeinstellungen" id="privacy-choice">
+  <h2>Wir respektieren Ihre Privatsphäre</h2><p>Wir und unsere Partner verwenden Cookies und ähnliche Technologien. Mit Ihrer Einwilligung verarbeiten wir personenbezogene Daten für personalisierte Werbung und die Analyse unserer Reichweite.</p>
+  <button disabled>Alle ablehnen</button><button style="visibility:hidden">Alle ablehnen</button>
+  <button id="accept">Alle akzeptieren</button><button id="reject">Nur notwendige Cookies</button>
+</section>
+<script>
+for (const action of ['reject', 'accept']) document.getElementById(action).onclick = event => {
+  document.body.dataset.action = action;
+  document.body.dataset.trusted = String(event.isTrusted);
+  document.getElementById('privacy-choice').remove();
+  document.querySelector('main').hidden = false;
+};
+</script></body></html>

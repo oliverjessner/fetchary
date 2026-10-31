@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="de"><head><meta charset="utf-8"><title>Nachrichten aus der Technik</title></head><body>
+<main hidden><article><h1>Neue Hardware im unabhängigen Praxistest</h1><p>Die Redaktion hat neue Geräte über mehrere Wochen untersucht. Dieser ausführliche Bericht enthält die tatsächlich gemessenen Ergebnisse und erklärt, welche Änderungen für Nutzer im Alltag wichtig sind.</p></article></main>
+<div id="sp_message_container_123" style="position:fixed;inset:0;background:white">
+  <iframe id="sp_message_iframe_123" title="SP Consent Message" src="https://consent.example.test/wrapper/messaging?site_id=123" style="width:100%;height:100%"></iframe>
+</div>
+<script>
+window.addEventListener('message', event => {
+  if (event.origin !== 'https://consent.example.test' || event.data.action !== 'reject') return;
+  document.body.dataset.action = event.data.action;
+  document.body.dataset.trusted = String(event.data.trusted);
+  try { document.querySelector('iframe').contentWindow.document.body; }
+  catch (error) { document.body.dataset.crossOrigin = String(error.name === 'SecurityError'); }
+  document.getElementById('sp_message_container_123').remove();
+  document.querySelector('main').hidden = false;
+});
+</script></body></html>

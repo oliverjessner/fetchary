@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Daily science</title></head><body>
+<main hidden><article><h1>Researchers publish a new climate observation</h1><p>Scientists shared a detailed record of changing weather patterns today. The editorial report explains the measurements, their limitations, and what the evidence means for readers.</p></article></main>
+<script>
+setTimeout(() => {
+  const dialog = document.createElement('section');
+  dialog.setAttribute('role','dialog');
+  dialog.setAttribute('aria-modal','true');
+  dialog.id = 'delayed-privacy-choice';
+  dialog.innerHTML = '<h2>Your cookie choices</h2><p>We use cookies to personalize advertising and measure our audience. Reject all optional cookies to continue.</p><button id="reject">Reject all</button><button id="accept">Accept all</button>';
+  for (const action of ['reject','accept']) dialog.querySelector('#'+action).onclick = event => {
+    document.body.dataset.action = action;
+    document.body.dataset.trusted = String(event.isTrusted);
+    dialog.remove();
+    document.querySelector('main').hidden = false;
+  };
+  document.body.append(dialog);
+}, 140);
+</script></body></html>

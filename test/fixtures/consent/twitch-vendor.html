@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Public Twitch channel</title></head><body>
+<main><h1>Public Twitch channel</h1><p>The public channel description and schedule are available to guests. This page provides editorial context and channel information without an account.</p></main>
+<div id="onetrust-banner-sdk" role="dialog" aria-modal="true"><h2>Cookies on Twitch</h2><p>We use cookies and similar technologies to personalize content and advertising. You can reject optional cookies.</p><button id="onetrust-reject-all-handler">Reject all</button><button id="onetrust-accept-btn-handler">Accept all</button></div>
+<div role="dialog" aria-modal="true" id="login"><div data-a-target="passport-modal"><h2>Log in to Twitch</h2><form><input name="username"><input type="password"><button>Log in</button></form><button id="close" aria-label="Close"></button></div></div>
+<script>
+for (const [id,action] of [['onetrust-reject-all-handler','reject'],['onetrust-accept-btn-handler','accept']]) document.getElementById(id).onclick = event => {
+  document.body.dataset.action = action;
+  document.body.dataset.trusted = String(event.isTrusted);
+  document.getElementById('onetrust-banner-sdk').remove();
+};
+document.getElementById('close').onclick=()=>document.getElementById('login').remove();
+</script></body></html>

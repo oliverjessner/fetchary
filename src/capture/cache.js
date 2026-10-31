@@ -14,7 +14,8 @@ function validateCacheTtl(value = DEFAULT_CACHE_TTL_MS) {
 }
 
 function cloneCapture(page) {
-  return { ...page, rawBody: Buffer.from(page.rawBody), dismissedOverlays: [...page.dismissedOverlays] };
+  return { ...page, rawBody: Buffer.from(page.rawBody), dismissedOverlays: [...page.dismissedOverlays],
+    ...(page.consent ? { consent: { ...page.consent } } : {}) };
 }
 
 // No timers: both age checks and LRU eviction happen only during cache use.

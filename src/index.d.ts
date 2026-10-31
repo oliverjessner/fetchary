@@ -4,6 +4,17 @@ import type { CountryCode } from 'libphonenumber-js';
 
 export type ExtractionType = 'text' | 'html' | 'favicon' | 'images' | 'videos' | 'avatar' | 'selector' | 'social-links' | 'social-insights' | 'emails' | 'telephone' | 'links' | 'documents' | 'metadata' | 'structured-data' | 'tracker-intelligence' | 'price';
 export type CaptureMode = 'auto' | 'http' | 'browser';
+export type ConsentMode = 'reject' | 'accept' | 'off';
+export type ConsentStatus = 'not_detected' | 'handled' | 'failed' | 'unsupported' | 'blocked';
+export type ConsentMetadata = {
+  detected: boolean;
+  provider: string | null;
+  /** Requested policy; handled is the only status confirming a completed decision. */
+  action: ConsentMode;
+  status: ConsentStatus;
+  /** Explanation when a detected dialog could not be completed. */
+  reason?: string;
+};
 export type Platform = 'youtube' | 'tiktok' | 'instagram' | 'facebook' | 'x' | 'threads' | 'linkedin' | 'twitch' | 'reddit' | 'github' | 'vimeo' | 'bluesky';
 export type SocialKind = 'profile' | 'channel' | 'post' | 'video' | 'unknown';
 export type CaptureCookieData = { name: string; value: string; domain: string; path: string; secure: boolean; httpOnly: boolean; expires?: number; sameSite?: 'Strict' | 'Lax' | 'None' };
@@ -23,6 +34,8 @@ export type ExtractionOptions = {
   /** Default ~/.fetchary/sessions; requires session for extraction. */
   sessionDir?: string;
   mode?: CaptureMode;
+  /** Default reject; accept requires explicit selection; off disables generic consent handling. */
+  consent?: ConsentMode;
   timeout?: number;
   userAgent?: string;
   headers?: HeadersInit;
@@ -64,7 +77,7 @@ export type ExtractionMetadata = {
   /** Time this extraction result was produced. */
   extractedAt: string;
   captureMode: 'http' | 'browser'; status: number; contentType: string | null;
-  dismissedOverlays: string[]; cache: { hit: boolean; ageMs: number; ttlMs: number };
+  dismissedOverlays: string[]; consent: ConsentMetadata; cache: { hit: boolean; ageMs: number; ttlMs: number };
 };
 export type ExtractionResult<T, K extends ExtractionType = ExtractionType> = ExtractionMetadata & { type: K; data: T };
 export type ContentResult<K extends 'text' | 'html' = 'text' | 'html'> = ExtractionResult<string, K> & { content: string; format: K };

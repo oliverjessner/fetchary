@@ -1,6 +1,7 @@
 'use strict';
 const { jsonRoots, objects, insightBuilder, jsonLdMetrics, legacyFollower } = require('../metrics/insights');
 const { classifyUrl } = require('../utils/social');
+const { clickConsentControl } = require('../capture/consent-click');
 
 const { elementCount, labeledCount } = require('../metrics/followers');
 const { profilePictures } = require('../metrics/profile-pictures');
@@ -31,7 +32,7 @@ const overlays = [
         : null;
 
       try {
-        const dismissed = await page.evaluate(isConsentPage => {
+        const dismissed = await clickConsentControl(page, isConsentPage => {
           const normalize = value => String(value || '').replace(/\s+/g, ' ').trim().toLowerCase();
           const declineLabels = new Set(['reject all', 'alle ablehnen']);
           const dialogs = [...document.querySelectorAll(
@@ -48,10 +49,9 @@ const overlays = [
                   .some(label => declineLabels.has(normalize(label)));
               });
             if (!button) continue;
-            button.click();
-            return true;
+            return button;
           }
-          return false;
+          return null;
         }, consentPage);
 
         if (dismissed && navigation) await navigation;

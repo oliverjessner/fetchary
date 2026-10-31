@@ -4,6 +4,7 @@ const { captureHttp } = require('./http');
 const { BrowserCapture } = require('./browser');
 const { createCaptureCache, validateCacheTtl } = require('./cache');
 const { validateRemoteUrl } = require('../utils/url');
+const { detectConsentWall, consentMetadata } = require('./consent-wall');
 
 const sharedCaptureCache = createCaptureCache();
 const identities = new WeakMap();
@@ -16,6 +17,7 @@ function identity(value) {
 
 function cacheableCapture(page) {
   if (page.cacheable === false || !Number.isInteger(page.status) || page.status < 200 || page.status >= 300 || page.status === 206) return false;
+  if (page.consent?.detected && page.consent.status !== 'handled') return false;
   for (const [html, url] of [[page.rawBody.toString('utf8'), page.rawFinalUrl], [page.renderedHtml, page.browserFinalUrl]]) {
     if (url && /\/(?:login|signin|authwall|checkpoint)(?:\/|$)/i.test(new URL(url).pathname)) return false;
     if (html == null) continue;
@@ -61,6 +63,7 @@ class CaptureManager {
       url.href, source.captureMode, [...headers.entries()].sort(), this.timeout,
       identity(this.httpFetch), identity(this.browserIdentity), identity(this.vendorIdentity),
       this.options.maxResponseBytes, Boolean(this.options.allowPrivateNetwork), this.options.insecure !== false, identity(this.options.lookup),
+      this.options.consent ?? 'reject',
       source.captureMode === 'browser' ? [source.waitAfterLoadMs, this.browserUserAgent, Boolean(this.options.passiveTrackerCapture)] : null,
     ]);
     const page = await this.cache.capture(key, ttlMs, async () => {
@@ -87,11 +90,13 @@ class CaptureManager {
     if (source.captureMode !== 'browser' || !shouldRender(http.contentType)) {
       return {
         ...http,
+        httpCacheable: http.httpCacheable ?? http.cacheable,
         renderedHtml: null,
         browserFinalUrl: null,
         renderedCapturedAt: null,
         dismissedOverlays: [],
         captureMode: 'http',
+        consent: consentMetadata(shouldRender(http.contentType) ? detectConsentWall(http.rawBody.toString('utf8'), http.rawFinalUrl) : { detected: false, provider: null }, this.options.consent ?? 'reject'),
       };
     }
     const rendered = await this.browser.capture({
@@ -103,7 +108,12 @@ class CaptureManager {
       userAgent: this.browserUserAgent,
       headers: this.headers,
     });
-    return { ...http, ...rendered, cacheable: http.cacheable && rendered.cacheable, captureMode: 'browser' };
+    // Preserve static evidence when interaction was disabled or a frame could
+    // not be inspected. A remaining wall must never turn into a cache hit.
+    if (!rendered.consent?.detected) {
+      rendered.consent = consentMetadata(detectConsentWall(rendered.renderedHtml, rendered.browserFinalUrl), this.options.consent ?? 'reject');
+    }
+    return { ...http, ...rendered, cacheable: (http.httpCacheable ?? http.cacheable) && rendered.cacheable, captureMode: 'browser' };
   }
 
   async close() {

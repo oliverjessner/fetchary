@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Privacy settings example</title></head><body>
+<main hidden><article><h1>Researchers publish a new climate observation</h1><p>Scientists shared a detailed record of changing weather patterns today. The editorial report explains the measurements, their limitations, and what the evidence means for readers.</p></article></main>
+<section id="cookie-preferences" role="dialog" aria-modal="true" aria-label="Cookie preferences">
+  <h2>Manage your cookie preferences</h2><p>We use cookies to provide this service. You can choose the optional purposes you allow.</p>
+  <button id="accept">Accept all cookies</button><button id="settings">Cookie settings</button>
+</section>
+<script>
+document.body.dataset.steps = '0';
+document.body.dataset.optionalOff = '0';
+const step = event => {
+  document.body.dataset.steps = String(Number(document.body.dataset.steps) + 1);
+  document.body.dataset.trusted = String(event.isTrusted);
+};
+document.getElementById('accept').onclick = event => { step(event); document.body.dataset.action = 'accept'; };
+document.getElementById('settings').onclick = event => {
+  step(event);
+  document.getElementById('cookie-preferences').innerHTML = '<h2>Cookie settings</h2><p>Choose which optional cookies to allow.</p><label>Strictly necessary cookies <input id="necessary" type="checkbox" checked disabled></label><label>Statistics cookies <input id="statistics" type="checkbox" checked></label><button id="save" aria-label="Save choices">Save choices</button>';
+  document.getElementById('statistics').onclick = event => {
+    step(event);
+    document.body.dataset.optionalOff = String(!event.currentTarget.checked);
+  };
+  document.getElementById('save').onclick = event => {
+    step(event);
+    if (!document.getElementById('necessary').checked || document.getElementById('statistics').checked) {
+      document.body.dataset.action = 'unsafe';
+      return;
+    }
+    document.body.dataset.action = 'reject';
+    document.getElementById('cookie-preferences').remove();
+    document.querySelector('main').hidden = false;
+  };
+};
+</script></body></html>

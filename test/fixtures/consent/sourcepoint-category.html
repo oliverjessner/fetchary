@@ -1,0 +1,11 @@
+<!doctype html>
+<html lang="de"><head><meta charset="utf-8"><title>Datenschutzeinstellungen</title></head><body>
+<main hidden><article><h1>Neue Erkenntnisse aus der Klimaforschung</h1><p>Ein Forschungsteam hat heute umfangreiche Beobachtungen veröffentlicht. Der redaktionelle Bericht erklärt die Messungen, ihre Grenzen und die Bedeutung der Ergebnisse für die Öffentlichkeit.</p></article></main>
+<section data-cmp="sourcepoint" role="dialog" aria-modal="true" id="cookie-choices"><h1>Datenschutzeinstellungen</h1><p>Verwalten Sie die Einwilligung für Cookies und ähnliche Technologien.</p><button id="category">Speichern von oder Zugriff auf Informationen auf einem Endgerät</button><label>Analytics <input type="checkbox"></label></section>
+<script>
+document.getElementById('category').onclick=()=>{
+  document.body.dataset.unwanted='true';
+  document.getElementById('cookie-choices').remove();
+  document.querySelector('main').hidden=false;
+};
+</script></body></html>
