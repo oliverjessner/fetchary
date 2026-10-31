@@ -151,6 +151,10 @@ class BrowserCapture {
                   throw error;
                 }
                 const headers = Object.fromEntries(resource.headers);
+                // Set-Cookie is not comma-joinable (Expires itself contains a
+                // comma). Keep each header so Chromium stores every cookie.
+                const setCookies = resource.headers.getSetCookie();
+                if (setCookies.length) headers['set-cookie'] = setCookies;
                 delete headers['content-encoding']; delete headers['content-length']; delete headers['transfer-encoding'];
                 await request.respond({ status: resource.status, headers, body: resource.body });
               } catch (error) {

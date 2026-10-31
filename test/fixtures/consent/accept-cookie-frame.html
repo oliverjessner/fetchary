@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="de"><head><meta charset="utf-8"><title>Datenschutz</title></head><body>
+<section role="dialog" aria-modal="true" aria-label="Privatsphäre-Einstellungen">
+  <h1>Cookies zustimmen</h1><p>Besuchen Sie unsere Nachrichten mit Werbung und Tracking, indem Sie der Nutzung aller Cookies zustimmen.</p>
+  <button id="accept">Cookies zustimmen</button><p id="status"></p>
+</section>
+<script>
+document.getElementById('accept').addEventListener('click', event => {
+  event.currentTarget.disabled = true;
+  document.getElementById('status').textContent = 'Zustimmung erteilt.';
+  parent.postMessage({ action: 'accept', trusted: event.isTrusted }, '*');
+});
+</script></body></html>
