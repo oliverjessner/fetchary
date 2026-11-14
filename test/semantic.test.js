@@ -70,12 +70,12 @@ test('image discovery covers srcset, picture, lazy attributes, metadata, image l
 });
 
 test('social links recognize all platforms from links, rel-me, sameAs and metadata, with exact domains and filters', async () => {
-  const addresses = ['https://youtu.be/AbC','https://tiktok.com/@example/video/123','https://instagram.com/reel/AbC/','https://facebook.com/example/posts/123','https://twitter.com/example/status/123','https://threads.net/@example/post/AbC','https://linkedin.com/in/example','https://twitch.tv/example','https://reddit.com/r/example/comments/AbC/post','https://github.com/example','https://vimeo.com/123','https://bsky.app/profile/example.test/post/AbC'];
+  const addresses = ['https://youtu.be/AbC','https://tiktok.com/@example/video/123','https://instagram.com/reel/AbC/','https://facebook.com/example/posts/123','https://twitter.com/example/status/123','https://threads.net/@example/post/AbC','https://linkedin.com/in/example','https://twitch.tv/example','https://reddit.com/r/example/comments/AbC/post','https://github.com/example','https://vimeo.com/123','https://bsky.app/profile/example.test/post/AbC','https://t.me/s/telegram','https://news.ycombinator.com/item?id=8863'];
   const html = addresses.map(target=>`<a href="${target}">link</a>`).join('')+'<a href="https://fake-youtube.com/watch?v=bad">decoy</a><a href="https://youtube.com.evil.test/@bad">decoy</a><link rel="me" href="https://github.com/other"><script type="application/ld+json">{"sameAs":["https://www.youtube.com/@example"]}</script><meta property="og:url" content="https://instagram.com/example/">';
   const settings=options(html);
   const result=await api.extractSocialLinks(url,settings);
   assert.deepEqual([...new Set(result.data.map(link=>link.platform))].sort(),Object.keys(domains).sort());
-  assert.equal(result.data.length,15);
+  assert.equal(result.data.length,17);
   assert.equal(result.data.find(link=>link.url==='https://youtu.be/AbC').kind,'video');
   assert.equal((await api.extractSocialLinks(url,{...settings,platform:'youtube'})).data.length,2);
   assert.equal((await api.extractSocialLinks(url,{...settings,platform:'twitter'})).data[0].platform,'x');

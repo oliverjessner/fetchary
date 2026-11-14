@@ -12,7 +12,8 @@ Usage: fetchary extract <type> <url> [options]
        fetchary analyse <url> [options]
        fetchary login <url> [--session <name>]
        fetchary sessions [--json]
-       fetchary logout <name>
+       fetchary logout <name> [more-names...]
+       fetchary logout --domain <hostname>
        fetchary history [--json|--list]
 
 Types:
@@ -46,6 +47,7 @@ Options:
   --user-agent <text>            Request user agent
   --wait-after-load <duration>   Browser wait, e.g. 500ms or 5s (default: 5s)
   --max-response-bytes <bytes>   Maximum response/DOM size (default: 47185920)
+  --block-resource-type <type>   Block a browser resource type (repeatable)
   --allow-private-network        Allow trusted local/internal targets
   --insecure                     Accept TLS certificate/hostname errors (default)
   --secure                       Verify TLS certificates and hostnames
@@ -58,12 +60,16 @@ Options:
   --ignore-selector <css>        Remove matching elements (repeatable)
   --product-selector <css>       Scope price extraction to a product container
   --price-selector <css>         Select price elements explicitly (price only)
+  --country <code>               Country context for product prices
+  --language <tag>               Language context for product prices
   --selector <css>               Required for selector extraction
-  --all                          Select all matching elements
+  --all                          All matching selector elements or favicon variants
   --attribute <name>             Read an attribute instead of element content
   --format text|html             Selector output format (default: text)
   --platform <name>              Filter social links to one platform
   --default-country <code>       Country for national phone numbers, e.g. AT
+  --details                      Include email/phone labels, types and locations
+  --deobfuscate                  Recognize name [at] domain [dot] tld (emails)
   --youtube                      Shortcut for --platform youtube
   --follower                     Only the social follower/subscriber count
   --posts                        Only the social post count
@@ -71,6 +77,8 @@ Options:
   --exclude-metadata             Exclude Open Graph/Twitter image metadata
   --source <name>                Filter image sources (repeatable)
   --duplicates                   Keep duplicate image URLs
+  --no-stylesheets               Do not load external image stylesheets
+  --domain <hostname>            Remove sessions for this exact host (logout)
   --quiet                        Suppress successful output
   --verbose                      Diagnostics on stderr
   --help                         Show help
@@ -97,6 +105,10 @@ Examples:
   fetchary extract favicon https://example.com
   fetchary extract favicon https://www.faktor3.de
   fetchary extract favicon https://example.com --binary > favicon.bin
+  fetchary extract favicon https://example.com --all
+  fetchary extract emails https://example.com --details --deobfuscate
+  fetchary logout research work
+  fetchary logout --domain example.com
   fetchary extract selector https://example.com --selector h1
   fetchary extract social-links https://example.com --youtube
   fetchary extract social-links https://www.tiktok.com/@oliverjessner --list
@@ -109,9 +121,9 @@ Compatibility aliases:
   fetchary favicon <url>
   fetchary profile-picture <url>
 `;
-const flags = new Set(['json','list','binary','all','youtube','follower','posts','urls-only','exclude-metadata','duplicates','quiet','verbose','no-color','allow-private-network','insecure','secure','help','version','text','no-history']);
-const values = new Set(['mode','consent','timeout','user-agent','wait-after-load','max-response-bytes','cookies','cookies-from-browser','browser-profile','session','session-dir','selector','product-selector','price-selector','attribute','format','platform','default-country','filepath']);
-const repeated = new Set(['include-selector','ignore-selector','source']);
+const flags = new Set(['json','list','binary','all','details','deobfuscate','no-stylesheets','youtube','follower','posts','urls-only','exclude-metadata','duplicates','quiet','verbose','no-color','allow-private-network','insecure','secure','help','version','text','no-history']);
+const values = new Set(['mode','consent','timeout','user-agent','wait-after-load','max-response-bytes','cookies','cookies-from-browser','browser-profile','session','session-dir','selector','product-selector','price-selector','country','language','attribute','format','platform','default-country','domain','filepath']);
+const repeated = new Set(['include-selector','ignore-selector','source','block-resource-type']);
 function invalid(message) { throw new api.FetcharyValidationError(message); }
 
 function parseArgs(argv) {
@@ -157,21 +169,32 @@ async function execute(argv, io, state) {
       return 0;
     }
     if (['login','sessions','logout'].includes(command)) {
-      const allowed = command === 'login' ? ['session','session-dir','timeout','allow-private-network','insecure','secure','json','quiet','verbose','no-color','filepath','no-history'] : ['session-dir','json','quiet','verbose','no-color','filepath','no-history'];
+      const allowed = command === 'login' ? ['session','session-dir','timeout','allow-private-network','insecure','secure','json','quiet','verbose','no-color','filepath','no-history'] : ['session-dir','json','quiet','verbose','no-color','filepath','no-history', ...(command === 'logout' ? ['domain'] : [])];
       for (const key of Object.keys(options)) if (!allowed.includes(key)) invalid(`--${key} is not supported for ${command}`);
-      if (args.length !== (command === 'sessions' ? 0 : 1)) invalid(command === 'sessions' ? 'sessions does not take arguments' : `exactly one ${command === 'login' ? 'URL' : 'session name'} is required`);
+      if (command === 'sessions' && args.length) invalid('sessions does not take arguments');
+      if (command === 'login' && args.length !== 1) invalid('exactly one URL is required');
+      if (command === 'logout') {
+        if (options.domain !== undefined && args.length) invalid('--domain cannot be combined with session names');
+        if (options.domain === undefined && !args.length) invalid('at least one session name or --domain is required');
+      }
       const settings = { ...(io.options || {}) };
       for (const [flag, name] of Object.entries({ session:'session', 'session-dir':'sessionDir', timeout:'timeout', 'allow-private-network':'allowPrivateNetwork', insecure:'insecure' })) {
         if (options[flag] !== undefined) settings[name] = flag === 'timeout' ? Number(options[flag]) : options[flag];
       }
       if (options.secure) settings.insecure = false;
+      const selection = options.domain !== undefined ? { domain: options.domain } : args.length === 1 ? args[0] : args;
       const result = command === 'login' ? await require('./login').interactiveLogin(args[0], settings, { ...io, stderr })
-        : command === 'logout' ? await api.logout(args[0], settings) : await api.listSessions(settings);
+        : command === 'logout' ? await api.logout(selection, settings) : await api.listSessions(settings);
       if (options.json) stdout.write(`${JSON.stringify(result, null, 2)}\n`);
       else if (command === 'login') stdout.write(`Saved session "${result.session}" for ${result.origin}. Use --session ${result.session} with your extraction command.\n`);
+      else if (command === 'logout' && Array.isArray(result.sessions)) {
+        const missing = result.sessions.length - result.removed - result.failed;
+        stdout.write(`Removed ${result.removed} session(s); ${missing} not found; ${result.failed} failed.\n`);
+        for (const entry of result.sessions) if (entry.error) stderr.write(`Could not remove session "${entry.session}": ${entry.error}\n`);
+      }
       else if (command === 'logout') stdout.write(result.removed ? `Removed session "${result.session}".\n` : `Session "${result.session}" was not found.\n`);
       else stdout.write(result.length ? result.map(item => `${item.session}\t${item.origin}\t${item.activeCookieCount} active cookies`).join('\n') + '\n' : 'No saved sessions.\n');
-      return 0;
+      return command === 'logout' && result.failed > 0 ? 1 : 0;
     }
     let type;
     if (command === 'extract') type = types.includes(args[0]) ? args.shift() : options.text ? 'text' : 'html';
@@ -181,21 +204,23 @@ async function execute(argv, io, state) {
     else invalid(`unknown command "${command}"; use "fetchary extract <type> <url>"`);
     state.type = type;
     if (args.length !== 1) invalid('exactly one URL is required');
-    for (const [key, allowed] of Object.entries({ binary:['favicon'], 'product-selector':['price'], 'price-selector':['price'], selector:['selector'], all:['selector'], attribute:['selector'], format:['selector'], platform:['social-links'], 'default-country':['telephone','analyse'], youtube:['social-links'], follower:['social-insights'], posts:['social-insights'], 'exclude-metadata':['images'], source:['images'], duplicates:['images'], 'include-selector':['text','html','emails','telephone','links','documents','videos'], 'ignore-selector':['text','html','emails','telephone','links','documents','videos'], text:['text','html'] })) {
+    for (const [key, allowed] of Object.entries({ binary:['favicon'], details:['emails','telephone'], deobfuscate:['emails'], 'no-stylesheets':['images'], country:['price'], language:['price'], domain:[], 'product-selector':['price'], 'price-selector':['price'], selector:['selector'], all:['selector','favicon'], attribute:['selector'], format:['selector'], platform:['social-links'], 'default-country':['telephone','analyse'], youtube:['social-links'], follower:['social-insights'], posts:['social-insights'], 'exclude-metadata':['images'], source:['images'], duplicates:['images'], 'include-selector':['text','html','emails','telephone','links','documents','videos'], 'ignore-selector':['text','html','emails','telephone','links','documents','videos'], text:['text','html'] })) {
       if (Object.hasOwn(options, key) && !allowed.includes(type)) invalid(`--${key} is not supported for ${type}`);
     }
     if (options.text && type !== 'text') invalid('--text conflicts with the selected extraction type');
     if (options.youtube && options.platform && options.platform !== 'youtube') invalid('--youtube conflicts with --platform');
     if (options.binary && options.json) invalid('--binary conflicts with --json');
+    if (options.binary && options.all) invalid('--binary conflicts with --all');
     if (options.binary && (options.list || options['urls-only'])) invalid('--binary conflicts with --list/--urls-only');
-    const list = !options.json && (options.list || options['urls-only']);
+    const list = !options.json && (options.list || options['urls-only'] || type === 'favicon' && options.all);
     const settings = { ...(io.options || {}), type };
-    for (const [key, name] of Object.entries({ binary:'binary', mode:'mode', consent:'consent', timeout:'timeout', 'user-agent':'userAgent', 'wait-after-load':'waitAfterLoad', 'max-response-bytes':'maxResponseBytes', cookies:'cookieFile', 'cookies-from-browser':'cookiesFromBrowser', 'browser-profile':'browserProfile', session:'session', 'session-dir':'sessionDir', selector:'selector', 'product-selector':'productSelector', 'price-selector':'priceSelector', all:'all', attribute:'attribute', format:'format', platform:'platform', 'default-country':'defaultCountry', 'allow-private-network':'allowPrivateNetwork', insecure:'insecure', 'include-selector':'includeSelectors', 'ignore-selector':'ignoreSelectors', source:'sources' })) {
+    for (const [key, name] of Object.entries({ binary:'binary', details:'details', deobfuscate:'deobfuscate', country:'country', language:'language', mode:'mode', consent:'consent', timeout:'timeout', 'user-agent':'userAgent', 'wait-after-load':'waitAfterLoad', 'max-response-bytes':'maxResponseBytes', 'block-resource-type':'blockedResourceTypes', cookies:'cookieFile', 'cookies-from-browser':'cookiesFromBrowser', 'browser-profile':'browserProfile', session:'session', 'session-dir':'sessionDir', selector:'selector', 'product-selector':'productSelector', 'price-selector':'priceSelector', all:'all', attribute:'attribute', format:'format', platform:'platform', 'default-country':'defaultCountry', 'allow-private-network':'allowPrivateNetwork', insecure:'insecure', 'include-selector':'includeSelectors', 'ignore-selector':'ignoreSelectors', source:'sources' })) {
       if (options[key] !== undefined) settings[name] = ['timeout','maxResponseBytes'].includes(name) ? Number(options[key]) : options[key];
     }
     if (options.secure) settings.insecure = false;
     if (options.youtube) settings.platform = 'youtube';
     if (options['exclude-metadata']) settings.includeMetadata = false;
+    if (options['no-stylesheets']) settings.includeStylesheets = false;
     if (options.duplicates) settings.unique = false;
     const captureOptions = list ? listCaptureOptions(settings) : settings;
     if (options.verbose && !options.quiet) stderr.write(`${type === 'analyse' ? 'Analysing website' : `Extracting ${type}`} (${settings.mode || 'auto'})\n`);

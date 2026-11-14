@@ -44,4 +44,13 @@ function objectProperty(js, start, name) {
   return null;
 }
 function detector(provider, category, detect) { return { provider, category, detect }; }
-module.exports = { ids, identifier, host, emitResource, emitCall, emitAssignment, objectProperty, detector };
+function configurationUrl(value, base) {
+  if (typeof value !== 'string' || value.length > 2048) return null;
+  try {
+    const url = new URL(value, base);
+    if (!['http:','https:'].includes(url.protocol) || url.username || url.password) return null;
+    url.search = ''; url.hash = '';
+    return url.href;
+  } catch { return null; }
+}
+module.exports = { ids, identifier, host, emitResource, emitCall, emitAssignment, objectProperty, detector, configurationUrl };

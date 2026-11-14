@@ -1,6 +1,7 @@
 'use strict';
 
 const { term, types, key, field, scalar, pathKey, pageIdentity, productInfo, conditions, priceRole, locator } = require('./common');
+const { productVariant, shippingDetails } = require('./details');
 
 function jsonRecords(context, issue) {
   const records = []; const byObject = new Map(); const byId = new Map();
@@ -95,7 +96,10 @@ function collectSchema(context, issue) {
     const mainEntities = new Set(dataset.records.filter(page => types(page.object).some(type => /Page$/.test(type))
       && (!(field(page.object,'url') || page.object['@id']) || pageIdentity(field(page.object,'url') || page.object['@id'],context.url) === pageIdentity(context.url)))
       .flatMap(page => [field(page.object,'mainEntity')].flat().map(value => dataset.resolve(value))));
-    for (const record of productRecords) products.push({ ...productInfo(record.object,context.url), record, mainEntity:mainEntities.has(record) });
+    for (const record of productRecords) {
+      const variant = productVariant(record.object);
+      products.push({ ...productInfo(record.object,context.url), ...(variant ? { variant } : {}), record, mainEntity:mainEntities.has(record) });
+    }
     let work = 0;
     const used = new Set();
     function collect(record, product, inherited = {}, active = new Set(), depth = 0) {
@@ -111,6 +115,7 @@ function collectSchema(context, issue) {
       if (sku && product && sku !== product.sku) product = { ...product, sku };
       const currency = scalar(field(object,'priceCurrency')) ?? inherited.currency;
       const terms = { ...inherited.conditions, ...conditions(object) };
+      const shipping = field(object,'shippingDetails') === undefined ? inherited.shipping || [] : shippingDetails(field(object,'shippingDetails'),currency,dataset.resolve);
       const role = priceRole(object,inherited.role || 'current');
       for (const name of ['price','lowPrice','highPrice']) {
         const values = [field(object,name)].flat();
@@ -124,11 +129,11 @@ function collectSchema(context, issue) {
             if (record.source === 'json-ld') evidence.locator = pathKey(evidence.locator,valueKey);
             value = value[valueKey];
           }
-          prices.push({ raw:scalar(value), currency, machine:true, role:name === 'price' ? role : name === 'lowPrice' ? 'range-min' : 'range-max', conditions:terms, product, evidence, context });
+          prices.push({ raw:scalar(value), currency, machine:true, role:name === 'price' ? role : name === 'lowPrice' ? 'range-min' : 'range-max', conditions:terms, shipping, product, evidence, context });
         });
       }
       for (const name of ['offers','priceSpecification']) for (const value of [field(object,name)].flat()) {
-        collect(dataset.resolve(value),product,{ currency, conditions:terms, role },active,depth+1);
+        collect(dataset.resolve(value),product,{ currency, conditions:terms, shipping, role },active,depth+1);
       }
       active.delete(record);
     }

@@ -1,7 +1,7 @@
 'use strict';
 const { httpUrl, documentBase } = require('./images');
 const { FetcharyValidationError } = require('../errors');
-const sources = ['img','srcset','lazy','metadata','link','background'];
+const sources = ['img','srcset','lazy','metadata','link','background','stylesheet'];
 
 function srcsetUrls(value) {
   // Data URLs can contain commas; consume each whole candidate before filtering.

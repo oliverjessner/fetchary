@@ -1,3 +1,13 @@
+# Unreleased
+
+- Add public-page Telegram channel/post metrics and channel avatars, Hacker News post metrics and profile karma, and GitHub repository stars/forks. Extend social links with Telegram, Hacker News, repository/release types, Twitch clips and Vimeo player URLs; attribute Telegram videos to their public posts. No remote API adapters are used.
+- Discover background images in bounded stylesheet/import traversals, recognize Safari mask icons, and return all accessible favicon variants with library `all: true` or CLI `--all`. Include sitemap modification dates, frequency and priority.
+- Extend metadata with authors, publisher, raw social cards, selected-field evidence, alternatives and scientific citation fields. Add a bounded local JSON-LD entity table and optional detailed, labelled contacts and email deobfuscation.
+- Add typed shipping details, explicit variant attributes, requested country/language context and browser-computed price visibility. Preserve raw structured price evidence and existing conflict handling.
+- Detect Umami, PostHog, GoatCounter, Cloudflare Web Analytics, Simple Analytics, Adobe Experience Platform Tags, Reddit Pixel and X Pixel from passive page evidence.
+- Add analysis timing/traffic/fallback diagnostics, domain-specific client defaults, optional browser resource blocking, read-only client cache statistics, and explicit multi-session or exact-domain logout.
+- Update CLI/library references and TypeScript declarations; add regression fixtures and tests for the expanded extraction and client contracts.
+
 # 2.2.0
 
 - Add `client.configure(options)` to isolated library clients for updating capture defaults, including `maxResponseBytes`, with validation and per-call overrides. Document response limits and the independent limits of custom fetch transports.

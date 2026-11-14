@@ -8,6 +8,8 @@ const api = require('../src');
 const { main } = require('../cli');
 const url = 'https://example.test/article';
 const emptyMetadata = { title: null, description: null, canonical: null, language: null, publishedAt: null, modifiedAt: null };
+const coreMetadata = data => Object.fromEntries(Object.keys(emptyMetadata).map(key => [key, data[key]]));
+const rawStructuredData = ({ jsonLd, microdata, errors }) => ({ jsonLd, microdata, errors });
 const ld = value => `<script type="application/ld+json">${JSON.stringify(value)}</script>`;
 function options(html, extra = {}) { return { mode: 'http', allowPrivateNetwork: true, fetch: async () => new Response(html, { headers: { 'content-type': 'text/html' } }), ...extra }; }
 async function cli(type, flags, settings) {
@@ -20,15 +22,15 @@ test('metadata extracts all six fields with HTML/meta precedence and declared da
   const html = '<html lang="de-AT"><head><base href="https://example.test/news/"><title> Title &amp;\n more </title><meta name="Description" content=""><meta name="description" content="A &amp; B"><meta property="og:title" content="OG title"><meta property="og:description" content="OG description"><meta property="og:locale" content="en_US"><link rel="canonical" href="javascript:invalid"><link rel="alternate CANONICAL" href="../article?x=1&amp;y=2"><meta property="article:published_time" content="2026-10-16T12:30:00+02:00"><meta property="article:modified_time" content="2026-10-17"></head><body></body></html>';
   const result = await api.extractMetadata(url, options(html));
   assert.equal(result.data, result.metadata);
-  assert.deepEqual(result.data, { title: 'Title & more', description: 'A & B', canonical: 'https://example.test/article?x=1&y=2', language: 'de-AT', publishedAt: '2026-10-16T12:30:00+02:00', modifiedAt: '2026-10-17' });
+  assert.deepEqual(coreMetadata(result.data), { title: 'Title & more', description: 'A & B', canonical: 'https://example.test/article?x=1&y=2', language: 'de-AT', publishedAt: '2026-10-16T12:30:00+02:00', modifiedAt: '2026-10-17' });
 });
 
 test('metadata uses social, language and explicit time fallbacks while absent fields stay null', async () => {
   const html = '<meta property="og:title" content="Social title"><meta name="twitter:title" content="Later"><meta name="twitter:description" content="Social description"><meta property="og:locale" content="en_US"><meta http-equiv="last-modified" content="Fri, 16 Oct 2026 10:00:00 GMT"><time pubdate datetime="2026-10-15">Yesterday</time>';
-  assert.deepEqual((await api.extractMetadata(url, options(html))).data, { title: 'Social title', description: 'Social description', canonical: null, language: 'en-US', publishedAt: '2026-10-15', modifiedAt: 'Fri, 16 Oct 2026 10:00:00 GMT' });
+  assert.deepEqual(coreMetadata((await api.extractMetadata(url, options(html))).data), { title: 'Social title', description: 'Social description', canonical: null, language: 'en-US', publishedAt: '2026-10-15', modifiedAt: 'Fri, 16 Oct 2026 10:00:00 GMT' });
   assert.equal((await api.extractMetadata(url, options('<html xml:lang="de"><head><meta http-equiv="Content-Language" content="fr, en"></head></html>'))).data.language, 'de');
   assert.equal((await api.extractMetadata(url, options('<meta http-equiv="Content-Language" content="fr, en">'))).data.language, 'fr');
-  assert.deepEqual((await api.extractMetadata(url, options('<p>No page metadata</p><time datetime="2099-01-01">Event</time><svg><title>Icon title</title></svg><template><title>Hidden title</title><time pubdate datetime="2099-01-01"></time></template>'))).data, emptyMetadata);
+  assert.deepEqual(coreMetadata((await api.extractMetadata(url, options('<p>No page metadata</p><time datetime="2099-01-01">Event</time><svg><title>Icon title</title></svg><template><title>Hidden title</title><time pubdate datetime="2099-01-01"></time></template>'))).data), emptyMetadata);
 });
 
 test('metadata selects matching page Schema.org graph nodes and excludes unrelated entities', async () => {
@@ -38,14 +40,14 @@ test('metadata selects matching page Schema.org graph nodes and excludes unrelat
     { '@type': 'Article', headline: 'Anonymous fallback', datePublished: '1800-01-01' },
     { '@type': 'NewsArticle', '@id': `${url}#article`, headline: 'Article title', description: 'Summary', inLanguage: ['de_AT', 'en'], datePublished: { '@value': '2026-10-16' }, dateModified: '2026-10-17', author: { '@type': 'Person', name: 'Author', datePublished: '1800-01-01' } },
   ] };
-  assert.deepEqual((await api.extractMetadata(url, options(ld(graph)))).data, { title: 'Article title', description: 'Summary', canonical: null, language: 'de-AT', publishedAt: '2026-10-16', modifiedAt: '2026-10-17' });
+  assert.deepEqual(coreMetadata((await api.extractMetadata(url, options(ld(graph)))).data), { title: 'Article title', description: 'Summary', canonical: null, language: 'de-AT', publishedAt: '2026-10-16', modifiedAt: '2026-10-17' });
   const fullTerms = { '@type': 'https://schema.org/BlogPosting', 'https://schema.org/headline': 'Full terms', 'https://schema.org/datePublished': '2026-10' };
   assert.equal((await api.extractMetadata(url, options(ld(fullTerms)))).data.publishedAt, '2026-10');
 });
 
 test('metadata reads Schema.org Microdata without mixing nested author or unrelated article fields', async () => {
   const html = '<article itemscope itemtype="https://schema.org/Article" itemid="/other"><span itemprop="headline">Wrong</span></article><article itemscope itemtype="https://schema.org/Article" itemid="#article"><span itemprop="headline">Right &amp; title</span><meta itemprop="description" content="Microdata summary"><meta itemprop="inLanguage" content="en"><time itemprop="datePublished" datetime="2026-10-16"></time><meta itemprop="dateModified" content="2026-10-17"><div itemscope itemprop="author" itemtype="https://schema.org/Person"><span itemprop="name">Wrong author title</span></div></article>';
-  assert.deepEqual((await api.extractMetadata(url, options(html))).data, { title: 'Right & title', description: 'Microdata summary', canonical: null, language: 'en', publishedAt: '2026-10-16', modifiedAt: '2026-10-17' });
+  assert.deepEqual(coreMetadata((await api.extractMetadata(url, options(html))).data), { title: 'Right & title', description: 'Microdata summary', canonical: null, language: 'en', publishedAt: '2026-10-16', modifiedAt: '2026-10-17' });
 });
 
 test('JSON-LD preserves graphs/contexts/arrays and reports bad blocks without evaluating scripts or requesting contexts', async () => {
@@ -61,11 +63,11 @@ test('JSON-LD preserves graphs/contexts/arrays and reports bad blocks without ev
 test('standalone JSON-LD responses are parsed while metadata/non-HTML responses remain empty', async () => {
   const object = { '@context': 'https://schema.org', '@type': 'Article', headline: 'Data' };
   const settings = options('', { fetch: async () => new Response(JSON.stringify(object), { headers: { 'content-type': 'application/ld+json; charset=utf-8' } }) });
-  assert.deepEqual((await api.extractStructuredData(url, settings)).data, { jsonLd: [object], microdata: [], errors: [] });
-  assert.deepEqual((await api.extractMetadata(url, settings)).data, emptyMetadata);
+  assert.deepEqual(rawStructuredData((await api.extractStructuredData(url, settings)).data), { jsonLd: [object], microdata: [], errors: [] });
+  assert.deepEqual(coreMetadata((await api.extractMetadata(url, settings)).data), emptyMetadata);
   const plain = options('', { fetch: async () => new Response('<title>False title</title>', { headers: { 'content-type': 'text/plain' } }) });
-  assert.deepEqual((await api.extractMetadata(url, plain)).data, emptyMetadata);
-  assert.deepEqual((await api.extractStructuredData(url, plain)).data, { jsonLd: [], microdata: [], errors: [] });
+  assert.deepEqual(coreMetadata((await api.extractMetadata(url, plain)).data), emptyMetadata);
+  assert.deepEqual(rawStructuredData((await api.extractStructuredData(url, plain)).data), { jsonLd: [], microdata: [], errors: [] });
 });
 
 test('Microdata supports nested scopes, repeated/multi-name properties, itemref order and typed element values', async () => {

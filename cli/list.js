@@ -38,8 +38,8 @@ function listItems(result, options = {}) {
     case 'text': case 'html': return pageUrls(result, options);
     case 'images': case 'social-links': return result.data.map(item => item.url);
     case 'links': case 'documents': case 'videos': return [...new Set(result.data.map(item => item.url))];
-    case 'emails': case 'telephone': return result.data;
-    case 'metadata': return Object.values(result.data).filter(value => value !== null);
+    case 'emails': case 'telephone': return result.data.map(item => typeof item === 'string' ? item : item.value);
+    case 'metadata': return ['title','description','canonical','language','publishedAt','modifiedAt'].map(name => result.data[name]).filter(value => typeof value === 'string');
     case 'price': return result.data.candidates.map(candidate => [candidate.amount,candidate.currency || '-',candidate.role,
       JSON.stringify(candidate.evidence)].join('\t'));
     case 'tracker-intelligence': return result.data.trackers.flatMap(tracker => tracker.identifiers.length
@@ -47,7 +47,8 @@ function listItems(result, options = {}) {
         ? `matomo:${id.scope ? encodeURIComponent(id.scope) : 'unscoped'}:${id.value}` : `${tracker.provider}:${id.value}`)
       : [tracker.provider]);
     case 'structured-data': return [...result.data.jsonLd, ...result.data.microdata].map(value => JSON.stringify(value));
-    case 'favicon': case 'avatar': return [result.image.url];
+    case 'favicon': return Array.isArray(result.data) ? result.data.map(image => image.url) : [result.image.url];
+    case 'avatar': return [result.image.url];
     case 'selector': return result.data.values.filter(value => value !== null).map(value => value.replace(/[\r\n]+/g, ' ').trim()).filter(Boolean);
     case 'social-insights': return [result.data.url];
   }

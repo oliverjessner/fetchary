@@ -5,7 +5,10 @@ const domains = Object.freeze({
   facebook: ['facebook.com','fb.com'], x: ['x.com','twitter.com'], threads: ['threads.com','threads.net'],
   linkedin: ['linkedin.com'], twitch: ['twitch.tv'], reddit: ['reddit.com','redd.it'],
   github: ['github.com'], vimeo: ['vimeo.com'], bluesky: ['bsky.app'],
+  telegram: ['t.me', 'telegram.me'], hackernews: ['news.ycombinator.com'],
 });
+
+const telegramReserved = new Set(['s', 'c', 'joinchat', 'share', 'addstickers', 'addemoji', 'addtheme', 'addlist', 'proxy', 'socks', 'login', 'setlanguage', 'confirmphone', 'iv', 'bg', 'boost', 'giftcode', 'invoice', 'resolve', 'contact', 'm', 'web']);
 
 function platformFor(value) {
   try {
@@ -41,10 +44,18 @@ function classifyUrl(value) {
     if ((match = p.match(/^\/(in|company|school|showcase)\/([^/]+)(?:\/(?:about|life|people|posts|recent-activity))?$/))) { kind = 'profile'; id = `${match[1]}/${match[2]}`; }
     else if (/^\/(posts|feed\/update)\//.test(p)) { kind = 'post'; id = p; }
   } else if (platform === 'twitch') {
-    if ((match = p.match(/^\/videos\/(\d+)$/))) { kind = 'video'; id = match[1]; }
+    if (url.hostname === 'clips.twitch.tv') {
+      const clip = p === '/embed' ? url.searchParams.get('clip') : p.match(/^\/([\w-]+)$/)?.[1];
+      if (/^[A-Za-z][\w-]*$/.test(clip || '')) { kind = 'video'; id = `clip:${clip}`; }
+    } else if ((match = p.match(/^\/[^/]+\/clip\/([A-Za-z][\w-]*)$/))) { kind = 'video'; id = `clip:${match[1]}`; }
+    else if ((match = p.match(/^\/videos\/(\d+)$/))) { kind = 'video'; id = match[1]; }
     else if ((match = p.match(/^\/([\w-]+)(?:\/about)?$/)) && !['directory','downloads','login','signup','settings'].includes(match[1])) { kind = 'profile'; id = match[1]; }
   } else if (platform === 'github') {
-    if ((match = p.match(/^\/([\w-]+)$/)) && !['login','signup','explore','settings','features','marketplace','pricing','orgs','organizations','topics','collections','trending','about'].includes(match[1])) { kind = 'profile'; id = match[1]; }
+    const reserved = ['login','signup','explore','settings','features','marketplace','pricing','orgs','organizations','topics','collections','trending','about','search','sponsors','users','apps','new','notifications','codespaces','sessions'];
+    if ((match = p.match(/^\/([\w-]+)\/([\w.-]+)(\/releases(?:\/(?:latest|tag\/.+))?)?$/)) && !reserved.includes(match[1].toLowerCase()) && !['.', '..'].includes(match[2])) {
+      kind = match[3] ? 'release' : 'repository';
+      id = `${match[1]}/${match[2]}`.toLowerCase() + (match[3] || '');
+    } else if ((match = p.match(/^\/([\w-]+)$/)) && !reserved.includes(match[1].toLowerCase())) { kind = 'profile'; id = match[1]; }
   } else if (platform === 'reddit') {
     if ((match = p.match(/\/comments\/([^/]+)/)) || (url.hostname === 'redd.it' && (match = p.match(/^\/([^/]+)$/)))) { kind = 'post'; id = match[1]; }
     else if ((match = p.match(/^\/(?:user|u)\/([^/]+)$/))) { kind = 'profile'; id = match[1]; }
@@ -52,14 +63,22 @@ function classifyUrl(value) {
     if ((match = p.match(/^\/profile\/[^/]+\/post\/([^/]+)$/))) { kind = 'post'; id = match[1]; }
     else if ((match = p.match(/^\/profile\/([^/]+)$/))) { kind = 'profile'; id = match[1]; }
   } else if (platform === 'vimeo') {
-    if ((match = p.match(/^\/(\d+)$/))) { kind = 'video'; id = match[1]; }
+    if ((match = p.match(/^\/(\d+)$/)) || url.hostname === 'player.vimeo.com' && (match = p.match(/^\/video\/(\d+)$/))) { kind = 'video'; id = match[1]; }
     else if ((match = p.match(/^\/([^/]+)$/))) { kind = 'profile'; id = match[1]; }
+  } else if (platform === 'telegram') {
+    if ((match = p.match(/^\/(?:s\/)?([A-Za-z][A-Za-z0-9_]{0,63})(?:\/([1-9]\d*))?$/)) && !telegramReserved.has(match[1].toLowerCase())) {
+      kind = match[2] ? 'post' : 'channel'; id = match[1].toLowerCase() + (match[2] ? `/${match[2]}` : '');
+    }
+  } else if (platform === 'hackernews') {
+    const queryId = url.searchParams.get('id');
+    if (p === '/item' && /^[1-9]\d*$/.test(queryId || '')) { kind = 'post'; id = queryId; }
+    else if (p === '/user' && /^[A-Za-z0-9_-]{1,64}$/.test(queryId || '')) { kind = 'profile'; id = queryId; }
   } else if (platform === 'facebook') {
     if (url.searchParams.has('v') || /\/(?:videos|reel|watch)(?:\/|$)/.test(p)) { kind = 'video'; id = url.searchParams.get('v') || p; }
     else if (/\/(?:posts|permalink|story)(?:\/|\.)/.test(p) || url.searchParams.has('story_fbid')) { kind = 'post'; id = url.searchParams.get('story_fbid') || p; }
     else if ((match = p.match(/^\/([^/]+)$/)) && !['login','watch','marketplace','groups','gaming','help'].includes(match[1])) { kind = 'profile'; id = url.searchParams.get('id') || match[1]; }
   }
-  return { platform, kind, id: id ? (kind === 'profile' ? id.toLowerCase() : id) : null };
+  return { platform, kind, id: id ? (kind === 'profile' && platform !== 'hackernews' ? id.toLowerCase() : id) : null };
 }
 
 function sameEntity(left, right) {

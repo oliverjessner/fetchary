@@ -22,6 +22,7 @@ function extension(state) {
   if (options.help || options.version || !command) return 'txt';
   if (options.binary) return { 'image/png':'png', 'image/jpeg':'jpg', 'image/gif':'gif', 'image/webp':'webp', 'image/svg+xml':'svg', 'image/x-icon':'ico', 'image/vnd.microsoft.icon':'ico' }[result?.image?.contentType] || 'bin';
   if (options.json) return 'json';
+  if (type === 'favicon' && options.all) return 'txt';
   if (options.list || options['urls-only']) return 'txt';
   if (type === 'analyse' || ['images','videos','social-links','social-insights','emails','telephone','links','documents','metadata','structured-data','tracker-intelligence','price'].includes(type)) return 'json';
   return type === 'html' || type === 'selector' && options.format === 'html' ? 'html' : 'txt';

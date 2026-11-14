@@ -3,12 +3,12 @@ const { clean, pageIdentity } = require('./common');
 
 function productKey(product) {
   if (!product) return null;
-  return JSON.stringify([product.id,product.url || (product.id ? pageIdentity(product.id) : null), product.sku, product.name?.toLowerCase()]);
+  return JSON.stringify([product.id,product.url || (product.id ? pageIdentity(product.id) : null), product.sku, product.name?.toLowerCase(),product.variant || null]);
 }
 function publicProduct(product) {
   if (!product) return null;
   const { id = null, name = null, url = null, sku = null } = product;
-  return { id, name, url, sku };
+  return { id, name, url, sku, ...(product.variant ? { variant:product.variant } : {}) };
 }
 function identify(context, products, options) {
   const scope = options.productSelector ? context.dom.querySelector(options.productSelector) : null;
@@ -27,7 +27,7 @@ function identify(context, products, options) {
   for (const product of eligible) if (!product.url) product.url = pageIdentity(product.id,context.url) || page;
   const identityGroups = new Map();
   for (const product of eligible) {
-    const key = JSON.stringify([product.url,product.name?.toLowerCase()]);
+    const key = JSON.stringify([product.url,product.name?.toLowerCase(),product.variant || null]);
     if (!identityGroups.has(key)) identityGroups.set(key,[]);
     identityGroups.get(key).push(product);
   }

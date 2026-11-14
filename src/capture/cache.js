@@ -15,6 +15,8 @@ function validateCacheTtl(value = DEFAULT_CACHE_TTL_MS) {
 
 function cloneCapture(page) {
   return { ...page, rawBody: Buffer.from(page.rawBody), dismissedOverlays: [...page.dismissedOverlays],
+    ...(page.diagnostics ? { diagnostics: structuredClone(page.diagnostics) } : {}),
+    ...(page.priceVisibility ? { priceVisibility: structuredClone(page.priceVisibility) } : {}),
     ...(page.consent ? { consent: { ...page.consent } } : {}) };
 }
 
@@ -27,6 +29,7 @@ function createCaptureCache({ maxEntries = DEFAULT_MAX_ENTRIES, maxCacheBytes = 
   const entries = new Map();
   const pending = new Map();
   let bytes = 0;
+  const counters = { hits: 0, misses: 0, deduplicated: 0, loads: 0, failures: 0, evictions: 0, expired: 0, bypasses: 0 };
 
   function remove(key) {
     bytes -= entries.get(key).bytes;
@@ -35,10 +38,11 @@ function createCaptureCache({ maxEntries = DEFAULT_MAX_ENTRIES, maxCacheBytes = 
 
   function prune(time, ttlMs) {
     // No entry owns a TTL: every caller applies its effective TTL to age.
-    for (const [key, entry] of entries) if (time - entry.completedAt >= ttlMs) remove(key);
+    for (const [key, entry] of entries) if (time - entry.completedAt >= ttlMs) { remove(key); counters.expired++; }
   }
 
   return {
+    stats() { return { ...counters, entries: entries.size, bytes, pending: pending.size, maxEntries, maxCacheBytes }; },
     clear() {
       entries.clear();
       bytes = 0;
@@ -49,19 +53,24 @@ function createCaptureCache({ maxEntries = DEFAULT_MAX_ENTRIES, maxCacheBytes = 
     async capture(key, ttlMs, load) {
       validateCacheTtl(ttlMs);
       if (ttlMs === 0) {
-        return { ...await load(), cache: { hit: false, ageMs: 0, ttlMs } };
+        counters.bypasses++; counters.loads++;
+        try { return { ...await load(), cache: { hit: false, ageMs: 0, ttlMs } }; }
+        catch (error) { counters.failures++; throw error; }
       }
       const time = now();
       prune(time, ttlMs);
       const entry = entries.get(key);
       if (entry) {
+        counters.hits++;
         entries.delete(key);
         entries.set(key, entry);
         return { ...cloneCapture(entry.page), cache: { hit: true, ageMs: Math.max(0, time - entry.completedAt), ttlMs } };
       }
 
       let promise = pending.get(key);
+      counters.misses++;
       if (!promise) {
+        counters.loads++;
         promise = Promise.resolve().then(load).then(page => {
           const completedAt = now();
           const snapshot = cloneCapture(page);
@@ -71,17 +80,17 @@ function createCaptureCache({ maxEntries = DEFAULT_MAX_ENTRIES, maxCacheBytes = 
               + JSON.stringify(metadata).length * 2 + key.length * 2;
             prune(completedAt, ttlMs);
             if (maxEntries > 0 && size <= maxCacheBytes) {
-              while (entries.size >= maxEntries || bytes + size > maxCacheBytes) remove(entries.keys().next().value);
+              while (entries.size >= maxEntries || bytes + size > maxCacheBytes) { remove(entries.keys().next().value); counters.evictions++; }
               entries.set(key, { page: snapshot, completedAt, bytes: size });
               bytes += size;
             }
           }
           return snapshot;
-        }).finally(() => {
+        }).catch(error => { counters.failures++; throw error; }).finally(() => {
           if (pending.get(key) === promise) pending.delete(key);
         });
         pending.set(key, promise);
-      }
+      } else counters.deduplicated++;
       // In-flight joiners are misses too: no completed cached capture existed.
       return { ...cloneCapture(await promise), cache: { hit: false, ageMs: 0, ttlMs } };
     },

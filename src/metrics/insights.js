@@ -1,7 +1,13 @@
 'use strict';
 const { parseCount } = require('./followers');
 const { sameEntity, classifyUrl } = require('../utils/social');
-const metricNames = ['likes','comments','views','shares','saves','followers','following','posts','subscribers','score'];
+const metricNames = ['likes','comments','views','shares','saves','followers','following','posts','subscribers','score','stars','forks','karma'];
+
+function isVisible(element) {
+  if (!element || element.closest('script, style, template, noscript, [hidden], [aria-hidden="true"], [inert]')) return false;
+  for (let node = element; node?.getAttribute; node = node.parentElement) if (/(?:^|;)\s*(?:display\s*:\s*none|visibility\s*:\s*(?:hidden|collapse))\s*(?:!important)?\s*(?:;|$)/i.test(node.getAttribute('style') || '')) return false;
+  return true;
+}
 
 function countDetails(value) {
   if (value && typeof value === 'object') value = value.simpleText ?? value.runs?.map(run => run.text).join('');
@@ -49,8 +55,8 @@ function insightBuilder(url, supported = []) {
   const sources = {};
   function set(name, value, type, field, approximate) {
     if (!supported.includes(name) || metrics[name] !== null) return;
-    // Reddit's reported net score can be negative; ordinary counts cannot.
-    const negative = name === 'score' && (typeof value === 'number' ? value < 0 : typeof value === 'string' && /^[-−]/.test(value.trim()));
+    // Net scores and Hacker News karma may be negative; ordinary counts cannot.
+    const negative = ['score', 'karma'].includes(name) && (typeof value === 'number' ? value < 0 : typeof value === 'string' && /^[-−]/.test(value.trim()));
     const unsigned = negative ? (typeof value === 'number' ? -value : value.trim().slice(1)) : value;
     const parsed = countDetails(unsigned);
     if (!parsed) return;
@@ -93,4 +99,4 @@ function legacyFollower(document, url, builder, followerCount, metric = 'followe
     builder.set(metric, count, 'vendor', 'followerCount', approximate ? true : null);
   }
 }
-module.exports = { metricNames, countDetails, jsonRoots, objects, insightBuilder, jsonLdMetrics, legacyFollower };
+module.exports = { metricNames, countDetails, jsonRoots, objects, insightBuilder, jsonLdMetrics, legacyFollower, isVisible };

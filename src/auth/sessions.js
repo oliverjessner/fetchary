@@ -105,7 +105,7 @@ async function listSessions(options = {}) {
     return results;
   } catch (error) { rethrow(error, 'could not list saved sessions', options.signal); }
 }
-async function logout(name, options = {}) {
+async function logoutOne(name, options = {}) {
   const file = sessionFile(name, options);
   try {
     options.signal?.throwIfAborted();
@@ -113,6 +113,32 @@ async function logout(name, options = {}) {
     try { await fs.unlink(file); return { session: name, removed: true }; }
     catch (error) { if (error.code === 'ENOENT') return { session: name, removed: false }; throw error; }
   } catch (error) { rethrow(error, 'could not remove saved session', options.signal); }
+}
+
+async function logout(selection, options = {}) {
+  if (typeof selection === 'string') return logoutOne(selection, options);
+  sessionDirectory(options);
+  let names;
+  if (Array.isArray(selection)) {
+    if (!selection.length) fail('select at least one session to remove');
+    names = [...new Set(Array.from(selection, validateSessionName))];
+  } else if (selection && typeof selection === 'object' && Object.keys(selection).length === 1 && typeof selection.domain === 'string') {
+    const domain = selection.domain;
+    let target;
+    try { target = new URL(`https://${domain}`); } catch {}
+    if (!target || !domain || domain !== domain.trim() || /[\s/:@?#*\\]/.test(domain)) fail('logout domain must be an exact hostname');
+    names = (await listSessions(options)).filter(session => new URL(session.origin).hostname === target.hostname).map(session => session.session);
+  } else fail('logout requires a session name, an array of session names, or { domain: hostname }');
+  const sessions = [];
+  for (const name of names) {
+    if (options.signal?.aborted) throw new FetcharyFetchError('session operation aborted');
+    try { sessions.push(await logoutOne(name, options)); }
+    catch (error) {
+      if (options.signal?.aborted) throw error;
+      sessions.push({ session: name, removed: false, error: error.message });
+    }
+  }
+  return { removed: sessions.filter(session => session.removed).length, failed: sessions.filter(session => session.error).length, sessions };
 }
 
 module.exports = { validateSessionName, sessionDirectory, readSession, saveSession, loadSessionJar, listSessions, logout };

@@ -82,7 +82,11 @@ function sitemapLinks(xml, pageUrl, options = {}) {
       if (ignored.some(parent => parent.contains(element))) continue;
       const rawUrl = element.textContent; const url = httpUrl(rawUrl, pageUrl);
       if (!url) continue;
+      const metadata = name => [...entry.children].find(child => localName(child) === name && namespace(child) === ns && !child.children.length)?.textContent.trim() || null;
+      const rawPriority = metadata('priority');
+      const priority = rawPriority !== null && /^(?:0(?:\.\d+)?|1(?:\.0+)?)$/.test(rawPriority) ? Number(rawPriority) : null;
       results.push({ url, rawUrl, text: '', rel: [], internal: new URL(url).origin === origin, source: 'loc',
+        lastmod: metadata('lastmod'), changefreq: metadata('changefreq'), priority,
         location: { pageUrl, selector: selector(element), attribute: 'textContent' } });
     }
   }

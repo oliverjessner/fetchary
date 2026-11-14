@@ -238,7 +238,7 @@ test('real Chromium preserves raw/rendered conflicts, exact timestamps and quali
   const html=ld(product())+dom('99,90 €')+'<script>document.querySelector(".current-price").textContent="89,90 €";</script>';
   const local=await site(t,html);const result=await api.extractPrice(local.url,{mode:'browser',allowPrivateNetwork:true,waitAfterLoad:0,timeout:15000,cacheTtlMs:0});
   assert.equal(result.data.status,'conflict');assert.equal(result.data.selected,null);assert.equal(result.captureMode,'browser');
-  const changed=result.data.candidates.find(candidate=>candidate.amount==='89.90');assert.equal(changed.evidence[0].document,'rendered');assert.equal(changed.evidence[0].visibility,'rendered-not-hidden');
+  const changed=result.data.candidates.find(candidate=>candidate.amount==='89.90');assert.equal(changed.evidence[0].document,'rendered');assert.equal(changed.evidence[0].visibility,'computed-visible');
   const unchanged=result.data.candidates.find(candidate=>candidate.amount==='99.90');assert.ok(unchanged.evidence.some(entry=>entry.document==='raw'));assert.ok(unchanged.evidence.some(entry=>entry.document==='rendered'));
   assert.ok(local.requests.every(target=>['/product','/favicon.ico'].includes(target)));
 });

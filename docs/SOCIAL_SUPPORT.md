@@ -8,6 +8,11 @@ with HTTP and auto mode on the same date. Reddit post attributes were inspected
 in a live browser capture on that date; later requests encountered a Reddit
 access block. Other coverage below is based on fixtures.
 
+The new Telegram and Hacker News adapters and GitHub repository counters use
+public webpage HTML only. Their reduced fixtures have authored values; test
+execution for these additions is pending. They do not use remote JSON APIs,
+oEmbed, account tokens, or private messages.
+
 | Platform    | URL Recognition | Social Link Detection | Avatar Extraction | Follower Extraction     | Likes       | Comments    | Views       | Shares      | Profile Support | Post Support | Status  | Notes                                                                      |
 | ----------- | --------------- | --------------------- | ----------------- | ----------------------- | ----------- | ----------- | ----------- | ----------- | --------------- | ------------ | ------- | -------------------------------------------------------------------------- |
 | YouTube     | SUPPORTED       | SUPPORTED             | SUPPORTED         | SUPPORTED (subscribers) | SUPPORTED   | SUPPORTED   | SUPPORTED   | UNSUPPORTED | PARTIAL         | PARTIAL      | PARTIAL | Channel subscribers and video totals as posts; scoped video metrics, JSON-LD |
@@ -19,20 +24,23 @@ access block. Other coverage below is based on fixtures.
 | LinkedIn    | SUPPORTED       | SUPPORTED             | SUPPORTED         | SUPPORTED               | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED | PARTIAL         | UNSUPPORTED  | PARTIAL | Public/signed-in profile headers or matching JSON-LD followers             |
 | Twitch      | SUPPORTED       | SUPPORTED             | SUPPORTED         | SUPPORTED               | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED | PARTIAL         | UNSUPPORTED  | PARTIAL | Channel followers; subscriptions/viewers are not followers                 |
 | Reddit      | SUPPORTED       | SUPPORTED             | UNSUPPORTED       | UNSUPPORTED             | UNSUPPORTED | SUPPORTED   | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED     | PARTIAL      | PARTIAL | Matching post score and comment total; score is separate from likes        |
-| GitHub      | SUPPORTED       | SUPPORTED             | SUPPORTED         | SUPPORTED               | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED | PARTIAL         | UNSUPPORTED  | PARTIAL | User follower links; repositories are not profiles                         |
+| GitHub      | SUPPORTED       | SUPPORTED             | SUPPORTED         | SUPPORTED               | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED | PARTIAL         | UNSUPPORTED  | PARTIAL | Profile followers; repository stars/forks; repository and release link kinds |
 | Vimeo       | SUPPORTED       | SUPPORTED             | UNSUPPORTED       | UNSUPPORTED             | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED     | UNSUPPORTED  | PARTIAL | URL recognition and links only                                             |
 | Bluesky     | SUPPORTED       | SUPPORTED             | UNSUPPORTED       | UNSUPPORTED             | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED     | UNSUPPORTED  | PARTIAL | bsky.app profile/post URLs only; no firehose/API access                    |
+| Telegram    | SUPPORTED       | SUPPORTED             | SUPPORTED         | SUPPORTED (subscribers) | UNSUPPORTED | UNSUPPORTED | SUPPORTED   | UNSUPPORTED | PARTIAL         | PARTIAL      | PARTIAL | Public channel avatars/subscribers and matching public post views; tests pending |
+| Hacker News | SUPPORTED       | SUPPORTED             | UNSUPPORTED       | UNSUPPORTED             | UNSUPPORTED | SUPPORTED   | UNSUPPORTED | UNSUPPORTED | PARTIAL         | PARTIAL      | PARTIAL | Submission score/comments and case-sensitive profile karma; tests pending |
 
 Fixture verification date: **2026-10-21**. This date refers to offline tests,
 including real Chromium serving local/injected HTML, not public-site requests.
 
 ## Shared behavior
 
-Insight metrics are always the same ten fields: `likes`, `comments`, `views`,
-`shares`, `saves`, `followers`, `following`, `posts`, `subscribers`, `score`. Missing values
+Insight metrics are always the same thirteen fields: `likes`, `comments`, `views`,
+`shares`, `saves`, `followers`, `following`, `posts`, `subscribers`, `score`,
+`stars`, `forks`, `karma`. Missing values
 stay `null`; unsupported combinations have an explicit reason. `available` means
 all metrics implemented for this platform and URL kind were found, rather than
-all ten fields. Compact counts have approximation metadata; some legacy
+all thirteen fields. Compact counts have approximation metadata; some legacy
 follower parsers retain unknown precision (`approximate: null`).
 
 Authentication walls, challenge pages, entity mismatches, parser errors and
@@ -182,7 +190,9 @@ Tests: `test/semantic.test.js`,
 
 ## Twitch
 
-- URLs: channel profiles, `/username/about`, and `/videos/id` recognition.
+- URLs: channel profiles, `/username/about`, `/videos/id`,
+  `clips.twitch.tv/slug`, `clips.twitch.tv/embed?clip=slug`, and
+  `/username/clip/slug`. Clip identities retain case and are distinct from VODs.
 - Implemented insight: channel `followers` from account-specific JSON or channel
   header elements. Viewers and paid subscriptions are not substituted.
 - Avatar: matching account JSON or channel avatar elements.
@@ -193,15 +203,63 @@ Tests: `test/semantic.test.js`,
 
 ## GitHub
 
-- URLs: `/username` profiles. Repository and other non-profile paths do not yield
-  follower insights. Links to github.com are still recognized as social references.
+- URLs: `/username` profiles, `/owner/repository` repositories and repository
+  release pages (`/releases`, `/releases/latest`, `/releases/tag/tag-name`).
+  Repository and release paths have distinct link kinds; repository names are
+  case-insensitive, while release tag case is preserved.
 - Implemented insight: `followers` from a link targeting the requested user's
   `?tab=followers`, with exact tooltip preference.
 - Avatar: profile avatar elements or matching account JSON. HTTP is usually
   sufficient when these fields are present; no browser-only requirement is imposed.
-- Limits: following counts, repository metrics and post metrics are unsupported.
+- Repository insights: `stars` and `forks` from links targeting that repository's
+  `/stargazers`, `/forks`, or legacy `/network/members` page. Exact tooltips take
+  precedence over compact counters. Watchers are not reported as stars or forks.
+  These two metrics stay separate from profile followers and likes.
+- Limits: following counts, release metrics and post metrics are unsupported.
+  A release link does not trigger an additional request for repository counters.
 - Tests: `followers.test.js`, avatar cases in `extract.test.js`, and shared-cache
   avatar/follower cases in `capture-cache.test.js`.
+
+## Telegram
+
+- URLs: public channel usernames (`t.me/name`, `t.me/s/name`) and public posts
+  (`t.me/name/id`, `t.me/s/name/id`), with `telegram.me` aliases. Channel names
+  are case-insensitive. Private `/c/` paths, invitation links and service routes
+  are not classified as channels or posts.
+- Channel insights: `subscribers` from the channel header's labelled counter or
+  the plain public page's subscriber line. Views, videos and links totals are
+  not substituted for subscribers. The compatibility `followers` result field
+  can contain the subscriber count; `data.metrics` preserves its meaning.
+- Post insights: `views` only from the matching `.tgme_widget_message[data-post]`
+  and its original permalink. Other posts, forwarded content and hidden counters
+  do not supply metrics. Rounded public counts retain approximation metadata.
+  Ordinary public post links are read through their equivalent `/s/name/id`
+  website preview, preserving the caller's requested URL in the result.
+- Avatar: channel header images or background images, with a verified square
+  metadata fallback. Channel identity must agree with the page's declared URL
+  or channel header before images become candidates.
+- Public widget media can be associated with its original channel post using
+  the widget's `data-post` and matching permalink. No private conversations,
+  client sessions, Telegram API calls or protected media are accessed.
+- Fixtures: `test/fixtures/social/telegram-public.html` and
+  `test/public-social.test.js`; execution is pending for this addition.
+
+## Hacker News
+
+- URLs: `news.ycombinator.com/item?id=number` discussions and
+  `news.ycombinator.com/user?id=username` profiles. Usernames retain case.
+- Submission insights: `score` and `comments` from the requested submission's
+  main row and adjacent metadata row. A displayed `discuss` link means zero
+  comments. Other submissions and comment rows do not supply the requested
+  submission's score. Missing or hidden metrics remain `null`.
+- Profile insights: `karma` from the matching user's profile table, excluding
+  nested tables in the biography. Karma can be negative and remains separate
+  from follower counts and a submission's score.
+- Limits: no avatars, follower counts, remote JSON endpoints, comment crawling
+  or historical metrics. Only values in the captured public HTML are read.
+- Fixtures: `test/fixtures/social/hackernews-item.html`,
+  `test/fixtures/social/hackernews-profile.html` and
+  `test/public-social.test.js`; execution is pending for this addition.
 
 ## Reddit
 
@@ -232,7 +290,8 @@ capability the adapter lacks.
 
 - Facebook: recognized profile/page, post/story/permalink, watch/video/reel URL
   patterns on facebook.com/fb.com. No scraping of authenticated Facebook data.
-- Vimeo: numeric video IDs and simple profile paths.
+- Vimeo: numeric video IDs, `player.vimeo.com/video/id` embed URLs and simple
+  profile paths. Player and ordinary URLs resolve to the same video identity.
 - Bluesky: bsky.app `/profile/handle` and `/profile/handle/post/id`. Custom external
   domains are not treated as Bluesky URLs, and there is no firehose or API access.
 - Tests: all-platform link discovery and filtering in `semantic.test.js`, plus

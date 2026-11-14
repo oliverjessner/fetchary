@@ -16,6 +16,8 @@ const { discoverVendors } = require('../vendors');
 const { FetcharyValidationError, FetcharyNotFoundError, FetcharyFetchError, FetcharyBrowserError } = require('../errors');
 const { httpUrl, documentBase, readResource, selectImage } = require('./images');
 const { imageLinks } = require('./image-links');
+const { stylesheetImages } = require('./stylesheet-images');
+const { domainRules, optionsForDomain } = require('../utils/domain-options');
 const { socialLinks } = require('./social-links');
 const { insightBuilder } = require('../metrics/insights');
 const contacts = require('./contacts');
@@ -25,7 +27,7 @@ const { videoLinks } = require('./videos');
 const { pageMetadata: extractPageMetadata } = require('./metadata');
 const { structuredData } = require('./structured-data');
 const { trackerIntelligence } = require('./tracker-intelligence');
-const { extractPrices } = require('./price');
+const { extractPrices, normalizePriceContext } = require('./price');
 const { consentMetadata } = require('../capture/consent-wall');
 
 const clientCache = Symbol('captureCache');
@@ -49,6 +51,7 @@ function extractionOptions(options = {}) {
     consent: options.consent === undefined ? 'reject' : options.consent,
     waitAfterLoadMs: parseWaitAfterLoad(options.waitAfterLoad), maxResponseBytes: options.maxResponseBytes ?? 45 * 1024 * 1024,
     cacheTtlMs: validateCacheTtl(options.cacheTtlMs), captureCache: options[clientCache],
+    blockedResourceTypes: options.blockedResourceTypes === undefined ? [] : options.blockedResourceTypes,
   };
   if (!['auto','http','browser'].includes(settings.mode)) throw new FetcharyValidationError('mode must be auto, http or browser');
   if (!['reject','accept','off'].includes(settings.consent)) throw new FetcharyValidationError('consent must be reject, accept or off');
@@ -56,7 +59,9 @@ function extractionOptions(options = {}) {
   if (!Number.isFinite(settings.timeout) || settings.timeout <= 0) throw new FetcharyValidationError('timeout must be greater than zero');
   if (!Number.isSafeInteger(settings.maxResponseBytes) || settings.maxResponseBytes < 1) throw new FetcharyValidationError('maxResponseBytes must be a positive safe integer');
   if (typeof settings.userAgent !== 'string' || !settings.userAgent.trim()) throw new FetcharyValidationError('userAgent must be a non-empty string');
-  for (const name of ['allowPrivateNetwork','insecure','unique','includeMetadata','all','binary']) if (options[name] !== undefined && typeof options[name] !== 'boolean') throw new FetcharyValidationError(`${name} must be a boolean`);
+  for (const name of ['allowPrivateNetwork','insecure','unique','includeMetadata','includeStylesheets','all','binary','details','deobfuscate']) if (options[name] !== undefined && typeof options[name] !== 'boolean') throw new FetcharyValidationError(`${name} must be a boolean`);
+  if (!Array.isArray(settings.blockedResourceTypes) || settings.blockedResourceTypes.some(type => !['image','font','media','stylesheet','script','xhr','fetch','eventsource','websocket','manifest','other'].includes(type))) throw new FetcharyValidationError('blockedResourceTypes must contain supported browser subresource types');
+  settings.blockedResourceTypes = [...new Set(settings.blockedResourceTypes)].sort();
   if (settings.signal !== undefined && !(settings.signal instanceof AbortSignal)) throw new FetcharyValidationError('signal must be an AbortSignal');
   if (settings.cookieFile !== undefined && (typeof settings.cookieFile !== 'string' || !settings.cookieFile.trim() || settings.cookieFile.length > 4096)) throw new FetcharyValidationError('cookieFile must be a non-empty file path');
   if (settings.cookiesFromBrowser !== undefined && settings.cookiesFromBrowser !== 'chrome') throw new FetcharyValidationError('cookiesFromBrowser must be chrome');
@@ -74,6 +79,7 @@ function extractionOptions(options = {}) {
     if (!settings.cookiesFromBrowser) throw new FetcharyValidationError('browserProfile requires cookiesFromBrowser');
   }
   try { if (settings.headers !== undefined) settings.headers = Object.fromEntries(new Headers(settings.headers)); } catch (cause) { throw new FetcharyValidationError('invalid request headers', { cause }); }
+  try { settings.browserLanguage = Intl.getCanonicalLocales(new Headers(settings.headers).get('accept-language')?.split(',')[0].split(';')[0].trim() || [])[0]; } catch {}
   if ((settings.cookieFile || settings.cookiesFromBrowser || settings.session) && new Headers(settings.headers).has('cookie')) throw new FetcharyValidationError('session cookies cannot be combined with a Cookie header');
   return settings;
 }
@@ -113,7 +119,7 @@ function fallbackNeeded(page, result, type, settings) {
     .some(script => /^(?:|module|(?:text|application)\/(?:java|ecma)script)$/.test((script.getAttribute('type') || '').trim().toLowerCase()));
   if (type === 'metadata' || type === 'structured-data') {
     const executable = [...pageDocument(page).querySelectorAll('script')].some(script => /^(?:|module|(?:text|application)\/(?:java|ecma)script)$/.test((script.getAttribute('type') || '').trim().toLowerCase()));
-    return executable && (type === 'metadata' ? Object.values(result.data).every(value => value === null) : !result.data.jsonLd.length && !result.data.microdata.length);
+    return executable && (type === 'metadata' ? !['title','description','canonical','language','publishedAt','modifiedAt'].some(key => result.data[key]) && !result.data.authors?.length && !result.data.publisher && !result.data.scientific?.doi : !result.data.jsonLd.length && !result.data.microdata.length);
   }
   if (type === 'social-insights') return ['unavailable','partial'].includes(result.data.status) && scripts;
   if (type === 'selector') return !result.data.matched && scripts;
@@ -132,6 +138,7 @@ async function withCapture(url, options, type, operation) {
   settings.scopedHeaderNames = Object.keys(settings.headers || {}).filter(name => name !== 'user-agent');
   const session = options[analysisSession];
   const capture = session || new CaptureManager(settings);
+  settings.observeResource = event => capture.recordResource(event);
   let page;
   try {
     const source = { url: requestedUrl, captureMode: settings.mode === 'browser' ? 'browser' : 'http', waitAfterLoadMs: settings.waitAfterLoadMs };
@@ -141,6 +148,7 @@ async function withCapture(url, options, type, operation) {
       if (!(error instanceof FetcharyNotFoundError) || settings.mode !== 'auto' || !shouldRender(page.contentType) || accessStatus(page)) throw error;
     }
     if (settings.mode === 'auto' && (!result || fallbackNeeded(page, result, type, settings))) {
+      capture.noteFallback(page.consent?.detected ? 'consent_wall' : !result ? 'not_found' : type === 'social-insights' ? 'incomplete_social_insights' : `missing_${type}_content`);
       let rendered;
       try { rendered = await capture.capture({ ...source, captureMode: 'browser', httpCapture: page }); }
       catch (error) {
@@ -162,11 +170,12 @@ async function withCapture(url, options, type, operation) {
 }
 
 async function analyse(url, options = {}) {
+  const started = performance.now();
   const requestedUrl = validateUrl(url);
   const settings = extractionOptions(options);
   contacts.validateDefaultCountry(options.defaultCountry);
   if (options.binary) throw new FetcharyValidationError('binary is not supported for analyse');
-  for (const name of ['selector','all','attribute','format','platform','unique','includeMetadata','sources','includeSelectors','ignoreSelectors','productSelector','priceSelector']) {
+  for (const name of ['selector','all','attribute','format','platform','unique','includeMetadata','sources','includeStylesheets','includeSelectors','ignoreSelectors','productSelector','priceSelector','country','language','details','deobfuscate']) {
     if (Object.hasOwn(options, name)) throw new FetcharyValidationError(`${name} is not supported for analyse`);
   }
   if (settings.cookieFile || settings.cookiesFromBrowser || settings.session) settings.cookieJar = await loadSessionCookies(settings, requestedUrl);
@@ -180,7 +189,12 @@ async function analyse(url, options = {}) {
     // Fail once for a failed primary capture; retain section-specific failures.
     await session.capture({ captureMode: settings.mode === 'browser' ? 'browser' : 'http' });
     const entries = Object.entries(methods);
-    const settled = await Promise.allSettled(entries.map(([, method]) => method(requestedUrl, { ...options, binary: false, [analysisSession]: session, [sessionCookies]: settings.cookieJar })));
+    const sections = {};
+    const settled = await Promise.allSettled(entries.map(async ([type, method]) => {
+      const sectionStarted = performance.now();
+      try { return await method(requestedUrl, { ...options, binary: false, [analysisSession]: session, [sessionCookies]: settings.cookieJar }); }
+      finally { sections[type] = performance.now() - sectionStarted; }
+    }));
     if (settings.signal?.aborted) throw new FetcharyFetchError('analysis aborted', { url: requestedUrl, cause: settings.signal.reason });
     const results = {}; const errors = {};
     for (let index = 0; index < entries.length; index++) {
@@ -193,7 +207,8 @@ async function analyse(url, options = {}) {
       }
     }
     const failed = Object.keys(errors).length;
-    return { ...pageMetadata(session.page), type: 'analyse', results, errors, summary: { succeeded: entries.length - failed, failed } };
+    return { ...pageMetadata(session.page), type: 'analyse', results, errors, summary: { succeeded: entries.length - failed, failed },
+      diagnostics: { ...session.getDiagnostics(), durationMs: performance.now() - started, sectionMs: sections } };
   } catch (error) {
     if (settings.signal?.aborted) throw new FetcharyFetchError('analysis aborted', { url: requestedUrl, cause: settings.signal.reason });
     throw error;
@@ -228,13 +243,18 @@ async function extractStructuredData(url, options = {}) {
 }
 
 async function extractPrice(url, options = {}) {
-  extractionOptions(options);
+  const validated = extractionOptions(options);
+  const context = normalizePriceContext(options);
+  const headers = new Headers(validated.headers);
+  if (context.language && !headers.has('accept-language')) headers.set('accept-language', context.language);
+  options = { ...options, headers: Object.fromEntries(headers) };
   for (const name of ['productSelector','priceSelector']) if (options[name] !== undefined) validateSelectors([options[name]],name === 'productSelector' ? 'product' : 'price');
   return withCapture(url, options, 'price', page => {
     const documents = [];
     if (shouldRender(page.contentType)) {
       documents.push({ html:page.rawHtml ?? page.rawBody.toString('utf8'),url:page.rawFinalUrl,document:'raw',capturedAt:page.rawCapturedAt });
-      if (page.renderedHtml != null) documents.push({ html:page.renderedHtml,url:page.browserFinalUrl || page.rawFinalUrl,document:'rendered',capturedAt:page.renderedCapturedAt });
+      if (page.renderedHtml != null) documents.push({ html:page.renderedHtml,url:page.browserFinalUrl || page.rawFinalUrl,document:'rendered',capturedAt:page.renderedCapturedAt,
+        ...(page.priceVisibility ? { computedVisibility: page.priceVisibility } : {}) });
     }
     return { data:extractPrices(documents,options) };
   });
@@ -256,11 +276,14 @@ function extractContacts(url, options, type) {
   const includeSelectors = validateSelectors(options.includeSelectors ?? [], 'include');
   const ignoreSelectors = validateSelectors(options.ignoreSelectors ?? [], 'ignore');
   if (type === 'telephone') contacts.validateDefaultCountry(options.defaultCountry);
+  if (type === 'telephone' && options.deobfuscate !== undefined) throw new FetcharyValidationError('deobfuscate is only supported for emails');
   return withCapture(url, options, type, page => {
     const html = shouldRender(page.contentType);
     const content = html ? selectHtml(pageHtml(page), { includeSelectors, ignoreSelectors }) : pageHtml(page);
     const inputs = contacts.contactInputs(content, type, html);
-    const data = type === 'emails' ? contacts.emails(inputs) : contacts.telephone(inputs, options.defaultCountry);
+    const data = options.details || type === 'emails' && options.deobfuscate
+      ? contacts.extractContactDetails(html ? pageHtml(page) : content, type, { html, defaultCountry: options.defaultCountry, deobfuscate: options.deobfuscate, includeSelectors, ignoreSelectors }).map(record => options.details ? record : record.value)
+      : type === 'emails' ? contacts.emails(inputs) : contacts.telephone(inputs, options.defaultCountry);
     return type === 'emails' ? { data, emails: data } : { data, numbers: data };
   });
 }
@@ -268,6 +291,8 @@ async function extractEmails(url, options = {}) { return extractContacts(url, op
 async function extractTelephone(url, options = {}) { return extractContacts(url, options, 'telephone'); }
 
 async function extractFavicon(url, options = {}) {
+  extractionOptions(options);
+  if (options.all && options.binary) throw new FetcharyValidationError('all cannot be combined with binary favicon output');
   return withCapture(url, options, 'favicon', async (page, settings) => {
     const candidates = [];
     const manifests = new Set();
@@ -280,8 +305,8 @@ async function extractFavicon(url, options = {}) {
         const rel = link.getAttribute('rel').toLowerCase().split(/\s+/);
         const target = httpUrl(link.getAttribute('href'), base);
         if (!target) continue;
-        if (rel.includes('icon') || rel.includes('apple-touch-icon') || rel.includes('apple-touch-icon-precomposed')) {
-          candidates.push({ url: target, sizes: link.getAttribute('sizes'), source: rel.includes('icon') ? 'icon' : 'apple-touch-icon' });
+        if (rel.includes('icon') || rel.includes('apple-touch-icon') || rel.includes('apple-touch-icon-precomposed') || rel.includes('mask-icon')) {
+          candidates.push({ url: target, sizes: link.getAttribute('sizes'), source: rel.includes('icon') ? 'icon' : rel.includes('mask-icon') ? 'mask-icon' : 'apple-touch-icon', priority: rel.includes('mask-icon') ? 1 : 0 });
         }
         if (rel.includes('manifest')) manifests.add(target);
       }
@@ -298,7 +323,11 @@ async function extractFavicon(url, options = {}) {
       } catch {}
     }
     candidates.push({ url: new URL('/favicon.ico', pageMetadata(page).finalUrl).href, source: 'fallback' });
-    const selected = await selectImage(candidates, settings, options.binary === true);
+    const selected = await selectImage(candidates, settings, options.binary === true, options.all === true);
+    if (options.all) {
+      if (!selected.length) throw new FetcharyNotFoundError('no accessible favicon found', { url: page.requestedUrl });
+      return { data: selected, images: selected, image: selected[0] };
+    }
     if (!selected) throw new FetcharyNotFoundError('no accessible favicon found', { url: page.requestedUrl });
     const { body, ...image } = selected;
     return { data: options.binary ? body : image, image };
@@ -375,7 +404,13 @@ async function extractDocuments(url, options = {}) { return extractLinkCollectio
 async function extractVideos(url, options = {}) { return extractLinkCollection(url, options, 'videos'); }
 
 async function extractImages(url, options = {}) {
-  return withCapture(url, options, 'images', page => { const data = imageLinks(pageDocument(page), pageMetadata(page).finalUrl, options); return { data, images: data }; });
+  return withCapture(url, options, 'images', async (page, settings) => {
+    const data = imageLinks(pageDocument(page), pageMetadata(page).finalUrl, options);
+    const extra = await stylesheetImages(pageHtml(page), pageMetadata(page).finalUrl, { ...settings, sources: options.sources, unique: options.unique, includeStylesheets: options.includeStylesheets });
+    const seen = new Set(data.map(image => image.url));
+    for (const image of extra) if (options.unique === false || !seen.has(image.url)) { data.push(image); seen.add(image.url); }
+    return { data, images: data };
+  });
 }
 async function extractSocialLinks(url, options = {}) {
   extractionOptions(options);
@@ -398,7 +433,11 @@ async function extractSocialInsights(url, options = {}) {
       const alias = requested.platform === 'youtube' && requested.kind === 'channel'
         && new URL(insightUrl).pathname.startsWith('/@') && /^\/channel\//.test(new URL(canonical).pathname)
         && classifyUrl(canonical).platform === 'youtube';
-      if (!alias) mismatch = true;
+      const canonicalIdentity = classifyUrl(canonical);
+      const telegramAlias = requested.platform === 'telegram' && requested.kind === 'post' && canonicalIdentity.platform === 'telegram'
+        && canonicalIdentity.kind === 'channel' && requested.id.split('/')[0] === canonicalIdentity.id
+        && [...document.querySelectorAll('.tgme_widget_message[data-post]')].some(widget => require('../vendors/telegram').telegramPostUrl(widget, insightUrl));
+      if (!alias && !telegramAlias) mismatch = true;
     }
     const vendor = discoverVendors().find(vendor => vendor.name === requested.platform);
     if (blocked || mismatch || !vendor?.socialInsights) {
@@ -455,22 +494,26 @@ function clearCache() { sharedCaptureCache.clear(); }
 function createExtractor(options = {}) {
   const settings = extractionOptions(options);
   const cache = createCaptureCache({ maxEntries: options.maxEntries, maxCacheBytes: options.maxCacheBytes });
-  let defaults = { ...options, headers: settings.headers };
+  let defaults = { ...options, headers: settings.headers, blockedResourceTypes: settings.blockedResourceTypes };
+  defaults.domainOptions = domainRules(options.domainOptions, defaults, extractionOptions);
   const client = {
     clearCache: () => cache.clear(),
+    getCacheStats: () => cache.stats(),
     configure(updates) {
       validateOptionsObject(updates);
       for (const name of ['maxEntries', 'maxCacheBytes']) if (Object.hasOwn(updates, name)) throw new FetcharyValidationError(`${name} can only be set when creating an extractor`);
       const next = { ...defaults, ...updates };
       const settings = extractionOptions(next);
-      defaults = { ...next, headers: settings.headers };
+      const rules = domainRules(next.domainOptions, next, extractionOptions);
+      defaults = { ...next, headers: settings.headers, blockedResourceTypes: settings.blockedResourceTypes, domainOptions: rules };
       return client;
     },
   };
-  for (const [name, method] of Object.entries({ analyse, extract, extractText, extractHtml, extractFavicon, extractImages, extractVideos, extractSocialLinks, extractSocialAvatar, extractProfilePicture, extractSocialInsights, extractEmails, extractTelephone, extractLinks, extractDocuments, extractMetadata, extractStructuredData, extractTrackerIntelligence, extractPrice })) client[name] = (url, overrides = {}) => method(url, { ...defaults, ...overrides, [clientCache]: cache });
-  client.extractSelector = (url, selectorOrOptions = {}, overrides = {}) => typeof selectorOrOptions === 'string'
-    ? extractSelector(url, { ...defaults, ...overrides, selector: selectorOrOptions, [clientCache]: cache })
-    : extractSelector(url, { ...defaults, ...selectorOrOptions, [clientCache]: cache });
+  const configured = (url, overrides) => { validateOptionsObject(overrides); return { ...optionsForDomain(url, defaults, overrides), [clientCache]: cache }; };
+  for (const [name, method] of Object.entries({ analyse, extract, extractText, extractHtml, extractFavicon, extractImages, extractVideos, extractSocialLinks, extractSocialAvatar, extractProfilePicture, extractSocialInsights, extractEmails, extractTelephone, extractLinks, extractDocuments, extractMetadata, extractStructuredData, extractTrackerIntelligence, extractPrice })) client[name] = async (url, overrides = {}) => method(url, configured(url, overrides));
+  client.extractSelector = async (url, selectorOrOptions = {}, overrides = {}) => typeof selectorOrOptions === 'string'
+    ? extractSelector(url, { ...configured(url, overrides), selector: selectorOrOptions })
+    : extractSelector(url, configured(url, selectorOrOptions));
   return client;
 }
 module.exports = { analyse, extract, extractText, extractHtml, extractFavicon, extractImages, extractVideos, extractSelector, extractSocialLinks, extractEmails, extractTelephone, extractLinks, extractDocuments, extractMetadata, extractStructuredData, extractTrackerIntelligence, extractPrice,

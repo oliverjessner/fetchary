@@ -1,6 +1,7 @@
 'use strict';
 const { clean, locator, term, pageIdentity } = require('./common');
 const { normalizePrice } = require('./normalize');
+const { domVariant } = require('./details');
 
 const excluded = 'script, style, template, noscript, nav, aside, footer, header, [role="navigation"], [data-recommendations], .recommendations, .related-products, .recommended-products, .pagination, .advertisement, [data-ad]';
 function unrelated(element) {
@@ -14,6 +15,14 @@ function hidden(element) {
   for (let node = element; node?.localName; node = node.parentElement) {
     if (node.hasAttribute('hidden') || node.getAttribute('aria-hidden') === 'true' || /(?:display\s*:\s*none|visibility\s*:\s*(?:hidden|collapse))/i.test(node.getAttribute('style') || '')) return true;
   }
+  return false;
+}
+function computedHidden(element, context) {
+  if (context.document !== 'rendered' || !Array.isArray(context.computedVisibility?.hidden)) return false;
+  const hidden = context.hiddenLocators ||= new Set(context.computedVisibility.hidden);
+  if (hidden.has(locator(element))) return true;
+  const subtrees = context.hiddenSubtrees ||= new Set(context.computedVisibility.hiddenSubtrees || context.computedVisibility.hidden);
+  for (let node = element.parentElement; node?.localName; node = node.parentElement) if (subtrees.has(locator(node))) return true;
   return false;
 }
 function roleFor(element, raw) {
@@ -30,6 +39,7 @@ function roleFor(element, raw) {
 }
 
 function domPrices(context, identity, options) {
+  if (context.skipDom) return [];
   const prices = [];
   const selected = options.priceSelector ? new Set(context.elements.filter(element => element.matches(options.priceSelector))) : null;
   const possible = context.elements.filter(element => {
@@ -43,7 +53,7 @@ function domPrices(context, identity, options) {
   const containers = new Set();
   for (const element of possible) for (let parent = element.parentElement; parent; parent = parent.parentElement) if (possibleSet.has(parent)) containers.add(parent);
   for (const element of possible) {
-    if (element.closest(excluded) || unrelated(element) || hidden(element) || ['meta','link','input','option','select'].includes(element.localName)) continue;
+    if (element.closest(excluded) || unrelated(element) || hidden(element) || computedHidden(element,context) || ['meta','link','input','option','select'].includes(element.localName)) continue;
     if (element.hasAttribute('itemprop') && element.getAttribute('itemprop').split(/\s+/).map(term).includes('price')) {
       // Text is still independent evidence from Microdata's content attribute.
       if (!element.textContent.trim()) continue;
@@ -59,15 +69,16 @@ function domPrices(context, identity, options) {
     }
     const attributes = ['data-price','data-product-price','data-sale-price','data-regular-price'].filter(name => element.hasAttribute(name));
     if (!nested && element.textContent.trim()) attributes.unshift('textContent');
-    const card = element.closest('[data-product-id], [data-sku], [data-variant-id], [data-variant], .variant, .product-card, [itemtype$="/Product"]');
+    const card = element.closest('[data-product-id], [data-sku], [data-variant-id], [data-variant], [data-size], [data-color], [data-material], [data-model], [data-configuration], [data-style], [data-finish], .variant, .product-card, [itemtype$="/Product"]');
     const microProduct = [...identity.eligible].find(product => product.record.element === card);
     let product = microProduct || identity.product;
     let association = identity.uncertain && !microProduct ? 'uncertain' : 'matched';
     if (card && !microProduct) {
       const sku = card.getAttribute('data-sku') || card.getAttribute('data-product-id') || card.getAttribute('data-variant-id') || card.getAttribute('data-variant');
+      const variant = domVariant(card);
       if (sku && identity.primary?.sku === sku || identity.scope && (identity.scope === card || identity.scope.contains(card))) {
-        product = { ...(identity.product || identity.inferred), sku:sku || null };
-      } else { product = { id:null,url:null,name:clean(card.querySelector('h1,h2,h3')?.textContent),sku:sku || null }; association = 'uncertain'; }
+        product = { ...(identity.product || identity.inferred), sku:sku || null, ...(variant ? { variant } : {}) };
+      } else { product = { id:null,url:null,name:clean(card.querySelector('h1,h2,h3')?.textContent),sku:sku || null, ...(variant ? { variant } : {}) }; association = 'uncertain'; }
     }
     if (microProduct && identity.primary && microProduct !== identity.primary) continue;
     for (const attribute of attributes) {
@@ -91,7 +102,7 @@ function domPrices(context, identity, options) {
       if (attribute === 'data-regular-price') role = 'list';
       const candidate = { raw:original, parseRaw:raw, currency, role, conditions:terms, product, association,
         evidence:{ source:'visible-dom', locator:locator(element), attribute,
-          visibility:context.document === 'raw' ? 'static-not-hidden' : 'rendered-not-hidden' }, context };
+          visibility:context.document === 'raw' ? 'static-not-hidden' : context.computedVisibility && !context.computedVisibility.truncated ? 'computed-visible' : 'rendered-not-hidden' }, context };
       const range = raw.match(/^(.+?)\s*(?:[–—]|\s-\s|\sto\s)\s*(.+)$/);
       if (range) {
         const sharedCurrency = currency || normalizePrice(range[1]).currency || normalizePrice(range[2]).currency;

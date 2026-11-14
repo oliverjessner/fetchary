@@ -10,6 +10,9 @@ function createCaptureSession(url, settings) {
   const source = { url, waitAfterLoadMs: settings.waitAfterLoadMs };
   return {
     get page() { return page; },
+    recordResource: event => manager.recordResource(event),
+    noteFallback: reason => manager.noteFallback(reason),
+    getDiagnostics: () => manager.getDiagnostics(),
     capture(request) {
       http ||= manager.capture({ ...source, captureMode: 'http' }).then(snapshot => { page = snapshot; return snapshot; });
       if (request.captureMode !== 'browser') return http;

@@ -71,7 +71,7 @@ class BrowserCapture {
   async _getBrowser(options) {
     if (!this.browserPromise) {
       this.browserPromise = Promise.resolve()
-        .then(() => this.launch({ headless: true, acceptInsecureCerts: options.insecure !== false, timeout: options.timeout, signal: options.signal, args: ['--disable-background-networking', '--disable-quic', '--proxy-server=http://127.0.0.1:9', '--proxy-bypass-list=<-loopback>', '--force-webrtc-ip-handling-policy=disable_non_proxied_udp'] }))
+        .then(() => this.launch({ headless: true, acceptInsecureCerts: options.insecure !== false, timeout: options.timeout, signal: options.signal, args: ['--disable-background-networking', '--disable-quic', '--proxy-server=http://127.0.0.1:9', '--proxy-bypass-list=<-loopback>', '--force-webrtc-ip-handling-policy=disable_non_proxied_udp', ...(options.browserLanguage ? [`--lang=${options.browserLanguage}`] : [])] }))
         .then(browser => { this.browser = browser; return browser; })
         .catch(cause => {
           this.browserPromise = null;
@@ -138,6 +138,7 @@ class BrowserCapture {
                   if (request.isNavigationRequest()) throw new Error('unsupported navigation scheme');
                   return await request.abort();
                 }
+                if (!request.isNavigationRequest() && (options.blockedResourceTypes || []).includes(request.resourceType?.())) return await request.abort();
                 const headersForRequest = new Headers(request.headers());
                 if (new URL(request.url()).origin === new URL(options.url).origin) {
                   for (const [name, value] of new Headers(options.headers)) headersForRequest.set(name, value);
@@ -187,9 +188,11 @@ class BrowserCapture {
 
       let renderedHtml;
       let browserFinalUrl;
+      let priceVisibility;
       try {
         signal.throwIfAborted();
         checkRequestErrors();
+        if (!options.passiveTrackerCapture) priceVisibility = await abortable(require('../extract/price/visibility').capturePriceVisibility(page).catch(() => undefined), signal);
         renderedHtml = await abortable(page.content(), signal);
         if (Buffer.byteLength(renderedHtml) > options.maxResponseBytes) throw new Error('rendered HTML exceeds maxResponseBytes');
         if (typeof renderedHtml !== 'string' || !renderedHtml.trim()) throw new Error('invalid rendered HTML snapshot');
@@ -202,6 +205,7 @@ class BrowserCapture {
         renderedHtml,
         browserFinalUrl,
         renderedCapturedAt: new Date().toISOString(),
+        ...(priceVisibility ? { priceVisibility } : {}),
         ...postLoad,
         cacheable: navigation?.status?.() !== 206 && !navigation?.headers?.()['set-cookie']
           && !/\b(?:private|no-store|no-cache)\b/i.test(navigation?.headers?.()['cache-control'] || '')

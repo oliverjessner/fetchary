@@ -1,5 +1,5 @@
 'use strict';
-const { insightBuilder, legacyFollower } = require('../metrics/insights');
+const { insightBuilder, legacyFollower, countDetails, isVisible } = require('../metrics/insights');
 const { classifyUrl } = require('../utils/social');
 
 const { linkCount, profileName } = require('../metrics/followers');
@@ -31,8 +31,26 @@ function profilePicture(document, url) {
 
 function socialInsights(document, url) {
   const identity = classifyUrl(url);
-  const builder = insightBuilder(url, identity.kind === 'profile' ? ['followers'] : []);
+  const builder = insightBuilder(url, identity.kind === 'profile' ? ['followers'] : identity.kind === 'repository' ? ['stars', 'forks'] : []);
   if (identity.kind === 'profile') legacyFollower(document, url, builder, followerCount);
+  else if (identity.kind === 'repository') {
+    for (const link of document.querySelectorAll('a[href]')) {
+      if (!isVisible(link)) continue;
+      let target;
+      try { target = new URL(link.getAttribute('href'), url); } catch { continue; }
+      if (!matches(target.href)) continue;
+      const path = target.pathname.replace(/\/$/, '').toLowerCase();
+      const metric = path === `/${identity.id}/stargazers` ? 'stars' : [`/${identity.id}/forks`, `/${identity.id}/network/members`].includes(path) ? 'forks' : null;
+      if (!metric) continue;
+      const values = [link, ...link.querySelectorAll('[title]')].filter(isVisible).map(element => element.getAttribute('title'));
+      const counters = [...link.querySelectorAll('.Counter, .social-count, [id$="-count"], [id$="-counter-star"], [id$="-counter-fork"]')].filter(isVisible);
+      values.push(...counters.map(element => element.textContent.trim()), link.getAttribute('aria-label'), link.textContent.trim().replace(/^(?:Stars?|Forks?)\s*/i, ''));
+      for (const value of values) {
+        const parsed = countDetails(value);
+        if (parsed) { builder.set(metric, parsed.value, 'vendor', `repository.${metric}`, parsed.approximate); break; }
+      }
+    }
+  }
   return builder.finish();
 }
 

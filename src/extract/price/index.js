@@ -5,8 +5,11 @@ const { collectSchema } = require('./schema');
 const { identify, publicProduct, productKey } = require('./identity');
 const { domPrices, metaPrices } = require('./dom');
 const { resolvePrices } = require('./resolve');
+const { normalizePriceContext } = require('./details');
 
 function extractPrices(documents, options = {}) {
+  const requestedContext = normalizePriceContext(options);
+  const renderedVisibility = documents.some(document => document.document === 'rendered' && Array.isArray(document.computedVisibility?.hidden) && !document.computedVisibility.truncated);
   const candidates = []; const issues = []; const issueKeys = new Set(); const merged = new Map(); let evidenceCount = 0;
   function issue(code,message,extra = {}) {
     const key = JSON.stringify([code,extra]);
@@ -35,7 +38,8 @@ function extractPrices(documents, options = {}) {
       if (!children.has(node.parentElement)) children.set(node.parentElement,[]);
       children.get(node.parentElement).push(node);
     }
-    const context = { ...document, dom, elements, children:element => children.get(element) || [] };
+    const context = { ...document, dom, elements, skipDom:document.document === 'raw' && renderedVisibility, children:element => children.get(element) || [] };
+    if (document.computedVisibility?.truncated) issue('EXTRACTION_LIMIT','Computed price visibility scan limit reached',{document:document.document});
     const schema = collectSchema(context,issue);
     const identity = identify(context,schema.products,options);
     const eligibleRecords = new Set([...identity.eligible].map(product => product.record));
@@ -52,10 +56,11 @@ function extractPrices(documents, options = {}) {
       }
       if (candidates.length >= 256 || evidenceCount >= 2048) { issue('EXTRACTION_LIMIT','Price candidate/evidence limit reached'); break; }
       const conditions = Object.fromEntries(Object.entries(price.conditions).sort(([left],[right]) => left.localeCompare(right)));
-      const key = JSON.stringify([normalized.amount,normalized.currency,price.role,productKey(product),association,conditions]);
+      const shipping = price.shipping || [];
+      const key = JSON.stringify([normalized.amount,normalized.currency,price.role,productKey(product),association,conditions,shipping]);
       let candidate = merged.get(key);
       if (!candidate) {
-        candidate = { amount:normalized.amount,currency:normalized.currency,role:price.role,raw:price.raw,product,association,conditions,evidence:[] };
+        candidate = { amount:normalized.amount,currency:normalized.currency,role:price.role,raw:price.raw,product,association,conditions,shipping,evidence:[] };
         candidates.push(candidate); merged.set(key,candidate);
       }
       const evidence = { ...price.evidence,document:context.document,url:context.url,raw:price.raw,
@@ -63,6 +68,6 @@ function extractPrices(documents, options = {}) {
       if (!candidate.evidence.some(entry => JSON.stringify(entry) === JSON.stringify(evidence))) { candidate.evidence.push(evidence); evidenceCount++; }
     }
   }
-  return resolvePrices(candidates,issues);
+  return { ...resolvePrices(candidates,issues), context:requestedContext };
 }
-module.exports = { extractPrices };
+module.exports = { extractPrices, normalizePriceContext };

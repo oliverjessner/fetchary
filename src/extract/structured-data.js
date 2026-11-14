@@ -15,6 +15,75 @@ function checkDepth(root) {
   }
 }
 
+// A local, serializable entity table, not remote JSON-LD context expansion.
+// References remain @id handles so cyclic graphs never create cyclic JSON.
+function resolvedEntities(jsonLd, pageUrl, errors) {
+  const entities = {}; const roots = [];
+  const processed = new WeakSet(); const anonymous = new WeakMap(); const reserved = new Set();
+  let next = 0; let remaining = 10000;
+  const id = value => typeof value === 'string' && value.trim() ? value.startsWith('_:') ? value : resolveUrl(value, pageUrl) || value : null;
+  const pending = [...jsonLd];
+  for (let index = 0; index < pending.length && index < 10000; index++) {
+    const value = pending[index];
+    if (!value || typeof value !== 'object') continue;
+    const declared = id(value['@id']);
+    if (declared) reserved.add(declared);
+    for (const child of Object.values(value)) if (child && typeof child === 'object') pending.push(child);
+  }
+  function tick(depth) {
+    if (--remaining < 0) throw new Error('resolved JSON-LD exceeds 10000 values');
+    if (depth > 64) throw new Error('resolved JSON-LD nesting exceeds 64 levels');
+  }
+  function define(object, key, value) {
+    Object.defineProperty(object, key, { value, enumerable: true, configurable: true, writable: true });
+  }
+  function merge(previous, incoming) {
+    const values = [...(Array.isArray(previous) ? previous : [previous]), ...(Array.isArray(incoming) ? incoming : [incoming])];
+    const seen = new Set();
+    const unique = values.filter(value => { const key = JSON.stringify(value); if (seen.has(key)) return false; seen.add(key); return true; });
+    return unique.length === 1 && !Array.isArray(previous) && !Array.isArray(incoming) ? unique[0] : unique;
+  }
+  function entity(object, depth) {
+    tick(depth);
+    let identifier = id(object['@id']) || anonymous.get(object);
+    if (!identifier) {
+      do { identifier = `_:fetchary-anonymous-${++next}`; } while (reserved.has(identifier));
+      reserved.add(identifier); anonymous.set(object, identifier);
+    }
+    if (!Object.hasOwn(entities, identifier)) define(entities, identifier, { id: identifier, types: [], properties: {} });
+    if (processed.has(object)) return identifier;
+    processed.add(object);
+    const result = entities[identifier];
+    for (const type of [object['@type']].flat()) if (typeof type === 'string' && !result.types.includes(type)) result.types.push(type);
+    for (const [key, raw] of Object.entries(object)) {
+      if (['@context', '@id', '@type'].includes(key)) continue;
+      const resolved = value(raw, depth + 1);
+      define(result.properties, key, Object.hasOwn(result.properties, key) ? merge(result.properties[key], resolved) : resolved);
+    }
+    return identifier;
+  }
+  function value(raw, depth) {
+    tick(depth);
+    if (Array.isArray(raw)) return raw.map(item => value(item, depth + 1));
+    if (!raw || typeof raw !== 'object') return raw;
+    if (typeof raw['@id'] === 'string' || raw['@type'] !== undefined) return { '@id': entity(raw, depth + 1) };
+    const result = {};
+    for (const [key, item] of Object.entries(raw)) if (key !== '@context') define(result, key, value(item, depth + 1));
+    return result;
+  }
+  try {
+    for (const object of jsonLd) {
+      const graphOnly = Array.isArray(object['@graph']) && Object.keys(object).every(key => ['@context', '@graph'].includes(key));
+      for (const root of graphOnly ? object['@graph'] : [object]) {
+        if (!root || typeof root !== 'object' || Array.isArray(root)) continue;
+        const identifier = entity(root, 0);
+        if (!roots.includes(identifier)) roots.push(identifier);
+      }
+    }
+  } catch (error) { errors.push({ source: 'json-ld', index: 0, message: error.message }); }
+  return { roots, entities };
+}
+
 function structuredData(document, pageUrl, maxBytes = 10 * 1024 * 1024, rawJson) {
   const jsonLd = []; const microdata = []; const errors = [];
   const blocks = rawJson !== undefined ? [rawJson] : [...(document?.querySelectorAll('script[type]') || [])]
@@ -30,9 +99,10 @@ function structuredData(document, pageUrl, maxBytes = 10 * 1024 * 1024, rawJson)
       }
     } catch (error) { errors.push({ source: 'json-ld', index, message: error.message }); }
   }
-  if (!document) return { jsonLd, microdata, errors };
+  const base = document ? documentBase(document, pageUrl) : pageUrl;
+  const resolved = resolvedEntities(jsonLd, base, errors);
+  if (!document) return { jsonLd, microdata, errors, resolved };
 
-  const base = documentBase(document, pageUrl);
   const order = new Map([...document.querySelectorAll('*')].map((element, index) => [element, index]));
   const scopes = [...document.querySelectorAll('[itemscope]')].filter(element => !element.closest('template, noscript'));
   const indices = new Map(scopes.map((element, index) => [element, index]));
@@ -94,7 +164,7 @@ function structuredData(document, pageUrl, maxBytes = 10 * 1024 * 1024, rawJson)
   for (const scope of scopes.filter(element => !element.hasAttribute('itemprop'))) {
     try { microdata.push(item(scope, 0)); } catch (error) { issue(scope, error.message); }
   }
-  return { jsonLd, microdata, errors };
+  return { jsonLd, microdata, errors, resolved };
 }
 
 module.exports = { structuredData };

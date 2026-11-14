@@ -84,7 +84,7 @@ function imageDimensions(body) {
   return null;
 }
 
-async function selectImage(candidates, options, includeBody = false) {
+async function selectImage(candidates, options, includeBody = false, all = false) {
   const byUrl = new Map();
   for (const candidate of candidates) {
     const existing = byUrl.get(candidate.url);
@@ -95,6 +95,7 @@ async function selectImage(candidates, options, includeBody = false) {
     || (b.width || 0) * (b.height || 0) - (a.width || 0) * (a.height || 0) || a.index - b.index;
   let selected = null;
   let selectedBody;
+  const found = [];
   let next = 0;
   // Bound concurrent requests while checking all advertised resolutions.
   await Promise.all(Array.from({ length: Math.min(4, unique.length) }, async () => {
@@ -116,6 +117,7 @@ async function selectImage(candidates, options, includeBody = false) {
           scalable: actual?.scalable || false, resolutionVerified: Boolean(actual),
           contentType: actual?.type || resource.contentType, source: candidate.source,
         };
+        if (all) found.push(image);
         if (!selected || compare(image, selected) < 0) {
           selected = image;
           // Keep only the winning payload; reuse the bytes already validated.
@@ -126,6 +128,7 @@ async function selectImage(candidates, options, includeBody = false) {
       }
     }
   }));
+  if (all) return found.sort(compare).map(({ index, priority, ...image }) => image);
   if (!selected) return null;
   const { index, priority, ...image } = selected;
   return includeBody ? { ...image, body: selectedBody } : image;

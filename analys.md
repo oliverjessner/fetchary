@@ -1,12 +1,12 @@
-- Sterne, Forks, Lizenz und Projektbeschreibung von [GitHub-Repositories](https://github.com/oliverjessner/fetchary).
+- Lizenz und Projektbeschreibung von [GitHub-Repositories](https://github.com/oliverjessner/fetchary).
 - Versionsnummern, Veröffentlichungsdaten und Änderungslisten von [GitHub-Releases](https://github.com/nodejs/node/releases).
 - Titel, Beschreibung, Status, Labels und Kommentare von [GitHub-Issues](https://github.com/nodejs/node/issues/67455).
 - Titel, Autoren, Labels und Kommentarzahlen von [GitHub-Pull-Requests](https://github.com/nodejs/node/pulls).
-- Titel, Zieladresse, Punkte, Autor und Kommentarzahl von [Hacker-News-Beiträgen](https://news.ycombinator.com/item?id=8863).
+- Titel, Zieladresse und Autor von [Hacker-News-Beiträgen](https://news.ycombinator.com/item?id=8863).
 - Kommentartexte, Autoren und Antwortbeziehungen von [Hacker-News-Diskussionen](https://news.ycombinator.com/item?id=8863).
-- Benutzername, Karma, Beitrittsdatum und Biografie von [Hacker-News-Profilen](https://news.ycombinator.com/user?id=pg).
-- Kanalname, Beschreibung und sichtbare Abonnentenzahl von [öffentlichen Telegram-Kanälen](https://t.me/s/telegram).
-- Beitragstexte, Links, Medienverweise und sichtbare Aufrufzahlen von [öffentlichen Telegram-Beiträgen](https://t.me/s/telegram).
+- Benutzername, Beitrittsdatum und Biografie von [Hacker-News-Profilen](https://news.ycombinator.com/user?id=pg).
+- Kanalname und Beschreibung von [öffentlichen Telegram-Kanälen](https://t.me/s/telegram).
+- Beitragstexte, Links und Medienverweise von [öffentlichen Telegram-Beiträgen](https://t.me/s/telegram).
 - Albumtitel, Künstler, Cover, Trackliste, Laufzeiten und Preis von [Bandcamp-Alben](https://disasterpeace.bandcamp.com/album/fez-ost).
 - Songtitel, Künstler, Albumzuordnung und Beschreibung von [Bandcamp-Tracks](https://disasterpeace.bandcamp.com/track/adventure).
 - Filmtitel, Erscheinungsjahr, Regie, Besetzung und Laufzeit von [Letterboxd-Filmseiten](https://letterboxd.com/film/the-godfather/).
@@ -21,8 +21,8 @@
 - Beschreibung, Regeln, Abonnentenzahl und Beitragszahlen von [Lemmy-Communities](https://lemmy.world/c/technology).
 - Beitragstitel, Zieladresse, Autor und verschachtelte Kommentare von [Lemmy-Beiträgen](https://lemmy.world/post/54374005).
 - Fragetext, Antworten, Codebeispiele, Aufrufzahl und Bewertungen von [Stack-Overflow-Fragen](https://stackoverflow.com/questions/231767/what-does-the-yield-keyword-do-in-python).
-- Titel, Abstract, Autoren, Kategorien und PDF-Link von [arXiv-Publikationen](https://arxiv.org/abs/1706.03762).
-- Volltext, Autoren, Institutionen und DOI von [PubMed-Central-Artikeln](https://pmc.ncbi.nlm.nih.gov/articles/PMC7094943/).
+- Titel, Abstract und Kategorien von [arXiv-Publikationen](https://arxiv.org/abs/1706.03762).
+- Volltext und Institutionen von [PubMed-Central-Artikeln](https://pmc.ncbi.nlm.nih.gov/articles/PMC7094943/).
 - Infoboxen, Artikelabschnitte und Quellenverweise von [Wikipedia-Artikeln](https://en.wikipedia.org/wiki/Ada_Lovelace).
 - Eigenschaften, Werte, Quellenbelege und externe Kennungen von [Wikidata-Eintragsseiten](https://www.wikidata.org/wiki/Q42).
 - Autor, Verlag, Erscheinungsdatum, Seitenzahl und sichtbare Bewertungen von [Open-Library-Buchseiten](https://openlibrary.org/books/OL7353617M/Fantastic_Mr._Fox).

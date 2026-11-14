@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en"><head>
+<base href="https://journal.example.test/papers/">
+<title> Original   paper title </title>
+<meta name="description" content="Selected description">
+<meta property="og:title" content=" Social   paper title ">
+<meta property="og:image" content=" /cover-one.png ">
+<meta property="og:image" content="/cover-two.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Other card title">
+<meta property="article:published_time" content="2026-10-01">
+<meta name="citation_doi" content="https://doi.org/10.1234/example.paper">
+<meta name="citation_author" content="Ada Example">
+<meta name="citation_author" content="Grace Example">
+<meta name="citation_journal_title" content="Example Journal">
+<meta name="citation_pdf_url" content="paper.pdf">
+<link rel="canonical" href="paper">
+<script type="application/ld+json">{
+  "@context":"https://schema.org",
+  "@graph":[
+    {"@type":"Article","@id":"paper","headline":"Schema title","description":"Schema description","datePublished":"2026-09-30","author":{"@id":"#ada"},"publisher":{"@id":"#publisher"}},
+    {"@type":"Person","@id":"#ada","name":"Ada Example","url":"/authors/ada"},
+    {"@type":"Organization","@id":"#publisher","name":"Example Press","url":"https://publisher.example.test/"},
+    {"@type":"Article","url":"https://unrelated.example.test/","author":{"name":"Unrelated Author"},"headline":"Wrong article"}
+  ]
+}</script>
+</head><body><a rel="author" href="/authors/grace">Grace Example</a></body></html>

@@ -2,6 +2,7 @@
 const { httpUrl, documentBase } = require('./images');
 const { classifyUrl } = require('../utils/social');
 const { structuredData } = require('./structured-data');
+const { telegramPostUrl } = require('../vendors/telegram');
 
 const mimeTypes = {
   mp4: 'video/mp4', m4v: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime',
@@ -53,8 +54,10 @@ function videoLinks(document, pageUrl, options = {}) {
     }
     const platform = videoPlatform(url);
     if (!explicit && !format && !platform && !/^video\//.test(contentType || '') && !streamTypes.has(contentType)) return;
+    const postUrl = telegramPostUrl(element, pageUrl);
     results.push({ url, rawUrl, source, originalAttribute, extension: format,
-      contentType: contentType && contentType !== 'application/ld+json' ? contentType : mimeTypes[format] || null, platform });
+      contentType: contentType && contentType !== 'application/ld+json' ? contentType : mimeTypes[format] || null,
+      platform: postUrl ? 'telegram' : platform, ...(postUrl ? { postUrl } : {}) });
   }
   for (const element of document.querySelectorAll('a[href], area[href], link[href], video, source, iframe, embed, object, meta, [itemprop], script[type]')) {
     if (element.closest('template, noscript, style')) continue;

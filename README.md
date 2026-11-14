@@ -53,7 +53,7 @@ Extract specific information or analyse a page from your terminal:
 
 ```bash
 fetchary analyse https://oliverjessner.at
-fetchary extract text https://example.com
+fetchary extract text https://oliverjessner.at
 fetchary extract links https://oliverjessner.at/sitemap.xml --list
 ```
 

@@ -37,7 +37,9 @@ function shouldRender(contentType) {
 
 class CaptureManager {
   constructor(options) {
-    this.options = options;
+    this.metrics = { requests: 0, decodedBytes: 0, httpMs: 0, browserMs: 0, rawSnapshotBytes: 0, renderedSnapshotBytes: 0, cacheHits: 0, fallbackReasons: [] };
+    this.recordResource = event => { if (event.phase === 'request') this.metrics.requests++; else if (event.phase === 'response') this.metrics.decodedBytes += event.bytes; };
+    this.options = { ...options, observeResource: this.recordResource };
     this.httpFetch = options.fetch;
     this.timeout = options.timeout;
     this.userAgent = options.userAgent;
@@ -64,7 +66,7 @@ class CaptureManager {
       identity(this.httpFetch), identity(this.browserIdentity), identity(this.vendorIdentity),
       this.options.maxResponseBytes, Boolean(this.options.allowPrivateNetwork), this.options.insecure !== false, identity(this.options.lookup),
       this.options.consent ?? 'reject',
-      source.captureMode === 'browser' ? [source.waitAfterLoadMs, this.browserUserAgent, Boolean(this.options.passiveTrackerCapture)] : null,
+      source.captureMode === 'browser' ? [source.waitAfterLoadMs, this.browserUserAgent, Boolean(this.options.passiveTrackerCapture), this.options.blockedResourceTypes || []] : null,
     ]);
     const page = await this.cache.capture(key, ttlMs, async () => {
       const snapshot = await this._capture({ ...source, url: url.href });
@@ -75,18 +77,28 @@ class CaptureManager {
     // Validation is intentionally repeated on hits as well as network captures.
     await validateRemoteUrl(page.rawFinalUrl, this.options);
     if (page.browserFinalUrl) await validateRemoteUrl(page.browserFinalUrl, this.options);
+    if (page.cache.hit) this.metrics.cacheHits++;
+    this.metrics.rawSnapshotBytes = Math.max(this.metrics.rawSnapshotBytes, page.rawBody.length);
+    this.metrics.renderedSnapshotBytes = Math.max(this.metrics.renderedSnapshotBytes, Buffer.byteLength(page.renderedHtml || ''));
     return page;
   }
 
+  noteFallback(reason) { if (!this.metrics.fallbackReasons.includes(reason)) this.metrics.fallbackReasons.push(reason); }
+  getDiagnostics() { return structuredClone(this.metrics); }
+
   async _capture(source) {
-    const http = source.httpCapture || await captureHttp({
+    const transportUrl = require('../vendors/telegram').captureUrl?.(source.url) || source.url;
+    const httpStarted = performance.now();
+    let http;
+    try { http = source.httpCapture || await captureHttp({
       ...this.options,
-      url: source.url,
+      url: transportUrl,
       fetch: this.httpFetch,
       timeout: this.timeout,
       userAgent: this.userAgent,
       headers: this.headers,
-    });
+    }); } finally { if (!source.httpCapture) this.metrics.httpMs += performance.now() - httpStarted; }
+    http = { ...http, requestedUrl: source.url };
     if (source.captureMode !== 'browser' || !shouldRender(http.contentType)) {
       return {
         ...http,
@@ -99,15 +111,17 @@ class CaptureManager {
         consent: consentMetadata(shouldRender(http.contentType) ? detectConsentWall(http.rawBody.toString('utf8'), http.rawFinalUrl) : { detected: false, provider: null }, this.options.consent ?? 'reject'),
       };
     }
-    const rendered = await this.browser.capture({
+    const browserStarted = performance.now();
+    let rendered;
+    try { rendered = await this.browser.capture({
       ...this.options,
-      url: this.options.passiveTrackerCapture ? http.rawFinalUrl.split('#')[0] : source.url,
+      url: this.options.passiveTrackerCapture ? http.rawFinalUrl.split('#')[0] : transportUrl,
       documentSnapshot: this.options.passiveTrackerCapture ? http : undefined,
       timeout: this.timeout,
       waitAfterLoadMs: source.waitAfterLoadMs,
       userAgent: this.browserUserAgent,
       headers: this.headers,
-    });
+    }); } finally { this.metrics.browserMs += performance.now() - browserStarted; }
     // Preserve static evidence when interaction was disabled or a frame could
     // not be inspected. A remaining wall must never turn into a cache hit.
     if (!rendered.consent?.detected) {

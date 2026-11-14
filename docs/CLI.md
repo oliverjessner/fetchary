@@ -14,6 +14,8 @@ fetchary analyse <url> [options]
 fetchary login <url> [--session <name>] [options]
 fetchary sessions [--json] [--session-dir <directory>]
 fetchary logout <name> [--session-dir <directory>]
+fetchary logout <name> [more-names...] [--session-dir <directory>]
+fetchary logout --domain <hostname> [--session-dir <directory>]
 fetchary history [--json|--list]
 ```
 
@@ -137,6 +139,12 @@ Failure of the primary capture, invalid input, or cancellation fails the command
 using the regular error/exit-code contract. `--quiet` suppresses success output;
 `--verbose` sends diagnostics to stderr.
 
+The JSON report also includes `diagnostics`: total and per-section durations,
+HTTP/browser time, request and decoded-byte counts, snapshot sizes, cache hits,
+and browser-fallback reasons. Overlapping section timings are not additive.
+These diagnostics describe work performed during this call, not website traffic
+or browser performance scores.
+
 `--list` and its alias `--urls-only` combine each successful section's normal
 list output and remove exact duplicate lines in first-occurrence order. Values
 can include URLs, contacts, metadata strings, compact structured-data JSON and
@@ -150,8 +158,9 @@ Library cache TTL and AbortSignal options are documented in the
 [analysis API](LIBRARY.md#website-analysis).
 
 One analysis shares its primary HTTP capture and at most one browser rendering
-across sections, including when cache reuse is disabled. Favicons still require
-the usual bounded manifest/icon requests. `http` never renders; `auto` retains
+across sections, including when cache reuse is disabled. Favicons and image
+discovery can add the usual bounded manifest/icon/stylesheet requests.
+`http` never renders; `auto` retains
 each extractor's fallback rules, so sections may use different raw/rendered
 snapshots. Each result's `captureMode` and timestamps identify its source; the
 report's common metadata describes the latest successful capture. Explicit
@@ -209,12 +218,13 @@ fetchary extract selector https://example.com --selector a --attribute href --li
 | --- | --- |
 | `text`, `html` | HTTP(S) hyperlinks from `a[href]` and `area[href]`; for non-HTML responses, whitespace-delimited HTTP(S) URLs |
 | `images` | Discovered image URLs, respecting source filters and `--duplicates` |
-| `favicon`, `avatar` | The selected image URL |
+| `favicon` | The selected image URL, or all ranked candidate URLs with `--all` |
+| `avatar` | The selected image URL |
 | `selector` | All matching values, as if `--all` were supplied; missing/empty values are omitted and embedded line breaks become spaces |
 | `social-links` | Discovered social URLs, respecting `--platform`/`--youtube` |
 | `social-insights` | The inspected profile/post URL; with `--follower`/`--posts`, the selected counts |
-| `emails` | Found email addresses |
-| `telephone` | Found phone numbers in international form, retaining extensions |
+| `emails` | Found email addresses; `--details` still prints only normalized values |
+| `telephone` | Found phone numbers in international form, retaining extensions; `--details` still prints only normalized values |
 | `links`, `documents`, `videos` | Unique discovered URLs in first-occurrence order; JSON retains every occurrence |
 | `metadata` | Present values in title, description, canonical, language, publishedAt, modifiedAt order; nulls omitted |
 | `structured-data` | One compact JSON object per line, JSON-LD first and Microdata items second |
@@ -289,6 +299,10 @@ and nullable `extension`, `contentType` and `platform` hints. The top-level
 URLs in discovery order. `--json` takes precedence; empty discoveries succeed
 with empty arrays or no list output. `--binary` is unavailable.
 
+Video references inside a matching public Telegram channel widget additionally
+have `platform: 'telegram'` and `postUrl`, linking the media back to its original
+channel post. This attribution does not fetch the media or private conversations.
+
 Relative URLs use the document base and final page URL. Only HTTP(S) URLs without
 credentials are returned; posters, audio/image elements, template/noscript
 content and executable scripts are excluded. Include/ignore selectors use the
@@ -314,6 +328,12 @@ Default output and `--json` both include the complete extraction result:
 `data: { trackers, externalHosts, summary: { providers, uniqueIdentifiers } }`.
 An empty page succeeds with empty arrays and zero counts. Shared capture flags
 apply; there are no provider-specific flags or include/ignore selectors.
+
+Additional public-page signatures cover Umami, PostHog, GoatCounter, Cloudflare
+Web Analytics, Simple Analytics, Adobe Experience Platform Tags, Reddit Pixel
+and X/Twitter Pixel. They inspect the same captured HTML and inline
+configuration; adding a provider does not authorize external API calls or
+execution of its tracking script.
 
 `--list` prints one `provider:value` line per identifier. A provider without an
 identifier prints its name alone, including Plausible, whose tracked domains
@@ -361,8 +381,10 @@ fetchary extract structured-data https://example.com --list
 ```
 
 Both types inspect the entire captured document and accept the shared capture
-options. `metadata` returns `data: { title, description, canonical, language,
-publishedAt, modifiedAt }`. Values are strings or `null`. Title and description
+options. `metadata` retains `title`, `description`, `canonical`, `language`,
+`publishedAt`, and `modifiedAt` as strings or `null`. It also includes authors,
+publisher, raw Open Graph/Twitter fields, scientific metadata, chosen-field
+sources and alternative values. Title and description
 prefer HTML/meta tags, then Open Graph/Twitter values, then eligible Schema.org
 page/article objects. Canonical comes from a valid HTTP(S) `rel=canonical` link
 and resolves against the document base/final page URL. Language prefers HTML
@@ -371,12 +393,22 @@ locale underscores become hyphens. Date meta tags and matching Schema.org dates
 retain their declared strings, including date-only values and timezone offsets.
 Generic event times and unrelated article/author dates are not substituted.
 
-`structured-data` returns `data: { jsonLd, microdata, errors }`. JSON-LD blocks
+Scientific fields contain declared DOI, author, journal and PDF-link values
+from page metatags; they are not enriched through external services. `sources`
+and `alternatives` retain evidence for title, description and publication/update
+dates. `--list` continues to print only the original six scalar fields above.
+
+`structured-data` returns `data: { jsonLd, microdata, errors, resolved }`. JSON-LD blocks
 are parsed as JSON; root arrays become individual objects and `@graph`,
 `@context`, vocabulary names, and values remain intact. A standalone response
 with MIME type `application/ld+json` is also supported. Remote contexts are not
 requested and JSON-LD is not expanded into RDF. Schema.org data is retained in
 both JSON-LD and Microdata; RDFa is outside these two parsers.
+
+`resolved` adds a local entity table and root IDs for JSON-LD `@id`/`@graph`
+references. References remain serializable ID handles, including cycles. Raw
+JSON-LD is preserved, remote contexts are not fetched, and `--list` retains its
+existing JSON-LD/Microdata output rather than printing the additional table.
 
 Microdata uses `itemscope`, `itemtype`, `itemid`, `itemprop`, and `itemref`.
 Top-level items contain `types`, `id`, and a `properties` object whose values are
@@ -389,8 +421,10 @@ Malformed JSON-LD and Microdata issues are returned in `errors` with `source`,
 zero-based `index`, and `message`, while other valid records remain available.
 JSON-LD depth is limited to 128 levels. Microdata allows 64 nested levels and
 10000 expanded property values, with a text budget based on `maxResponseBytes`;
-an over-budget root is omitted with a diagnostic. Empty results succeed: metadata
-has six null fields; structured data has empty arrays. Non-HTML content produces
+an over-budget root is omitted with a diagnostic. The resolved entity view has
+its own depth/value bounds, documented in the library reference. Empty results
+succeed: the six scalar metadata fields are null, added collections are empty,
+and structured data has empty arrays/an empty entity table. Non-HTML content produces
 empty results except for standalone JSON-LD.
 
 Both default to the full extraction JSON. `--list`/`--urls-only` emit the values
@@ -451,6 +485,11 @@ Sitemaps with DTD/entity declarations are skipped. This does not perform schema
 validation or recursively fetch sitemap-index targets/listed pages. Existing
 response limits apply.
 
+Sitemap JSON also includes sibling `lastmod`, `changefreq`, and `priority`
+fields. Missing values are `null`; priority must be a decimal from 0 to 1.
+The date and frequency remain declared strings. These fields do not change
+the URL-only `--list` output or trigger extra requests.
+
 #### Document links
 
 `documents` uses the same metadata and also inspects `iframe[src]`, `embed[src]`,
@@ -482,6 +521,8 @@ apply as usual. See [record schemas](LIBRARY.md#link-and-document-records).
 fetchary extract emails https://example.com/contact --list
 fetchary extract telephone https://example.com/contact --default-country AT --list
 fetchary extract emails https://example.com --include-selector main --json
+fetchary extract emails https://example.com/contact --details --deobfuscate
+fetchary extract telephone https://example.com/contact --details --list
 ```
 
 Both types return a JSON result with `data: string[]` by default. `emails` also
@@ -495,8 +536,10 @@ microdata `email`, and JSON-LD `email` fields. Percent-encoded link recipients a
 HTML entities are decoded; query subjects/bodies are ignored. Common ASCII
 addresses, including plus tags and punycode domains, are supported. Domains are
 lowercased; duplicates are compared case-insensitively, preserving the first
-local-part spelling. Obfuscated addresses and quoted/Unicode local parts are not
-reconstructed. Script/style/comment/template text is ignored, apart from explicit
+local-part spelling. `--deobfuscate` additionally recognizes clearly written
+forms such as `name [at] example [dot] com`; it applies only to emails. Without
+this flag, such forms are not reconstructed. Quoted/Unicode local parts remain
+unsupported. Script/style/comment/template text is ignored, apart from explicit
 JSON-LD contact fields. Non-HTML responses are scanned as decoded text.
 
 Telephone extraction reads `tel:` links, page text, microdata `telephone`, and
@@ -510,6 +553,14 @@ Leading `00` on a complete contact value is treated as an international prefix;
 in surrounding prose, international dialing prefixes follow the selected country's
 rules. Country is never inferred from the website hostname or page language.
 
+`--details` is available for emails and telephone numbers. JSON then contains
+records with `value`, `raw`, `label`, `department`, and `location`; telephone
+records also have `kind` (`fax`, `mobile`, `landline`, or `null`) when an explicit
+nearby label supplies it. Unknown context remains null rather than being guessed.
+These records replace the ordinary strings in `data` and the convenience alias.
+`--list` still prints only each normalized `value`. Department/type labels are
+page evidence, not verification of a contact's owner or function.
+
 Contact links are inspected without following contact pages. HTTP-first capture,
 browser fallback for missing scripted contacts, cancellation, caching, and
 request limits apply as usual.
@@ -519,6 +570,9 @@ request limits apply as usual.
 ```bash
 fetchary extract favicon https://example.com --json
 fetchary extract favicon https://example.com --binary > favicon.bin
+fetchary extract favicon https://example.com --all
+fetchary extract favicon https://example.com --all --json
+fetchary extract favicon https://example.com --all --list --filepath ./icons.txt
 fetchary extract avatar https://github.com/oliverjessner --mode http
 ```
 
@@ -528,12 +582,20 @@ It also works with `fetchary favicon <url>`. The format is preserved (including
 SVG and ICO); there is no conversion to PNG. Use `--json` separately to inspect
 `image.contentType` and choose a suitable file extension. The top-level
 `contentType` describes the webpage. Binary output cannot be combined with
-`--json`, `--list`, or `--urls-only`, or used with another extraction type (exit 2).
+`--json`, `--list`, `--urls-only`, or `--all`, or used with another extraction type (exit 2).
 `--quiet` suppresses
 successful binary output; diagnostics and errors still use stderr.
 
-Favicon candidates include icon and Apple touch links, Web App Manifest icons,
-and `/favicon.ico`. Relative URLs use the document base; manifest icons use the
+`--all` returns every accessible candidate that passes the existing checks,
+in ranking order. Plain output and `--list` print one URL per line. With `--json`,
+`data` and `images` contain the complete candidate metadata; `image` retains the
+highest-ranked candidate. The same candidate/request limits still apply, so
+"all" does not mean unbounded crawling. Directory exports use `.txt` for the
+plain URL output and `.json` with `--json`.
+
+Favicon candidates include icon and Apple touch links, Safari `mask-icon` links,
+Web App Manifest icons, and `/favicon.ico`. Mask icons rank after ordinary
+candidates. Relative URLs use the document base; manifest icons use the
 manifest's final URL. Broken or inaccessible candidates are skipped. SVG is
 preferred as scalable; other candidates are ordered by measured pixel area.
 PNG, JPEG, GIF, WebP, ICO, and SVG headers are inspected. ICO uses its largest
@@ -547,7 +609,7 @@ Binary output reuses the bytes downloaded for validation without requesting the
 selected image again. A shell redirection such as `> favicon.bin` saves the output.
 
 Avatar extraction uses account-specific adapters for GitHub, Instagram, Threads,
-X, TikTok, Twitch, LinkedIn, and YouTube. It rejects unrelated accounts, post
+X, TikTok, Twitch, LinkedIn, YouTube, and public Telegram channels. It rejects unrelated accounts, post
 previews, and banners. A verified square metadata image is a fallback on adapters
 which support it. Public HTTP avatar data can be used when the same platform's
 browser capture reaches a recognizable login wall; a different profile or
@@ -561,20 +623,31 @@ an accessible avatar is a not-found error.
 fetchary extract images https://example.com --urls-only
 fetchary extract images https://example.com --exclude-metadata
 fetchary extract images https://example.com --source lazy --source srcset
+fetchary extract images https://example.com --source stylesheet --list
+fetchary extract images https://example.com --no-stylesheets
 ```
 
 Discover URLs from image `src`, `srcset`, picture sources, `data-src`,
 `data-original`, `data-lazy-src`, `data-lazy`, `data-url`, `data-srcset`, Open Graph
 and Twitter image metadata, image-file hyperlinks, and inline background URLs.
-External CSS files and computed styles are not inspected. Relative and
+Linked stylesheets and inline `<style>` background declarations are also inspected
+by default; arbitrary computed styles are not. Relative and
 protocol-relative URLs resolve against the document's valid first base URL.
 Only HTTP(S) URLs without embedded credentials are returned.
 
 URLs are unique by default, retaining deterministic page/source order.
 `--duplicates` keeps repeated image references. `--exclude-metadata` omits metadata
 images. Repeat `--source` to include only `img`, `srcset`, `lazy`, `metadata`,
-`link`, or `background`. This extractor never downloads binary images. Dimensions
+`link`, `background`, or `stylesheet`. `stylesheet` results include the stylesheet
+URL where a background reference was found. This extractor never downloads binary images. Dimensions
 from HTML attributes are hints, with `resolutionVerified: false`.
+
+Stylesheet inspection is best-effort and uses the guarded transport: at most
+eight stylesheet requests, 512 KiB per response, 4 MiB total decoded bytes, and
+imports at most two levels below a linked stylesheet. CSS-relative image URLs
+use that stylesheet's final URL. `--max-response-bytes` can impose a smaller
+limit. `--no-stylesheets` disables this additional inspection; selecting sources
+without `stylesheet` also skips it. Background images themselves are not fetched.
 
 ### Selector
 
@@ -608,10 +681,11 @@ parameters, and fragments are preserved. Deduplication uses the resolved absolut
 URL; equivalent platform aliases may remain separate URLs.
 
 `--platform` accepts `youtube`, `tiktok`, `instagram`, `facebook`, `x`, `threads`,
-`linkedin`, `twitch`, `reddit`, `github`, `vimeo`, and `bluesky`. `twitter` aliases
+`linkedin`, `twitch`, `reddit`, `github`, `vimeo`, `bluesky`, `telegram`, and
+`hackernews`. `twitter` aliases
 `x`. `--youtube` is exactly `--platform youtube`; conflicting filters are rejected.
 Each link includes `platform`, `url`, `kind`, and discovery `source`. Kinds are
-`profile`, `channel`, `post`, `video`, or `unknown`; recognition makes no request
+`profile`, `channel`, `post`, `video`, `repository`, `release`, or `unknown`; recognition makes no request
 to that social URL and does not prove the account/post exists.
 
 ### Social insights
@@ -669,6 +743,14 @@ mode, a failed optional browser capture preserves an existing partial HTTP
 insight result. Explicit browser failures, cancellation and access denials keep
 their normal error/availability behavior.
 
+Public Telegram channels expose `subscribers`, and matching public channel
+posts expose `views`. Ordinary post URLs are read through their public `/s/`
+website preview while retaining `requestedUrl`. Hacker News submissions expose
+`score` and `comments`; matching case-sensitive profiles expose `karma`.
+GitHub repository pages expose `stars` and `forks` separately from profile
+followers. These adapters read captured webpage HTML and leave missing values
+null; no remote metrics API is called.
+
 Reddit posts expose `data.metrics.score` and `comments` from the matching post's
 page attributes or embedded post JSON. `score` is the reported net vote score,
 can be negative, and is separate from `likes`. Individual upvotes/downvotes,
@@ -706,6 +788,7 @@ See [Social support](SOCIAL_SUPPORT.md) for implemented patterns and fixtures an
 | `--user-agent <text>`          | HTTP and browser user agent; default `fetchary/2.0`                            |
 | `--wait-after-load <duration>` | Browser post-load wait; default `5s`; accepts `500ms`, `5s`, or `0ms`          |
 | `--max-response-bytes <bytes>` | Decoded response/resource/rendered HTML limit; default 47185920 (45 MiB)                               |
+| `--block-resource-type <type>` | Block a browser subresource type; repeat for multiple types |
 | `--cookies <file>`            | Read a Netscape/JSON cookie export; cookie-file captures bypass page caches |
 | `--session <name>`           | Read a locally saved Fetchary login session; authenticated captures bypass page caches |
 | `--session-dir <directory>`  | Override `~/.fetchary/sessions`; requires `--session` during extraction |
@@ -722,6 +805,13 @@ See [Social support](SOCIAL_SUPPORT.md) for implemented patterns and fixtures an
 Value options support both `--option value` and `--option=value`. Use `--` to
 end option parsing. Unknown options and operation-specific options used with the
 wrong type are rejected. There is no data-directory or monitoring configuration.
+
+`--block-resource-type` accepts `image`, `font`, `media`, `stylesheet`, `script`,
+`xhr`, `fetch`, `eventsource`, `websocket`, `manifest`, and `other`. For example,
+`--mode browser --block-resource-type font --block-resource-type media` avoids
+those additional requests. The main page navigation is retained. This flag does
+not affect HTTP-only capture or disable explicitly requested favicon/media
+metadata extraction; blocked resources may reduce rendered extraction results.
 
 ## Cookie consent
 
@@ -895,6 +985,19 @@ It supports the same output/directory flags as `sessions`. JSON is
 Validation/file errors use exit 2, browser/timeout failures exit 4, and interrupted
 logins exit 3.
 
+To remove several explicitly selected local sessions, use
+`fetchary logout research work`. To select saved sessions by their exact origin
+hostname, use `fetchary logout --domain example.com`; this does not match
+`sub.example.com`. Domain selection cannot be combined with session names, and
+requires a hostname rather than a URL or wildcard. These forms use the same
+private session directory and output flags.
+
+Bulk JSON is `{ removed, failed, sessions: [{ session, removed, error? }] }`.
+Unknown names remain successful no-ops. Plain output summarizes removed,
+missing and failed sessions; individual failure details go to stderr. Processing
+continues after a per-file failure and exits 1 when `failed` is nonzero. As with
+other failed commands, partial-failure output is not saved by `--filepath`.
+
 ### Chrome on macOS
 
 Read the relevant cookies directly from your signed-in Chrome profile:
@@ -1016,11 +1119,12 @@ fetchary extract price https://example.com/product --list
 fetchary extract price https://example.com/product --mode browser
 fetchary extract price https://example.com/product --product-selector '#product-detail' --price-selector '.current-price'
 fetchary extract price https://example.com/product --filepath ./price.json
+fetchary extract price https://example.com/product --country AT --language de-AT
 ```
 
 Default output and `--json` contain the complete library extraction result:
 standard capture metadata and `data: { status, selected, product, candidates,
-issues }`. Every candidate and evidence location survives serialization. A price
+issues, context }`. Every candidate and evidence location survives serialization. A price
 conflict succeeds with exit code **0**, `status: "conflict"` inside `data`, and
 `selected: null`. The top-level `status` remains the HTTP status code.
 Empty or ambiguous results also succeed. No source automatically wins.
@@ -1053,6 +1157,18 @@ Invalid, empty or unsupported flags/selectors use exit 2. A valid selector with
 no matches is not a validation error. Structured evidence is still examined.
 Selectors do not authorize comparing unrelated products.
 
+`--country <code>` and `--language <tag>` apply only to `price`. They record the
+requested market context in `data.context`; country is normalized to uppercase
+and language to a canonical language tag. Language supplies `Accept-Language`
+when no explicit header already exists. These settings do not change IP
+geolocation, select a shop's country control, convert currencies, or guarantee
+that a website returns an offer for that market.
+
+Price JSON also preserves declared shipping costs, delivery regions and delivery
+times, plus explicit size/color/material/model/configuration variant attributes.
+Unknown values remain unavailable; shipping is not silently added to the item
+price. The full shapes and association rules are in the library reference.
+
 `http` parses server HTML only. `browser` keeps raw and rendered evidence.
 `auto` renders once only when no current price was found and executable scripts
 plus product/price or application-shell hints suggest dynamic pricing. It keeps
@@ -1060,6 +1176,10 @@ HTTP when usable prices or conflicts already exist; use `browser` when you need
 to check dynamic content even on an otherwise complete page. Non-HTML responses
 return an empty unavailable result. Ordinary browser capture may load resources;
 price extraction itself fetches no offers, contexts or linked product pages.
+
+In browser mode, computed visibility also excludes price elements hidden by
+external stylesheets in the captured DOM; HTTP-only visibility remains limited
+to evidence in the server response.
 
 See the [library price reference](LIBRARY.md#product-prices) for the complete
 schema, matching and conflicting fixtures, normalization rules, visibility

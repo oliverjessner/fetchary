@@ -22,32 +22,34 @@ function abortable(promise, signal) {
   });
 }
 
-async function readBody(response, maxBytes, signal) {
+async function readBody(response, maxBytes, signal, observe) {
   if (Number(response.headers.get('content-length')) > maxBytes) throw new Error('response exceeds maxResponseBytes');
   const chunks = [];
   let length = 0;
+  function append(value) {
+    const chunk = Buffer.from(value);
+    length += chunk.length;
+    observe?.({ phase: 'response', bytes: chunk.length });
+    if (length > maxBytes) throw new Error('response exceeds maxResponseBytes');
+    chunks.push(chunk);
+  }
   if (response.body?.getReader) {
     const reader = response.body.getReader();
     try {
       while (true) {
         const part = await abortable(reader.read(), signal);
         if (part.done) break;
-        length += part.value.length;
-        if (length > maxBytes) throw new Error('response exceeds maxResponseBytes');
-        chunks.push(Buffer.from(part.value));
+        append(part.value);
       }
     } finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
   } else if (response.body) {
     for await (const chunk of response.body) {
       signal.throwIfAborted();
-      length += chunk.length;
-      if (length > maxBytes) throw new Error('response exceeds maxResponseBytes');
-      chunks.push(Buffer.from(chunk));
+      append(chunk);
     }
   } else {
     const body = Buffer.from(await abortable(response.arrayBuffer(), signal));
-    if (body.length > maxBytes) throw new Error('response exceeds maxResponseBytes');
-    chunks.push(body); length = body.length;
+    append(body);
   }
   return Buffer.concat(chunks, length);
 }
@@ -106,6 +108,7 @@ async function readResource(url, options, maxBytes = options.maxResponseBytes) {
         headers.delete('cookie');
         if (value) headers.set('cookie', value);
       }
+      options.observeResource?.({ phase: 'request' });
       response = await abortable(options.fetch
         ? options.fetch(checked.url.href, { headers: Object.fromEntries(headers), redirect: 'manual', signal, method, ...(body ? { body } : {}) })
         : nativeResponse(checked.url, { headers: Object.fromEntries(headers), method, body, allowPrivateNetwork: options.allowPrivateNetwork, insecure: options.insecure }, signal, checked.addresses), signal);
@@ -124,7 +127,7 @@ async function readResource(url, options, maxBytes = options.maxResponseBytes) {
       }
       if (options.followRedirects !== false && (response.status < 200 || response.status >= 300)) throw new FetcharyFetchError(`fetch failed with HTTP ${response.status}`, { url, status: response.status });
       const responseHeaders = response.headers instanceof Headers ? response.headers : new Headers();
-      const payload = await abortable(readBody({ body: response.body, arrayBuffer: () => response.arrayBuffer(), headers: responseHeaders }, maxBytes, signal), signal);
+      const payload = await abortable(readBody({ body: response.body, arrayBuffer: () => response.arrayBuffer(), headers: responseHeaders }, maxBytes, signal, options.observeResource), signal);
       signal.throwIfAborted();
       return { body: payload, url: response.url || checked.url.href, status: response.status, headers: responseHeaders,
         contentType: responseHeaders.get('content-type') || null };

@@ -59,7 +59,7 @@ async function main() {
 main().catch(console.error);
 ```
 
-`client.configure(options)` synchronously merges common `ExtractionOptions` into
+`client.configure(options)` synchronously merges `ClientConfiguration` into
 the client's defaults and returns the same client for chaining. Invalid options
 throw `FetcharyValidationError` before changing any defaults. Omitted settings
 are kept; setting an option to `undefined` restores its built-in default. Headers
@@ -80,6 +80,31 @@ response, but cannot raise a limit enforced inside the transport. In an app such
 as Pitchary, align the transport's page limit with the client setting and keep
 any separate icon-download limit in the transport.
 
+`domainOptions` is available only on `createExtractor()` and `client.configure()`.
+Use exact hostnames or `*.hostname` rules, without schemes, paths or ports:
+
+```js
+const { createExtractor } = require('fetchary');
+const client = createExtractor({
+    mode: 'auto',
+    domainOptions: {
+        '*.example.com': { timeout: 15_000 },
+        'news.example.com': { mode: 'http', maxResponseBytes: 8 * 1024 * 1024 },
+    },
+});
+```
+
+Rules match the requested URL's hostname; a wildcard matches descendants but
+not the apex host. Matching wildcard rules apply from shorter to longer suffixes,
+then an exact-host rule, then per-call options. For example, `*.example.com`
+precedes `*.news.example.com`, and `news.example.com` overrides its wildcard.
+Each rule contains common extraction options; nested `domainOptions` and cache
+capacities are rejected. Headers replace the previous header set instead of
+merging individual fields. Configuration snapshots caller-owned headers and
+resource-type arrays. `configure({ domainOptions: rules })` replaces the entire
+rule map; `domainOptions: undefined` removes it. Invalid merged settings leave
+the previous configuration intact.
+
 ## API
 
 All extraction methods return promises. `extract(url, { type, ...options })`
@@ -92,7 +117,7 @@ found social URLs, and image results offer the same `.data.map(image => image.ur
 pattern. Use `.join('\n')` when you want a newline-separated string.
 
 The CLI's social-insights `--follower`/`--posts` flags also select output only.
-In the library, read `result.followers` for followers (or YouTube subscribers)
+In the library, read `result.followers` for followers (or available channel subscribers)
 and `result.data.metrics.posts` for the post count from
 `await extractSocialInsights(url)`. Both are `number | null`; the full result
 retains metric sources and availability reasons.
@@ -127,19 +152,19 @@ matching embedded `t3` post records are supported, with hidden scores left
 | --- | --- | --- |
 | `text` | `extractText(url, options?)` | String |
 | `html` | `extractHtml(url, options?)` | String |
-| `favicon` | `extractFavicon(url, options?)` | Selected image, or a Buffer with `binary: true` |
+| `favicon` | `extractFavicon(url, options?)` | Selected image; checked image list with `all: true`; Buffer with `binary: true` |
 | `images` | `extractImages(url, options?)` | Array of image references |
 | `videos` | `extractVideos(url, options?)` | Array of video references |
 | `avatar` | `extractSocialAvatar(url, options?)` | Platform, profile, selected image |
 | `selector` | `extractSelector(url, { selector, ...options })` | Match state and values |
 | `social-links` | `extractSocialLinks(url, options?)` | Array of social links |
 | `social-insights` | `extractSocialInsights(url, options?)` | Normalized metrics and availability |
-| `emails` | `extractEmails(url, options?)` | Array of email strings |
-| `telephone` | `extractTelephone(url, options?)` | Array of international phone strings |
+| `emails` | `extractEmails(url, options?)` | Email strings, or contact records with `details: true` |
+| `telephone` | `extractTelephone(url, options?)` | International phone strings, or contact records with `details: true` |
 | `links` | `extractLinks(url, options?)` | Array of link occurrences |
 | `documents` | `extractDocuments(url, options?)` | Array of document link occurrences |
 | `metadata` | `extractMetadata(url, options?)` | Page metadata fields, with nulls for missing values |
-| `structured-data` | `extractStructuredData(url, options?)` | JSON-LD objects, Microdata items, and diagnostics |
+| `structured-data` | `extractStructuredData(url, options?)` | Raw JSON-LD, Microdata, resolved local entities and diagnostics |
 | `tracker-intelligence` | `extractTrackerIntelligence(url, options?)` | Tracker configurations, public identifiers, evidence and resource hosts |
 | `price` | `extractPrice(url, options?)` | Product price candidates, provenance and resolution |
 
@@ -175,7 +200,9 @@ type AnalysisType = 'favicon' | 'links' | 'social-links' | 'emails' | 'telephone
     | 'images' | 'documents' | 'structured-data' | 'metadata' | 'tracker-intelligence' | 'price';
 type AnalysisOptions = ExtractionOptions & { defaultCountry?: CountryCode };
 type AnalysisResults = {
-    [K in AnalysisType]: (K extends 'favicon' ? FaviconResult : ResultMap[K]) | null;
+    [K in AnalysisType]: (K extends 'favicon' ? FaviconResult
+        : K extends 'emails' ? EmailsResult
+        : K extends 'telephone' ? TelephoneResult : ResultMap[K]) | null;
 };
 type AnalysisIssue = { error: string; message: string; status?: number; phase?: string };
 type AnalysisResult = ExtractionMetadata & {
@@ -183,6 +210,18 @@ type AnalysisResult = ExtractionMetadata & {
     results: AnalysisResults;
     errors: Partial<Record<AnalysisType, AnalysisIssue>>;
     summary: { succeeded: number; failed: number };
+    diagnostics: {
+        requests: number;
+        decodedBytes: number;
+        httpMs: number;
+        browserMs: number;
+        rawSnapshotBytes: number;
+        renderedSnapshotBytes: number;
+        cacheHits: number;
+        fallbackReasons: string[];
+        durationMs: number;
+        sectionMs: Partial<Record<AnalysisType, number>>;
+    };
 };
 ```
 
@@ -196,10 +235,14 @@ retains its own capture metadata, including raw/rendered provenance. Result keys
 have the stable order shown above, regardless of completion order.
 
 Analysis accepts common capture options and the telephone `defaultCountry`.
-All eleven extractors run without selection/filter flags. It is a separate aggregate
+All eleven extractors run without selection/filter flags. Operation-specific
+options such as contact `details`/`deobfuscate`, image `includeStylesheets` and
+price `country`/`language` are not analysis options. It is a separate aggregate
 API, rather than an `extract()` dispatcher type. It reads only the supplied page;
 linked documents and social profiles are not fetched. Favicon manifests and
 candidates are fetched and validated through the existing bounded transport.
+Image discovery can also read linked/imported stylesheets under the image
+extractor's CSS budgets; it does not download the discovered background images.
 
 The analysis shares one primary HTTP capture and at most one browser rendering.
 This sharing also applies within a single analysis with `cacheTtlMs: 0`, an
@@ -207,6 +250,16 @@ AbortSignal, or authenticated headers; it does not join separately cancelled
 analyses or retain their snapshots when caching is disabled. Client/global
 capture reuse, security checks and cache clearing otherwise behave normally.
 Auxiliary favicon checks are not cached with the page.
+
+`diagnostics.requests` counts actual transport attempts, including resource
+requests and redirects, rather than extractor invocations. `decodedBytes`
+counts consumed decoded response bytes; it is neither compressed wire traffic
+nor browser memory usage. Reused captures contribute snapshot sizes and cache
+hits without inventing transferred bytes. `httpMs`, `browserMs`, `durationMs`
+and `sectionMs` are elapsed milliseconds. Sections run concurrently, so their
+times should not be added to obtain total duration. `fallbackReasons` reports
+why auto mode requested rendering, such as a consent wall or missing content;
+explicit browser mode need not have a fallback reason.
 
 `http` uses the HTTP snapshot throughout. `auto` preserves each extractor's
 existing fallback rules; sections already satisfied by raw HTML stay on HTTP,
@@ -235,6 +288,7 @@ not store the report, crawl other pages, monitor the site or infer ownership.
 | `waitAfterLoad` | `5000` | Non-negative integer milliseconds or duration such as `'500ms'`, `'5s'` |
 | `signal` | none | `AbortSignal`; aborted operations fail and bypass shared in-flight work |
 | `maxResponseBytes` | `47185920` | Positive safe integer; decoded response/resource/rendered HTML limit |
+| `blockedResourceTypes` | `[]` | Browser subresource types to omit; the document navigation is retained |
 | `allowPrivateNetwork` | `false` | Explicitly permit trusted local/internal targets |
 | `insecure` | `true` | Skip TLS certificate and hostname verification; set `false` to verify |
 | `cacheTtlMs` | `45000` | Finite, non-negative age limit; zero requests a fresh capture |
@@ -250,6 +304,13 @@ or unavailable/partial insights on scripted pages. Static usable content stays
 HTTP-only. HTTP errors and recognizable access walls do not trigger a bypass.
 A fallback reuses the HTTP snapshot; a single operation launches at most one
 browser. All page/browser resources close on success or failure.
+
+`blockedResourceTypes` accepts `image`, `font`, `media`, `stylesheet`, `script`,
+`xhr`, `fetch`, `eventsource`, `websocket`, `manifest`, and `other`. It affects
+browser subresources only, never the document navigation or ordinary HTTP
+capture. Blocking scripts, styles or data requests can change the resulting
+content. The selected resource policy participates in browser-cache identity;
+the passive tracker policy remains stricter than this optional filter.
 
 The page HTTP status/content type remain the original HTTP response metadata,
 even when the browser subsequently renders or redirects. UTF-8 is the default;
@@ -448,6 +509,27 @@ entries fail with `FetcharyValidationError`.
 session is a successful no-op and does not log out other browsers or revoke the
 website account. These three session-management methods are top-level exports.
 
+For explicit bulk removal, pass session names or an exact domain:
+
+```js
+const { logout } = require('fetchary');
+
+async function main() {
+    const selected = await logout(['work', 'personal']);
+    const matching = await logout({ domain: 'example.com' }, { sessionDir: '/private/sessions' });
+    console.log(selected.removed, matching.failed, matching.sessions);
+}
+main().catch(console.error);
+```
+
+Both bulk forms return `{ removed: number, failed: number, sessions:
+Array<{ session: string, removed: boolean, error?: string }> }`. Names are
+validated before removal and duplicate names are processed once. Domain
+selection matches the saved origin's exact hostname; it accepts no scheme,
+port, path or wildcard and does not include subdomains automatically. A failure
+removing one selected file is recorded without hiding other results. Invalid
+selection, session-listing failures or cancellation reject the operation.
+
 ### Cookie-file authentication
 
 ```js
@@ -551,6 +633,14 @@ network access is allowed.
 | `yandex-metrica` | `analytics` | `counter-id`: `ym(id, 'init', ...)`, legacy `Ya.Metrika`/`Ya.Metrika2` id and watch pixel |
 | `matomo` | `analytics` | `site-id` with `scope`: `_paq` setTrackerUrl/setSiteId/addTracker, Matomo/Piwik pixel URLs |
 | `plausible` | `analytics` | No account identifier; script integration and `configuration.trackedDomains` from `data-domain` |
+| `umami` | `analytics` | Scoped `website-id` from script configuration or supported inline configuration |
+| `posthog` | `analytics` | Scoped `project-token` from `posthog.init(...)` and its declared `api_host` |
+| `goatcounter` | `analytics` | `site-endpoint` from the embedded `data-goatcounter` destination |
+| `cloudflare-web-analytics` | `analytics` | `site-token` from the beacon URL, `data-cf-beacon` or supported inline configuration |
+| `simple-analytics` | `analytics` | Hosted or configured alternative scripts; optional `configuration.trackedDomains` |
+| `adobe-experience-platform-tags` | `tag-manager` | Scoped `library-id` from a recognized Adobe Launch script URL |
+| `reddit-pixel` | `advertising` | `pixel-id` from supported `rdt('init', ...)` or pixel URL configuration |
+| `x-pixel` | `advertising` | `pixel-id` from supported `twq('config', ...)` or `twq('init', ...)` |
 
 Known provider script references are reported even without an identifier.
 Resource signatures use known provider hosts and paths, plus Matomo/Piwik file
@@ -561,6 +651,12 @@ Signature examples follow the vendors' [Google tag](https://developers.google.co
 [Matomo](https://developer.matomo.org/guides/tracking-javascript-guide),
 [Pinterest](https://help.pinterest.com/en-gb/business/article/add-event-codes) and
 [Plausible](https://plausible.github.io/docs/plausible-script) documentation.
+
+Scope is part of identifier identity for self-hosted integrations such as Umami
+and PostHog. An ID with unknown server scope is not a globally unique correlation
+key. Simple Analytics domains describe configured tracking destinations rather
+than account IDs. Detectors inspect embedded page code and configuration only;
+none of these additions call provider APIs or fetch their scripts.
 
 ```ts
 type TrackerIntelligenceData = {
@@ -587,7 +683,7 @@ value and scope. Duplicate raw/rendered findings merge; distinct evidence
 locations remain. Provider names, identifiers, evidence and hosts are sorted
 lexicographically by their stable fields. `summary.uniqueIdentifiers` counts
 these distinct identifier objects, including unscoped Matomo IDs; it excludes
-Plausible domains. It is not a count of globally unique accounts.
+Plausible/Simple Analytics domains. It is not a count of globally unique accounts.
 
 Evidence contains only a source label, raw/rendered document, allowlisted field
 name, zero-based element index in that document traversal, and an optional
@@ -676,7 +772,8 @@ async function main() {
     const metadata = await extractMetadata(url);
     const structured = await extractStructuredData(url);
     console.log(metadata.data.title, metadata.data.publishedAt);
-    console.log(structured.data.jsonLd, structured.data.microdata);
+    console.log(metadata.data.authors, metadata.data.scientific);
+    console.log(structured.data.jsonLd, structured.data.resolved);
 }
 main().catch(console.error);
 ```
@@ -689,8 +786,10 @@ limits, diagnostics, standalone JSON-LD, and browser fallback behavior.
 the text/HTML selection rules. Discovery keeps the original document base and
 DOM locations. Each occurrence is returned separately, including repeated URLs.
 `extractLinks()` also reads URL and index XML sitemaps, including default/prefixed
-namespaces, XML entities and CDATA. It reads only direct `<loc>` entries for each
-page/sitemap, without fetching them. Sitemap results use `source: 'loc'` and
+namespaces, XML entities and CDATA. It reads direct `<loc>` entries for each
+page/sitemap, without fetching them, and preserves optional `lastmod`,
+`changefreq` and numeric `priority` fields. Missing or invalid optional values
+are `null`; no freshness or crawl behavior is inferred. Sitemap results use `source: 'loc'` and
 `location.attribute: 'textContent'`. Scoping selectors apply to the XML DOM;
 the final captured URL is the base for relative values. See the
 [sitemap CLI examples](CLI.md#links-from-xml-sitemaps).
@@ -742,6 +841,7 @@ type VideoLink = {
     extension: string | null;
     contentType: string | null;
     platform: Platform | null;
+    postUrl?: string; // Original public Telegram post for a matching media widget.
 };
 type VideosResult = ExtractionResult<VideoLink[], 'videos'> & { videos: VideoLink[] };
 ```
@@ -783,6 +883,50 @@ links are scanned first, then microdata, JSON-LD, and page text. Domains are
 lowercased and email duplicates are compared case-insensitively, keeping the first
 local-part spelling. Contact targets are not requested and no files are saved.
 
+Both methods accept `details: true` for rich records while retaining `string[]`
+by default. Email extraction also accepts `deobfuscate: true` to read explicit
+bracketed spellings such as `sales [at] example [dot] com` (also parenthesized or
+braced `at`/`dot` and `punkt`). This is opt-in and does not evaluate scripts or
+guess unrestricted prose. `deobfuscate` is not a telephone option.
+
+```js
+const { extractEmails, extractTelephone } = require('fetchary');
+
+async function main() {
+    const emails = await extractEmails('https://example.com/contact', {
+        details: true, deobfuscate: true,
+    });
+    const phones = await extractTelephone('https://example.com/contact', {
+        details: true, defaultCountry: 'AT',
+    });
+    console.log(emails.data, phones.data);
+}
+main().catch(console.error);
+```
+
+```ts
+type ContactDetail = {
+    value: string;
+    raw: string;
+    label: string | null;
+    department: string | null;
+    location: string | null;
+};
+type TelephoneDetail = ContactDetail & {
+    kind: 'fax' | 'mobile' | 'landline' | null;
+};
+```
+
+`value` is normalized; `raw` preserves the matched spelling. Labels and department
+names come from nearby page text, explicit attributes or declared contact
+fields, with unknown values left `null`. Telephone kind requires an explicit
+fax/mobile/landline label; a generic “Telephone” label does not establish a
+landline. `location` identifies the captured DOM element (or a script contact
+field), and is `null` when the contact is available only from unlocated text.
+Deduplication still uses the normalized contact value. TypeScript infers rich
+arrays for literal `details: true`, strings when omitted/false, and their union
+for a boolean variable. Dispatcher and isolated-client calls share this behavior.
+
 `text` and `html` accept `includeSelectors: string[]` and `ignoreSelectors: string[]`.
 Includes select the first match per selector, deduplicating overlapping trees in
 page order. Ignores remove all matches, including selected roots/ancestors. Missing
@@ -796,12 +940,25 @@ including relative URLs; a missing attribute is `null`. No matches is a successf
 `{ matched: false, values: [] }`, distinct from invalid CSS or fetch errors.
 
 `images` accepts `unique` (default `true`), `includeMetadata` (default `true`), and
-`sources`, an array selecting `img`, `srcset`, `lazy`, `metadata`, `link`, or
-`background`. It inspects `src`, `srcset`, picture sources, common lazy attributes,
+`sources`, an array selecting `img`, `srcset`, `lazy`, `metadata`, `link`,
+`background`, or `stylesheet`. It inspects `src`, `srcset`, picture sources, common lazy attributes,
 Open Graph/Twitter images, image-file hyperlinks, and inline CSS background URLs.
-It does not request binary images, external CSS, or computed styles. URLs resolve
+It does not request binary images or compute styles. URLs resolve
 against the document base, retain deterministic discovery order, and must be
 HTTP(S) without credentials. HTML dimensions are unverified hints.
+
+`includeStylesheets` defaults to `true`. Image discovery also inspects page
+`style` blocks and linked stylesheets for CSS background-image URLs, including
+bounded `@import` traversal. It reads at most eight external CSS resources,
+512 KiB each, 4 MiB total, to an import depth of two; `maxResponseBytes` can
+lower these limits. Requests use the same URL, DNS, redirect, timeout and
+cancellation guards as page resources. Missing, inaccessible or non-CSS
+resources are ignored; cancellation still rejects. Found backgrounds have
+`source: 'stylesheet'`, `originalAttribute: 'background-image'` and
+`stylesheetUrl` identifying their CSS base. No background image is downloaded.
+Use `includeStylesheets: false`, or a `sources` selection excluding `stylesheet`,
+to avoid the extra CSS requests. CSS media rules are discovery hints rather than
+proof that a background was visible in the rendered page.
 
 `social-links` accepts `platform` from the [support matrix](SOCIAL_SUPPORT.md);
 `'twitter'` aliases `'x'`. Sources include hyperlinks, `rel=me`, JSON-LD `sameAs`,
@@ -816,6 +973,19 @@ and image candidates separately from the cached primary page, without saving
 files. Limits are eight manifests (1 MiB each) and 64 images (16 MiB each, four
 concurrent), capped further by `maxResponseBytes`. See [CLI details](CLI.md#favicon-and-avatar)
 and [platform limitations](SOCIAL_SUPPORT.md).
+
+Favicon discovery includes Safari `mask-icon` links. Regular icons, Apple touch
+icons, manifest icons and the normal fallback take precedence over monochrome
+mask icons; candidates within a priority group retain scalable-image,
+verified-area and document-order ranking.
+
+`extractFavicon(url, { all: true })` returns all accessible, checked candidates in
+that ranking as `data: ExtractedImage[]` and `images`, with the first candidate
+also available as `image`. Invalid or inaccessible candidates are omitted, and
+no usable candidate still raises `FetcharyNotFoundError`. It uses the same
+candidate limits as ordinary favicon selection. `all: true` cannot be combined
+with `binary: true`; this rejects with `FetcharyValidationError`. The dispatcher
+and isolated clients support the same options and TypeScript result inference.
 
 `favicon` also accepts `binary: boolean` (default `false`). With `binary: true`,
 `data` is a Node.js `Buffer` containing the selected image's original bytes;
@@ -854,7 +1024,7 @@ type ExtractionMetadata = {
     extractedAt: string;
     type: 'text' | 'html' | 'favicon' | 'images' | 'videos' | 'avatar'
         | 'selector' | 'social-links' | 'social-insights' | 'emails' | 'telephone'
-        | 'links' | 'documents' | 'metadata' | 'structured-data' | 'tracker-intelligence';
+        | 'links' | 'documents' | 'metadata' | 'structured-data' | 'tracker-intelligence' | 'price';
     captureMode: 'http' | 'browser';
     status: number;
     contentType: string | null;
@@ -880,6 +1050,8 @@ data: string;
 
 // emails / telephone
 data: string[];
+// With details: true, respectively:
+data: ContactDetail[] | TelephoneDetail[];
 
 // links / documents (types detailed below)
 data: ExtractedLink[] | DocumentLink[];
@@ -899,6 +1071,8 @@ data: {
 
 // favicon with binary: true (image retains the metadata shape above)
 data: Buffer;
+// favicon with all: true (image is the first entry, images aliases data)
+data: ExtractedImage[];
 
 // avatar
 data: { platform: string; profile: string | null; image: /* favicon image shape */ unknown };
@@ -906,8 +1080,9 @@ data: { platform: string; profile: string | null; image: /* favicon image shape 
 // images
 data: Array<{
     url: string; alt: string; width: number | null; height: number | null;
-    source: 'img' | 'srcset' | 'lazy' | 'metadata' | 'link' | 'background';
+    source: 'img' | 'srcset' | 'lazy' | 'metadata' | 'link' | 'background' | 'stylesheet';
     originalAttribute: string; resolutionVerified: false;
+    stylesheetUrl?: string;
 }>;
 
 // selector
@@ -916,19 +1091,19 @@ data: { matched: boolean; values: Array<string | null> };
 // social-links
 data: Array<{
     platform: string; url: string;
-    kind: 'profile' | 'channel' | 'post' | 'video' | 'unknown';
+    kind: 'profile' | 'channel' | 'post' | 'video' | 'repository' | 'release' | 'unknown';
     source: 'link' | 'rel-me' | 'metadata' | 'json-ld';
 }>;
 
 // social-insights
 data: {
-    platform: string | null; kind: 'profile' | 'channel' | 'post' | 'video' | 'unknown';
+    platform: string | null; kind: 'profile' | 'channel' | 'post' | 'video' | 'repository' | 'release' | 'unknown';
     url: string;
     metrics: {
         likes: number | null; comments: number | null; views: number | null;
         shares: number | null; saves: number | null; followers: number | null;
         following: number | null; posts: number | null; subscribers: number | null;
-        score: number | null;
+        score: number | null; stars: number | null; forks: number | null; karma: number | null;
     };
     status: 'available' | 'partial' | 'unavailable' | 'unsupported'
         | 'login_required' | 'blocked' | 'extraction_error';
@@ -944,14 +1119,21 @@ Compatibility fields remain: text/HTML have `content` and `format`; selectors
 also have joined `content` and `format`; image lists have `images`; social links
 have `links`; email results have `emails`; telephone results have `numbers`;
 favicon/avatar have `image`; avatars also have `platform`, `profile`,
-and `vendor`; insights have `vendor` and `followers` (falling back to YouTube
-subscribers). Link results also have `links`; document results have `documents`.
+and `vendor`; insights have `vendor` and `followers` (falling back to available
+channel subscribers). Link results also have `links`; document results have `documents`.
 Metadata results have `metadata`; structured-data results have `structuredData`.
 Prefer `data` for new integrations.
 
 ### Metadata and structured-data records
 
 ```ts
+type MetadataPerson = { name: string | null; url: string | null };
+type MetadataEvidence = {
+    value: string; raw: string;
+    source: 'html' | 'meta' | 'json-ld' | 'microdata';
+    field: string;
+};
+type MetadataField = 'title' | 'description' | 'publishedAt' | 'modifiedAt';
 type PageMetadata = {
     title: string | null;
     description: string | null;
@@ -959,6 +1141,16 @@ type PageMetadata = {
     language: string | null;
     publishedAt: string | null;
     modifiedAt: string | null;
+    authors: MetadataPerson[];
+    publisher: MetadataPerson | null;
+    openGraph: Record<string, string[]>;
+    twitter: Record<string, string[]>;
+    scientific: {
+        doi: string | null; authors: string[];
+        journal: string | null; pdfUrl: string | null;
+    };
+    sources: Record<MetadataField, MetadataEvidence | null>;
+    alternatives: Record<MetadataField, MetadataEvidence[]>;
 };
 type JsonValue = string | number | boolean | null | JsonValue[] | JsonObject;
 type JsonObject = { [key: string]: JsonValue };
@@ -976,6 +1168,14 @@ type StructuredData = {
     jsonLd: JsonObject[];
     microdata: MicrodataItem[];
     errors: StructuredDataIssue[];
+    resolved: {
+        roots: string[];
+        entities: Record<string, {
+            id: string;
+            types: string[];
+            properties: JsonObject;
+        }>;
+    };
 };
 ```
 
@@ -999,6 +1199,22 @@ those groups. Nested author/recommendation objects are not scanned for page date
 Language uses the first comma-separated declaration and normalizes `_` to `-`.
 Dates retain their original trimmed strings; no timezone or missing date is inferred.
 
+`authors` combines explicit author metadata, `rel="author"` links, scientific
+citation authors and eligible page/article schema authors; profile URLs are
+resolved against the document base. `publisher` uses eligible schema or explicit
+publisher metadata. These records do not fetch people or publisher pages.
+`openGraph` and `twitter` retain every matching meta content attribute value
+after HTML entity decoding, including repeated keys and original whitespace,
+under normalized lowercase field names.
+
+`sources` identifies the selected title, description and date values with their
+original spelling, source category and field. `alternatives` retains differing
+values encountered at the other eligible locations; it does not replace the
+existing precedence. Scientific metadata recognizes declared citation/DC author
+fields, citation/PRISM DOI fields, journal title and `citation_pdf_url`. DOI URL
+prefixes are removed only when the remainder has DOI syntax. Unknown values
+stay `null` or empty arrays. DOI and PDF targets are not requested.
+
 JSON-LD objects retain their authored structure and context declarations; parsing
 does not perform remote-context loading, vocabulary validation, or RDF expansion.
 Microdata follows the HTML [item/property model](https://html.spec.whatwg.org/multipage/microdata.html),
@@ -1010,6 +1226,18 @@ nested items, in DOM order. Malformed/deep JSON-LD blocks are skipped; non-objec
 array entries produce diagnostics. Cyclic/deep Microdata values become null;
 roots exceeding the property/text budget are skipped. These are inspectable data
 issues rather than transport failures. See [CLI limits](CLI.md#metadata-and-structured-data).
+
+`resolved` adds a local JSON-LD entity table alongside untouched `jsonLd` and
+`microdata`. Page-relative `@id` values use the document base; definitions sharing
+an ID are merged, repeated types/values are deduplicated, and anonymous root or
+typed nodes receive local blank-node IDs. `roots` identifies the root entities
+(or nodes in a graph-only container). Identified/typed nested objects become
+`{ "@id": "..." }` references into `entities`, so cyclic references remain
+serializable. Missing local definitions produce entries with no properties;
+they do not trigger a network lookup. Anonymous IDs are capture-local identifiers.
+The model does not expand JSON-LD contexts, fetch external vocabularies or claim
+full RDF semantics. Resolution is bounded to 10000 values and 64 levels; a limit
+adds a diagnostic and can leave a partial entity table while preserving raw data.
 
 ### Link and document records
 
@@ -1027,6 +1255,9 @@ type ExtractedLink = {
     internal: boolean;
     source: 'a' | 'area' | 'link' | 'loc';
     location: LinkLocation;
+    lastmod?: string | null;
+    changefreq?: string | null;
+    priority?: number | null;
 };
 type DocumentLink = Omit<ExtractedLink, 'source'> & {
     source: Exclude<ExtractedLink['source'], 'loc'> | 'iframe' | 'embed' | 'object';
@@ -1065,7 +1296,7 @@ responses (401/403/429) become structured insight availability; other network
 errors reject. No account/post is substituted after an identity mismatch. Missing rendered metrics can retain public values from the same capture's matching HTTP page; their source field starts with `rawHTTP:`. LinkedIn preserves its guarded public HTTP follower fallback at a browser login wall, while retaining `login_required` status.
 
 `score` is the only signed metric; all ordinary counts remain nonnegative.
-It reports Reddit's net score and cannot establish individual vote totals.
+It reports Reddit's net score or Hacker News points and cannot establish individual vote totals.
 Structured integers are exact as reported by the page. Compact counts such as
 `12K`, `12.5K`, `1.2M`, and `1,2 Mio.` are normalized with `approximate: true`.
 With a suffix, comma/period is a decimal separator; without one, only integers
@@ -1080,6 +1311,31 @@ During browser capture, the YouTube adapter keeps the comment heading in view
 within the configured `waitAfterLoad` period to trigger lazy loading.
 It reads the reported total without paginating or counting loaded threads;
 disabled or unavailable totals stay `null`.
+
+The metrics object always contains thirteen fields: `likes`, `comments`, `views`,
+`shares`, `saves`, `followers`, `following`, `posts`, `subscribers`, `score`,
+`stars`, `forks` and `karma`. Stars, forks and karma retain their own meaning
+instead of being reported as followers or likes.
+
+Additional HTML adapters and URL kinds include:
+
+| Platform / URL kind | Exposed data and boundaries |
+| --- | --- |
+| Telegram public channel | `subscribers` and channel-avatar candidates from matching public channel HTML |
+| Telegram public post | `views` from the matching visible message widget; discovered videos can carry `postUrl` |
+| Hacker News item | `score` and `comments` from its matching item row; a reported `discuss` link means zero comments |
+| Hacker News user | `karma` from the matching profile table; username case is preserved |
+| GitHub repository | `stars` and `forks` from matching repository HTML, separately from user follower counts |
+| GitHub release URL | Classified as `release`; recognizing that URL does not imply release-engagement metrics |
+
+Library platform names are `telegram` and `hackernews`. Telegram supports
+`t.me`/`telegram.me` public channel and numeric-post paths, including `/s/`
+previews. Direct public post URLs are captured through their `/s/` preview while
+retaining the requested URL. Private `/c/` paths, invitation/reserved routes and
+unrelated or forwarded message identities do not supply another post's values.
+No Telegram or Hacker News API is called. New metrics follow the existing
+identity, visibility, missing-value and provenance rules; these are supported
+HTML patterns rather than guarantees that every live page exposes every field.
 
 Platform support is fixture-backed and limited to exposed public data. See
 [SOCIAL_SUPPORT.md](SOCIAL_SUPPORT.md) before relying on any metric.
@@ -1104,17 +1360,40 @@ async function main() {
     const extractor = createExtractor({ cacheTtlMs: 120_000, maxEntries: 50 });
     await extractor.extractText(url);
     await extractor.extractImages(url);
+    console.log(extractor.getCacheStats());
     extractor.clearCache();
 }
 main().catch(console.error);
 ```
 
 `createExtractor(options?)` is synchronous and lightweight. It returns all
-extraction functions and `analyse()` plus `configure()` and `clearCache()`, with
+extraction functions and `analyse()` plus `configure()`, `getCacheStats()` and `clearCache()`, with
 an isolated cache and copied headers. See [client configuration](#configure-a-library-client)
 for changing capture defaults. Per-call options override defaults without mutating another client.
 Per-call headers replace default headers. `maxEntries` and `maxCacheBytes` are
 client-only non-negative safe integers; zero retains no completed entries.
+
+`client.getCacheStats()` returns an independent snapshot:
+
+```ts
+type CaptureCacheStats = {
+    hits: number; misses: number; deduplicated: number;
+    loads: number; failures: number; evictions: number;
+    expired: number; bypasses: number;
+    entries: number; bytes: number; pending: number;
+    maxEntries: number; maxCacheBytes: number;
+};
+```
+
+Counters cover that client's cache lifetime. `hits` counts completed captures
+reused; `misses` includes in-flight joiners; `deduplicated` counts those joiners;
+`loads` counts new load attempts, including bypasses; `failures` counts failed
+loads rather than every joining caller. `evictions` counts capacity removals,
+`expired` counts TTL pruning, and `bypasses` counts captures with effective TTL
+zero. `entries`, `bytes` and `pending` describe current retained captures,
+estimated payload bytes and attached in-flight work. Limits are the configured
+capacities. Clearing removes entries and detaches pending work while keeping
+lifetime counters; it does not reset statistics or count as an eviction.
 
 Age starts when the original capture completes. Every request compares that age
 with its own effective TTL; hits never extend expiration. The earlier caller's
@@ -1135,7 +1414,7 @@ without cancelling it; old work cannot refill the cleared cache.
 Compatibility includes normalized requested URL (query and fragment preserved),
 actual capture mode, headers/user agent, timeout, response limit, fetch/browser
 implementation identity, DNS implementation identity, private-network policy,
-TLS certificate-verification policy, consent policy, and browser wait settings. HTTP and browser
+TLS certificate-verification policy, consent policy, browser resource filters and browser wait settings. HTTP and browser
 snapshots are separate. Extraction selectors and formats do not change a page
 snapshot's key.
 
@@ -1275,6 +1554,7 @@ async function main() {
         mode: 'browser',
         productSelector: '#product-detail',
         priceSelector: '.current-price',
+        country: 'AT', language: 'de-AT',
     });
     console.log(price.data, generic.data, cached.cache, scoped.data);
 }
@@ -1283,6 +1563,13 @@ main().catch(console.error);
 
 All entry points share one implementation. `PriceOptions` extends
 `ExtractionOptions` with optional `productSelector` and `priceSelector` strings.
+It also accepts `country` (two-letter format, normalized to uppercase) and
+`language` (a valid language tag, canonicalized by `Intl`). They are returned
+as `data.context`, with omitted values `null`. A requested language supplies
+`Accept-Language` unless the caller already supplied that header; browser
+language follows that header. Country records the requested context only: it
+does not geolocate requests, choose a shop region, infer a currency or establish
+that the shop honored the request. There is no currency conversion.
 Selectors use the existing CSS validation before capture; empty or malformed
 selectors reject with `FetcharyValidationError`. A valid selector matching
 nothing succeeds. Product scope applies to DOM prices; structured evidence is
@@ -1358,6 +1645,20 @@ Every price result has the ordinary `ExtractionMetadata` fields (`requestedUrl`,
 type PriceProduct = {
     id: string | null; name: string | null;
     url: string | null; sku: string | null;
+    variant?: {
+        size: string[]; color: string[]; material: string[];
+        model: string[]; configuration: string[];
+    };
+};
+type PriceShipping = {
+    cost: { amount: string; currency: string | null } | null;
+    regions: Array<{
+        country: string | null; region: string | null; postalCode: string | null;
+    }>;
+    deliveryTime: {
+        handling: { min: string | null; max: string | null; unit: string | null } | null;
+        transit: { min: string | null; max: string | null; unit: string | null } | null;
+    } | null;
 };
 type PriceEvidence = {
     source: 'json-ld' | 'visible-dom' | 'microdata' | 'meta';
@@ -1369,7 +1670,7 @@ type PriceEvidence = {
     captureMode: 'http' | 'browser';
     scriptIndex?: number;        // zero-based JSON-LD block index, including malformed blocks
     attribute?: string;          // content, textContent, data-price, etc.
-    visibility?: 'static-not-hidden' | 'rendered-not-hidden';
+    visibility?: 'static-not-hidden' | 'rendered-not-hidden' | 'computed-visible';
 };
 type PriceCandidate = {
     amount: string;              // decimal string, never a floating-point amount
@@ -1380,6 +1681,7 @@ type PriceCandidate = {
     product: PriceProduct | null;
     association: 'matched' | 'uncertain';
     conditions: Record<string, string>;
+    shipping: PriceShipping[];
     evidence: PriceEvidence[];
 };
 type PriceIssue = {
@@ -1393,6 +1695,7 @@ type PriceData = {
     product: PriceProduct | null; // associated current product, null when uncertain
     candidates: PriceCandidate[];
     issues: PriceIssue[];
+    context: { country: string | null; language: string | null };
 };
 type PriceResult = ExtractionResult<PriceData, 'price'>;
 ```
@@ -1410,6 +1713,14 @@ strings, plus recognized DOM condition attributes/display text. Conditions must
 agree exactly for comparison. Unspecified terms cannot prove equivalence to a
 different explicit condition. Empty conditions mean no qualifiers were found;
 they do not verify tax treatment or customer eligibility.
+
+`shipping` additionally normalizes declared shipping rates, destinations and
+handling/transit ranges while retaining the original `conditions` evidence.
+Amounts and time quantities remain decimal strings; missing shipping costs are
+`null`, never assumed free. Destinations preserve declared country/region/postal
+information. `variant`, when present, contains explicitly supplied size, color,
+material, model and configuration arrays from supported schema/DOM fields. It
+does not infer product options from marketing copy or combine distinct variants.
 
 Issue codes include `PRICE_MISMATCH`, `PRICE_AMBIGUOUS`, `INVALID_AMOUNT`,
 `AMBIGUOUS_NUMBER`, `AMBIGUOUS_CURRENCY`, `INVALID_JSON_LD`, and
@@ -1439,10 +1750,16 @@ corresponding `:currency` meta values. These remain separate source categories.
 
 Scripts/styles/templates, navigation, footers, advertisements and recognized
 recommendations are excluded from DOM prices. Hidden/aria-hidden and inline
-`display:none`/`visibility:hidden` elements are ignored. Class-based computed CSS,
-viewport position and occlusion are **not established**, even on rendered HTML.
-`visible-dom` names the source category, and its qualified `visibility` records
-only markup checks; it is not a guarantee that a human saw that price.
+`display:none`/`visibility:hidden` elements are ignored. Ordinary browser price
+captures also run a bounded computed-style scan for `display`, `visibility`,
+`opacity` and `content-visibility`, including external stylesheet effects.
+Completed scans label retained rendered DOM evidence `computed-visible`.
+When such a reliable scan exists, raw visible-DOM candidates are omitted so a
+pre-render value hidden by CSS cannot re-enter through raw markup; raw JSON-LD,
+Microdata and metadata evidence remain available. A missing or truncated scan
+keeps qualified markup-only visibility and reports limits where relevant.
+Viewport position and occlusion are not established: `computed-visible` does
+not prove that a human saw the price.
 
 There are no retailer adapters or AI guesses. Unrecognized condition wording,
 complex price displays or identities may require selectors or remain unavailable
@@ -1488,7 +1805,9 @@ extraction makes no offer/context/product requests. Shared capture caching,
 protections and per-client isolation are unchanged. Analysis shares its existing
 single HTTP capture and at most one passive rendering; its rendering blocks
 external resources, so some JavaScript applications cannot populate prices
-there. Standalone browser extraction uses the normal resource policy.
+there. The passive analysis snapshot does not run the ordinary computed-price
+visibility scan. Standalone browser extraction uses the normal resource policy,
+including any explicitly blocked resource types.
 
 For an external tracker, store the complete result in your own system and
 handle `conflict`/`ambiguous` explicitly before recording a selected price.
