@@ -184,7 +184,11 @@ export declare function extractSocialInsights(url: string, options?: ExtractionO
 export declare function extractSocialAvatar(url: string, options?: ExtractionOptions): Promise<ProfilePictureResult>;
 export declare const extractProfilePicture: typeof extractSocialAvatar;
 export type ExtractorOptions = ExtractionOptions & { maxEntries?: number; maxCacheBytes?: number };
-export type Extractor = { analyse: typeof analyse; extract: typeof extract; extractText: typeof extractText; extractHtml: typeof extractHtml; extractLinks: typeof extractLinks; extractDocuments: typeof extractDocuments; extractVideos: typeof extractVideos; extractPrice: typeof extractPrice; extractMetadata: typeof extractMetadata; extractStructuredData: typeof extractStructuredData; extractTrackerIntelligence: typeof extractTrackerIntelligence; extractEmails: typeof extractEmails; extractTelephone: typeof extractTelephone; extractFavicon: typeof extractFavicon; extractImages: typeof extractImages; extractSelector: typeof extractSelector; extractSocialLinks: typeof extractSocialLinks; extractSocialInsights: typeof extractSocialInsights; extractSocialAvatar: typeof extractSocialAvatar; extractProfilePicture: typeof extractProfilePicture; clearCache(): void };
+export type Extractor = {
+  /** Merge validated capture defaults for future calls on this client. */
+  configure(options: ExtractionOptions): Extractor;
+  analyse: typeof analyse; extract: typeof extract; extractText: typeof extractText; extractHtml: typeof extractHtml; extractLinks: typeof extractLinks; extractDocuments: typeof extractDocuments; extractVideos: typeof extractVideos; extractPrice: typeof extractPrice; extractMetadata: typeof extractMetadata; extractStructuredData: typeof extractStructuredData; extractTrackerIntelligence: typeof extractTrackerIntelligence; extractEmails: typeof extractEmails; extractTelephone: typeof extractTelephone; extractFavicon: typeof extractFavicon; extractImages: typeof extractImages; extractSelector: typeof extractSelector; extractSocialLinks: typeof extractSocialLinks; extractSocialInsights: typeof extractSocialInsights; extractSocialAvatar: typeof extractSocialAvatar; extractProfilePicture: typeof extractProfilePicture; clearCache(): void;
+};
 export declare function createExtractor(options?: ExtractorOptions): Extractor;
 export declare function clearCache(): void;
 export type SessionOptions = { sessionDir?: string; signal?: AbortSignal };

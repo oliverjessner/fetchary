@@ -33,8 +33,12 @@ const analysisSession = Symbol('analysisSession');
 const sessionCookies = Symbol('sessionCookies');
 const types = ['text','html','favicon','images','videos','avatar','selector','social-links','social-insights','emails','telephone','links','documents','metadata','structured-data','tracker-intelligence','price'];
 
-function extractionOptions(options = {}) {
+function validateOptionsObject(options) {
   if (!options || typeof options !== 'object' || Array.isArray(options)) throw new FetcharyValidationError('options must be an object');
+}
+
+function extractionOptions(options = {}) {
+  validateOptionsObject(options);
   for (const name of ['method','body','followRedirects','getVendors']) if (Object.hasOwn(options, name)) throw new FetcharyValidationError(`${name} is not an extraction option`);
   const settings = {
     fetch: options.fetch, launchBrowser: options.launchBrowser, headers: options.headers, signal: options.signal, cookieFile: options.cookieFile,
@@ -451,8 +455,18 @@ function clearCache() { sharedCaptureCache.clear(); }
 function createExtractor(options = {}) {
   const settings = extractionOptions(options);
   const cache = createCaptureCache({ maxEntries: options.maxEntries, maxCacheBytes: options.maxCacheBytes });
-  const defaults = { ...options, headers: settings.headers };
-  const client = { clearCache: () => cache.clear() };
+  let defaults = { ...options, headers: settings.headers };
+  const client = {
+    clearCache: () => cache.clear(),
+    configure(updates) {
+      validateOptionsObject(updates);
+      for (const name of ['maxEntries', 'maxCacheBytes']) if (Object.hasOwn(updates, name)) throw new FetcharyValidationError(`${name} can only be set when creating an extractor`);
+      const next = { ...defaults, ...updates };
+      const settings = extractionOptions(next);
+      defaults = { ...next, headers: settings.headers };
+      return client;
+    },
+  };
   for (const [name, method] of Object.entries({ analyse, extract, extractText, extractHtml, extractFavicon, extractImages, extractVideos, extractSocialLinks, extractSocialAvatar, extractProfilePicture, extractSocialInsights, extractEmails, extractTelephone, extractLinks, extractDocuments, extractMetadata, extractStructuredData, extractTrackerIntelligence, extractPrice })) client[name] = (url, overrides = {}) => method(url, { ...defaults, ...overrides, [clientCache]: cache });
   client.extractSelector = (url, selectorOrOptions = {}, overrides = {}) => typeof selectorOrOptions === 'string'
     ? extractSelector(url, { ...defaults, ...overrides, selector: selectorOrOptions, [clientCache]: cache })

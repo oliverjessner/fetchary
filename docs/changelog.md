@@ -1,3 +1,7 @@
+# 2.2.0
+
+- Add `client.configure(options)` to isolated library clients for updating capture defaults, including `maxResponseBytes`, with validation and per-call overrides. Document response limits and the independent limits of custom fetch transports.
+
 # 2.1.1
 
 - Preserve separate `Set-Cookie` headers in browser captures so multi-cookie consent decisions can complete and redirect to the page content.

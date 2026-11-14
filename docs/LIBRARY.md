@@ -35,6 +35,51 @@ const result = await extractText('https://example.com');
 console.log(result.data);
 ```
 
+## Configure a library client
+
+Use `createExtractor(options?)` to set defaults once for your application. For
+example, allow up to 8 MiB per response when reading a large homepage to find its
+favicon:
+
+```js
+const { createExtractor } = require('fetchary');
+
+const fetchary = createExtractor({
+    mode: 'http',
+    maxResponseBytes: 8 * 1024 * 1024,
+});
+
+async function main() {
+    const icon = await fetchary.extractFavicon('https://www.handelsblatt.com/');
+    console.log(icon.image.url);
+
+    // Update defaults for subsequent calls on this client.
+    fetchary.configure({ maxResponseBytes: 16 * 1024 * 1024 });
+}
+main().catch(console.error);
+```
+
+`client.configure(options)` synchronously merges common `ExtractionOptions` into
+the client's defaults and returns the same client for chaining. Invalid options
+throw `FetcharyValidationError` before changing any defaults. Omitted settings
+are kept; setting an option to `undefined` restores its built-in default. Headers
+are copied and replace the previous default headers as a whole. Per-call options
+still take precedence. Calls already in progress keep their original settings;
+other clients and standalone functions keep their own defaults.
+
+`maxResponseBytes` is a positive safe integer in bytes, with a built-in default
+of 45 MiB (`45 * 1024 * 1024`). It bounds decoded page responses, resources and
+rendered HTML. Favicon/avatar images also have a 16 MiB cap and manifests a
+1 MiB cap; the smaller limit applies. Cache capacities `maxEntries` and
+`maxCacheBytes` can only be set in `createExtractor()`.
+
+When supplying a custom `fetch`, configure its own limits too. For example, a
+transport that rejects a homepage above 2 MiB still rejects it when Fetchary's
+`maxResponseBytes` is higher. Fetchary can apply a stricter limit to the returned
+response, but cannot raise a limit enforced inside the transport. In an app such
+as Pitchary, align the transport's page limit with the client setting and keep
+any separate icon-download limit in the transport.
+
 ## API
 
 All extraction methods return promises. `extract(url, { type, ...options })`
@@ -1065,8 +1110,9 @@ main().catch(console.error);
 ```
 
 `createExtractor(options?)` is synchronous and lightweight. It returns all
-extraction functions and `analyse()` plus `clearCache()`, with an isolated cache and copied
-headers. Per-call options override defaults without mutating another client.
+extraction functions and `analyse()` plus `configure()` and `clearCache()`, with
+an isolated cache and copied headers. See [client configuration](#configure-a-library-client)
+for changing capture defaults. Per-call options override defaults without mutating another client.
 Per-call headers replace default headers. `maxEntries` and `maxCacheBytes` are
 client-only non-negative safe integers; zero retains no completed entries.
 
