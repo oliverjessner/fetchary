@@ -1,0 +1,42 @@
+- `extractSocialLinks`: öffentliche Telegram-Kanäle und Kanalbeiträge erkennen. ([Beispiel](https://t.me/s/telegram))
+- `extractSocialLinks`: Hacker-News-Profile und Diskussionen erkennen. ([Beispiel](https://news.ycombinator.com/item?id=8863))
+- `extractSocialLinks`: GitHub-Repositories und Releases als eigene Linktypen unterscheiden. ([Beispiel](https://github.com/nodejs/node/releases))
+- `extractSocialLinks`: Twitch-Clip-URLs zuverlässig als Videos klassifizieren.
+- `extractSocialLinks`: Vimeo-Playerlinks dem jeweiligen Video zuordnen.
+- `extractSocialInsights`: sichtbare Abonnentenzahlen öffentlicher Telegram-Kanäle auslesen. ([Beispiel](https://t.me/s/telegram))
+- `extractSocialInsights`: sichtbare Aufrufzahlen einzelner Telegram-Kanalbeiträge auslesen. ([Beispiel](https://t.me/s/telegram))
+- `extractSocialInsights`: Punkte und Kommentarzahl von Hacker-News-Beiträgen auslesen. ([Beispiel](https://news.ycombinator.com/item?id=8863))
+- `extractSocialInsights`: Sterne und Forks von GitHub-Repositories auslesen. ([Beispiel](https://github.com/oliverjessner/fetchary))
+- `extractSocialInsights`: Karma von Hacker-News-Profilen auslesen. ([Beispiel](https://news.ycombinator.com/user?id=pg))
+- `extractProfilePicture` / `extractSocialAvatar`: Kanalbilder öffentlicher Telegram-Kanäle unterstützen. ([Beispiel](https://t.me/s/telegram))
+- `extractImages`: Hintergrundbilder aus eingebundenen Stylesheets mit begrenztem Nachladen erfassen.
+- `extractFavicon`: Safari-`mask-icon`-Verweise zusätzlich berücksichtigen.
+- `extractFavicon`: Alle geprüften Icon-Varianten optional mit Format, Abmessungen und Herkunft zurückgeben. dazu einen flag einführen aller --all
+- `extractVideos`: Videos aus Telegram-Kanalvorschauen ihrem ursprünglichen Kanalbeitrag zuordnen. ([Beispiel](https://t.me/s/telegram))
+- `extractLinks`: Bei Sitemaps zusätzlich `lastmod`, `changefreq` und `priority` ausgeben.
+- `extractMetadata`: Autoren, Herausgeber und verlinkte Autorenprofile ergänzen.
+- `extractMetadata`: Sämtliche vorhandenen Open-Graph- und Twitter-Card-Felder zusätzlich als Originalwerte zurückgeben.
+- `extractMetadata`: Für Titel, Beschreibung und Datum die jeweilige Quelle sowie abweichende Fundstellen ausgeben.
+- `extractMetadata`: Wissenschaftliche Metatags für DOI, Autoren, Zeitschrift und PDF-Adresse berücksichtigen, etwa bei arXiv.
+- `extractStructuredData`: JSON-LD-Verweise über `@id` und `@graph` zusätzlich als aufgelöstes Entitätsmodell zurückgeben.
+- `extractPrice`: Vorhandene Versandbedingungen zusätzlich als typisierte Kosten-, Liefergebiets- und Lieferzeitfelder ausgeben.
+- `extractPrice`: Zur bestehenden Variantentrennung explizite Größen-, Farb- und Ausführungsattribute ergänzen.
+- `extractPrice`: Länder- und Spracheinstellungen ausdrücklich unterstützen und den verwendeten Angebotskontext zurückgeben.
+- `extractPrice`: Im Browsermodus auch durch externe Stylesheets versteckte Preisfelder erkennen.
+- `extractEmails`: Adressen anhand sichtbarer Beschriftungen Abteilungen wie Redaktion, Presse oder Vertrieb zuordnen.
+- `extractEmails`: Eindeutig geschriebene Verschleierungen wie `name [at] firma [dot] de` optional auflösen.
+- `extractTelephone`: Sichtbar beschriftete Fax-, Mobil- und Festnetznummern getrennt kennzeichnen.
+- `extractEmails` / `extractTelephone`: Originalschreibweise, Beschriftung und Fundstelle optional zusätzlich zum normalisierten Wert zurückgeben.
+- `extractTrackerIntelligence`: Umami anhand eingebundener Website-ID und Tracker-Konfiguration erkennen. ([Einbindung](https://docs.umami.is/docs/tracker-configuration))
+- `extractTrackerIntelligence`: PostHog anhand sichtbarer Projektkennung und eingebettetem Erfassungsserver erkennen. ([Einbindung](https://posthog.com/docs/libraries/js))
+- `extractTrackerIntelligence`: GoatCounter anhand eingebundener Erfassungsadresse und Zählskript erkennen. ([Einbindung](https://www.goatcounter.com/help/start))
+- `extractTrackerIntelligence`: Cloudflare Web Analytics anhand des eingebundenen RUM-Beacons erkennen. ([Einbindung](https://developers.cloudflare.com/web-analytics/data-metrics/data-origin-and-collection/))
+- `extractTrackerIntelligence`: Simple Analytics einschließlich alternativer Skripte und abweichender Tracking-Domain erkennen. ([Einbindung](https://docs.simpleanalytics.com/script))
+- `extractTrackerIntelligence`: Adobe Experience Platform Tags als eigene Tag-Management-Integration erkennen. ([Einbindung](https://experienceleague.adobe.com/en/docs/experience-cloud-kcs/kbarticles/ka-22265))
+- `extractTrackerIntelligence`: Reddit Pixel anhand eingebundenem Skript und sichtbarer Initialisierung erkennen. ([Einbindung](https://business.reddithelp.com/articles/Knowledge/manual-conversion-events-with-the-reddit-pixel))
+- `extractTrackerIntelligence`: X beziehungsweise Twitter Pixel anhand eingebundenem Skript und sichtbarer Pixel-ID erkennen. ([Einbindung](https://help.x.com/en/business-and-advertising/conversion-tracking-for-websites))
+- `analyse`: Laufzeiten, gelesene Datenmengen und den Grund eines Browser-Fallbacks im Bericht ausgeben.
+- `createExtractor` / `client.configure`: Wiederverwendbare Einstellungen für bestimmte Domains ermöglichen.
+- `createExtractor` / `client.configure`: Beim Rendern gezielt Ressourcentypen wie Schriftarten oder Videos ausschließen können.
+- `createExtractor`: Cache-Auslastung, Treffer, zusammengeführte Anfragen und verdrängte Einträge optional ausgeben.
+- `logout`: Mehrere ausdrücklich ausgewählte Sitzungen oder Sitzungen einer bestimmten Domain gemeinsam entfernen können.

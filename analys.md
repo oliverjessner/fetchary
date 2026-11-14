@@ -1,0 +1,81 @@
+- Sterne, Forks, Lizenz und Projektbeschreibung von [GitHub-Repositories](https://github.com/oliverjessner/fetchary).
+- Versionsnummern, Veröffentlichungsdaten und Änderungslisten von [GitHub-Releases](https://github.com/nodejs/node/releases).
+- Titel, Beschreibung, Status, Labels und Kommentare von [GitHub-Issues](https://github.com/nodejs/node/issues/67455).
+- Titel, Autoren, Labels und Kommentarzahlen von [GitHub-Pull-Requests](https://github.com/nodejs/node/pulls).
+- Titel, Zieladresse, Punkte, Autor und Kommentarzahl von [Hacker-News-Beiträgen](https://news.ycombinator.com/item?id=8863).
+- Kommentartexte, Autoren und Antwortbeziehungen von [Hacker-News-Diskussionen](https://news.ycombinator.com/item?id=8863).
+- Benutzername, Karma, Beitrittsdatum und Biografie von [Hacker-News-Profilen](https://news.ycombinator.com/user?id=pg).
+- Kanalname, Beschreibung und sichtbare Abonnentenzahl von [öffentlichen Telegram-Kanälen](https://t.me/s/telegram).
+- Beitragstexte, Links, Medienverweise und sichtbare Aufrufzahlen von [öffentlichen Telegram-Beiträgen](https://t.me/s/telegram).
+- Albumtitel, Künstler, Cover, Trackliste, Laufzeiten und Preis von [Bandcamp-Alben](https://disasterpeace.bandcamp.com/album/fez-ost).
+- Songtitel, Künstler, Albumzuordnung und Beschreibung von [Bandcamp-Tracks](https://disasterpeace.bandcamp.com/track/adventure).
+- Filmtitel, Erscheinungsjahr, Regie, Besetzung und Laufzeit von [Letterboxd-Filmseiten](https://letterboxd.com/film/the-godfather/).
+- Rezensionstext, Autor, Film und Sichtungsdatum von [öffentlichen Letterboxd-Rezensionen](https://letterboxd.com/wizardchurch/film/the-godfather/).
+- Serientitel, Beschreibung, Genres, Sender, Status, Besetzung und Episodentermine von [TVmaze](https://www.tvmaze.com/shows/82/game-of-thrones).
+- Hörbuchtitel, Autor, Sprache, Sprecher, Kapitel, Laufzeiten und Audiodateilinks von [LibriVox](https://librivox.org/pride-and-prejudice-by-jane-austen/).
+- Podcasttitel, Herausgeber, Beschreibung, Kategorien, Bewertungen und Episodenlängen von [Apple Podcasts](https://podcasts.apple.com/us/podcast/the-daily/id1200361736).
+- Profilbild, Biografie, Website, Standort und Beitragszahl von [DEV.to-Profilen](https://dev.to/ben).
+- Artikeltext, Autor, Datum, Tags und Kommentare von [DEV.to-Artikeln](https://dev.to/ben/my-public-inbox-4bj8).
+- Überschriften, Zieladressen, Tags, Punkte und Kommentarzahlen von [Lobsters-Beiträgen](https://lobste.rs/).
+- Kommentartexte, Autoren, Zeitpunkte und Antwortstrukturen von [Lobsters-Diskussionen](https://lobste.rs/s/fllb0m/let_me_let_you_own_your_data).
+- Beschreibung, Regeln, Abonnentenzahl und Beitragszahlen von [Lemmy-Communities](https://lemmy.world/c/technology).
+- Beitragstitel, Zieladresse, Autor und verschachtelte Kommentare von [Lemmy-Beiträgen](https://lemmy.world/post/54374005).
+- Fragetext, Antworten, Codebeispiele, Aufrufzahl und Bewertungen von [Stack-Overflow-Fragen](https://stackoverflow.com/questions/231767/what-does-the-yield-keyword-do-in-python).
+- Titel, Abstract, Autoren, Kategorien und PDF-Link von [arXiv-Publikationen](https://arxiv.org/abs/1706.03762).
+- Volltext, Autoren, Institutionen und DOI von [PubMed-Central-Artikeln](https://pmc.ncbi.nlm.nih.gov/articles/PMC7094943/).
+- Infoboxen, Artikelabschnitte und Quellenverweise von [Wikipedia-Artikeln](https://en.wikipedia.org/wiki/Ada_Lovelace).
+- Eigenschaften, Werte, Quellenbelege und externe Kennungen von [Wikidata-Eintragsseiten](https://www.wikidata.org/wiki/Q42).
+- Autor, Verlag, Erscheinungsdatum, Seitenzahl und sichtbare Bewertungen von [Open-Library-Buchseiten](https://openlibrary.org/books/OL7353617M/Fantastic_Mr._Fox).
+- Buchangaben, Sprache, Themen und Downloadformate von [Project Gutenberg](https://www.gutenberg.org/ebooks/1342).
+- Originaldatei, Bildabmessungen, Dateigröße und MIME-Typ von [Wikimedia-Commons-Dateiseiten](https://commons.wikimedia.org/wiki/File:Example.jpg).
+- Werktitel, Künstler, Entstehungsjahr, Material, Maße und Inventarnummer von [The Metropolitan Museum of Art](https://www.metmuseum.org/art/collection/search/436535).
+- Sehenswürdigkeiten, Anreiseinformationen, Unterkunftshinweise und Ortslinks von [Wikivoyage](https://en.wikivoyage.org/wiki/Vienna).
+- Paketbeschreibung, Veröffentlichung, Maintainer und Projektlinks von [PyPI-Projekten](https://pypi.org/project/requests/).
+- Version, Lizenz, Abhängigkeiten und sichtbare Installationsstatistiken von [Homebrew Formulae](https://formulae.brew.sh/formula/wget).
+- Modellbeschreibung, Einsatzgebiet, Lizenz und sichtbare Likes von [Hugging-Face-Modellseiten](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2).
+- Paketversion, unterstützte Frameworks und Installationsangaben von [NuGet-Paketen](https://www.nuget.org/packages/Newtonsoft.Json/).
+- Version, Abhängigkeiten, Lizenz und sichtbare Installationszahlen von [Packagist-Paketen](https://packagist.org/packages/guzzlehttp/guzzle).
+- Gem-Version, Ruby-Anforderung, Lizenz und Downloadzahlen von [RubyGems-Paketen](https://rubygems.org/gems/rails).
+- Herausgeber, Version, Lizenz und Aktualisierungsdatum von [Snapcraft-Paketen](https://snapcraft.io/firefox).
+- App-Versionen, Android-Anforderungen, Berechtigungen und Lizenz von [F-Droid-Appseiten](https://f-droid.org/en/packages/org.mozilla.fennec_fdroid/).
+- Plugin-Version, aktive Installationen, Anforderungen und Aktualisierungsdatum von [WordPress.org-Plugins](https://wordpress.org/plugins/woocommerce/).
+- Version, Lizenz, Abhängigkeiten und Paketgröße von [Arch-Linux-Paketen](https://archlinux.org/packages/extra/x86_64/firefox/).
+- Version, R-Anforderungen, Abhängigkeiten und Paketbeschreibung von [CRAN-Paketen](https://cran.r-project.org/web/packages/ggplot2/index.html).
+- Paketversion, Lizenz, Importzahlen und Dokumentationsabschnitte von [Go-Packages-Seiten](https://pkg.go.dev/net/http).
+- Paketbeschreibung, Versionen, Lizenz, Maintainer und Module von [Hackage](https://hackage.haskell.org/package/aeson).
+- Paketversionen, Lizenz, Herausgeber, Downloadzahlen und Aktualisierungsdatum von [Hex](https://hex.pm/packages/phoenix).
+- Versionsnummer, Veröffentlichungsdatum und Änderungen von [Python-Release-Seiten](https://www.python.org/downloads/release/python-3140/).
+- Downloadlinks, Betriebssysteme, Dateigrößen und Prüfsummen von [Python-Release-Dateilisten](https://www.python.org/downloads/release/python-3140/).
+- Klassen, Methoden, Signaturen und Codebeispiele von [Python-Dokumentationsseiten](https://docs.python.org/3/library/pathlib.html).
+- Syntax, Parameter, Rückgabewerte und Codebeispiele von [MDN-Dokumentationsseiten](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/map).
+- Dokumentationskapitel, Installationsanleitungen und Codebeispiele von [Read the Docs](https://rich.readthedocs.io/en/stable/introduction.html).
+- Titel, Autoren, Dokumentstatus, Abschnitte und Referenzen von [RFC-Dokumenten](https://www.rfc-editor.org/rfc/rfc9110.html).
+- Spieltitel, Entwickler, Publisher, Erscheinungsdatum und Tags von [Steam-Spielseiten](https://store.steampowered.com/app/620/Portal_2/).
+- Sichtbare Bewertungszusammenfassungen und Bewertungszahlen von [Steam-Spielseiten](https://store.steampowered.com/app/620/Portal_2/).
+- Systemanforderungen, unterstützte Sprachen und Spielfunktionen von [Steam-Spielseiten](https://store.steampowered.com/app/620/Portal_2/).
+- Spielepreis, Plattformen, Genre, Veröffentlichungsdatum und Bewertung von [itch.io-Spielseiten](https://maddymakesgamesinc.itch.io/celeste).
+- Spielbeschreibung, Genre, Entwickler, Betriebssysteme, Systemanforderungen und sichtbare Bewertungsanzahl von [GOG](https://www.gog.com/en/game/stardew_valley).
+- App-Name, Entwickler, Kategorie, Beschreibung und Preis von [Apple-App-Store-Seiten](https://apps.apple.com/us/app/vlc-media-player/id650377962).
+- Versionshinweise und sichtbare Releasehistorie von [Apple-App-Store-Seiten](https://apps.apple.com/us/app/vlc-media-player/id650377962).
+- Bewertung, Bewertungsanzahl, Sprachen, Dateigröße und Geräteanforderungen von [Apple-App-Store-Seiten](https://apps.apple.com/us/app/vlc-media-player/id650377962).
+- Name, Entwickler, Nutzerzahl und Bewertungen von [Firefox-Add-on-Seiten](https://addons.mozilla.org/en-US/firefox/addon/ublock-origin/).
+- Version, Lizenz, Berechtigungen und Aktualisierungsdatum von [Firefox-Add-on-Seiten](https://addons.mozilla.org/en-US/firefox/addon/ublock-origin/).
+- Setnummer, Teilezahl, Altersangabe, Preis und sichtbare Verfügbarkeit von [LEGO-Produktseiten](https://www.lego.com/en-at/product/eiffel-tower-10307).
+- Zutaten, Mengen und Zubereitungsschritte von [BBC-Good-Food-Rezepten](https://www.bbcgoodfood.com/recipes/easy-pancakes).
+- Portionen, Schwierigkeitsgrad, Vorbereitungszeit und Kochdauer von [BBC-Good-Food-Rezepten](https://www.bbcgoodfood.com/recipes/easy-pancakes).
+- Nährwerte, Ernährungskennzeichnungen und sichtbare Bewertungen von [BBC-Good-Food-Rezepten](https://www.bbcgoodfood.com/recipes/easy-pancakes).
+- Überschriften, Teaser, Rubriken und Artikelverweise von [Tagesschau](https://www.tagesschau.de/).
+- Schlagzeilen, Meldungstexte und Artikelverweise von [ORF.at](https://news.orf.at/).
+- Artikelüberschriften, Teaser und Themenzuordnungen von [Golem.de](https://www.golem.de/).
+- Überschriften, Teaser und Artikelverweise von [DER STANDARD](https://www.derstandard.at/).
+- Überschriften, Teaser und Artikelverweise von [SRF News](https://www.srf.ch/news).
+- Überschriften, Ressorts und Artikelverweise von [The Guardian](https://www.theguardian.com/uk).
+- Beitragstitel, Lesedauer, Veröffentlichungsangaben und Artikelverweise von [NASA-Blogs](https://www.nasa.gov/blogs/).
+- Bildbeschreibung, Datum und Bildnachweis von [NASA Astronomy Picture of the Day](https://science.nasa.gov/apod/).
+- Firmenname, Registernummer, Anschrift, Status und Gründungsdatum von [Companies-House-Unternehmensseiten](https://find-and-update.company-information.service.gov.uk/company/00445790).
+- Stellenbezeichnung, Standort, Aufgaben, Anforderungen und ausgewiesenes Gehalt von [öffentlichen Greenhouse-Stellenanzeigen](https://job-boards.greenhouse.io/anthropic/jobs/4952051008).
+- Stellenbezeichnungen, Standorte und Teams von [Mozilla-Karriereseiten](https://www.mozilla.org/en-US/careers/listings/).
+- Jobtitel, Veröffentlichungsangaben und Bewerbungslinks von [Hacker-News-Stellenanzeigen](https://news.ycombinator.com/jobs).
+- Kurstitel, Dozenten, Lernziele, Module und sichtbare Bewertungen von [Coursera-Kursseiten](https://www.coursera.org/learn/machine-learning).
+- Vortragstitel, Sprecher, Datum, Dauer und sichtbare Aufrufzahlen von [media.ccc.de](https://media.ccc.de/c/38c3).
+- Vortragstitel, Sprecher, Räume, Termine und Aufzeichnungslinks von [FOSDEM-Programmen](https://archive.fosdem.org/2026/schedule/events/).
