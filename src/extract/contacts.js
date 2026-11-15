@@ -103,13 +103,24 @@ function location(element, positions) {
 }
 const compact = value => String(value || '').replace(/\s+/g, ' ').trim();
 const departmentPattern = /\b(?:presse(?:stelle|kontakt|team)?|press(?:\s+office)?|redaktion|editorial|vertrieb|sales|support|kundenservice|customer\s+service|marketing|buchhaltung|accounting|personal(?:abteilung)?|human\s+resources)\b/gi;
+function withoutEmailAddresses(text) {
+  for (const match of emailMatches(text, true)) text = text.slice(0, match.index) + ' '.repeat(match.raw.length) + text.slice(match.index + match.raw.length);
+  return text;
+}
+const contextText = element => compact(htmlToText(element.outerHTML));
 function nearbyContext(element, raw) {
-  let selected = compact(element.textContent);
+  let selected = contextText(element);
+  const boundary = element.closest('section, article, address');
+  if (boundary === element) return element.querySelector('section, article, address') ? compact(raw) : selected;
   for (let node = element.parentElement, depth = 0; node && depth < 3; node = node.parentElement, depth++) {
-    const text = compact(node.textContent);
+    if (['body', 'html'].includes(node.localName)) break;
+    const text = contextText(node);
     if (!text || text.length > 400) break;
+    if ([...node.querySelectorAll('section, article, address')].some(group => !group.contains(element))) break;
     selected = text;
-    if (text !== compact(raw) && (/\b(?:fax|mobil|mobile|handy|telefon|telephone|festnetz)\b/i.test(text) || [...text.matchAll(departmentPattern)].length)) break;
+    const index = text.toLowerCase().indexOf(compact(raw).toLowerCase());
+    const labels = withoutEmailAddresses(index >= 0 ? text.slice(0, index) : text);
+    if (node === boundary || /\b(?:fax|mobil|mobile|handy|telefon|telephone|festnetz)\b/i.test(labels) || [...labels.matchAll(departmentPattern)].length) break;
   }
   return selected;
 }
@@ -189,13 +200,13 @@ function extractContactDetails(content, type, options = {}) {
     for (const match of matches) {
       const context = compact(input.context);
       let raw = match.raw;
-      let index = context.indexOf(compact(raw));
+      let index = type === 'emails' ? context.toLowerCase().indexOf(compact(raw).toLowerCase()) : context.indexOf(compact(raw));
       if (type === 'telephone' && index < 0) {
         const visible = findPhoneNumbersInText(context, { defaultCountry: options.defaultCountry }).find(item => item.number.getURI().slice(4) === match.value);
         if (visible) { index = visible.startsAt; raw = context.slice(visible.startsAt, visible.endsAt); }
       }
       const prefix = index >= 0 ? context.slice(Math.max(0, index - 100), index) : context;
-      const labelledContext = `${prefix} ${compact(input.explicitLabel)}`;
+      const labelledContext = `${withoutEmailAddresses(prefix)} ${withoutEmailAddresses(compact(input.explicitLabel))}`;
       const departments = [...labelledContext.matchAll(departmentPattern)];
       const department = departments.at(-1)?.[0] || null;
       const label = compact(input.explicitLabel) || compact(prefix).replace(/[:;,\s-]+$/, '') || null;

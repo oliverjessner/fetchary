@@ -146,7 +146,8 @@ test('URL classification preserves account/post identity across all supported co
     ['https://facebook.com/profile.php?id=123','facebook','profile'],['https://facebook.com/example/posts/123','facebook','post'],['https://facebook.com/reel/123','facebook','video'],
     ['https://twitter.com/example','x','profile'],['https://x.com/example/status/123','x','post'],['https://threads.net/@example/post/AbC','threads','post'],
     ['https://linkedin.com/company/example/about','linkedin','profile'],['https://linkedin.com/posts/abc','linkedin','post'],['https://twitch.tv/example/about','twitch','profile'],['https://twitch.tv/videos/123','twitch','video'],
-    ['https://reddit.com/user/example','reddit','profile'],['https://redd.it/AbC','reddit','post'],['https://github.com/example','github','profile'],['https://github.com/example/repo','github','unknown'],
+    ['https://reddit.com/user/example','reddit','profile'],['https://redd.it/AbC','reddit','post'],['https://github.com/example','github','profile'],['https://github.com/example/repo','github','repository'],
+    ['https://github.com/example/repo/releases','github','release'],['https://github.com/example/repo/releases/latest','github','release'],['https://github.com/example/repo/releases/tag/v1.0.0','github','release'],
     ['https://vimeo.com/example','vimeo','profile'],['https://vimeo.com/123','vimeo','video'],['https://bsky.app/profile/example.test','bluesky','profile'],['https://bsky.app/profile/example.test/post/AbC','bluesky','post'],
   ]) { const result=classifyUrl(target);assert.equal(result.platform,platform,target);assert.equal(result.kind,kind,target); }
   assert.equal(classifyUrl('https://youtube.com/@example?v=not-a-video').kind,'channel');

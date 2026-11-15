@@ -1,5 +1,6 @@
 # Unreleased
 
+- Preserve block boundaries while reading contact labels and exclude email addresses from department detection, so a `Press@...` address can inherit an explicit press heading without being mistaken for a label itself.
 - Add public-page Telegram channel/post metrics and channel avatars, Hacker News post metrics and profile karma, and GitHub repository stars/forks. Extend social links with Telegram, Hacker News, repository/release types, Twitch clips and Vimeo player URLs; attribute Telegram videos to their public posts. No remote API adapters are used.
 - Discover background images in bounded stylesheet/import traversals, recognize Safari mask icons, and return all accessible favicon variants with library `all: true` or CLI `--all`. Include sitemap modification dates, frequency and priority.
 - Extend metadata with authors, publisher, raw social cards, selected-field evidence, alternatives and scientific citation fields. Add a bounded local JSON-LD entity table and optional detailed, labelled contacts and email deobfuscation.

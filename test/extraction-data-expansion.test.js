@@ -80,11 +80,33 @@ test('contact details preserve original values, labelled departments and only ex
   assert.equal(labelled[0].kind, 'fax');
 });
 
+test('contact department labels respect block boundaries and ignore department words inside email addresses', () => {
+  const html = '<html><body><section><h2>Presse</h2><p>E-Mail: <a href="mailto:Press@EXAMPLE.test">press@example.test</a></p></section>'
+    + '<section><h2>Redaktion</h2><p><a href="mailto:news@example.test">news@example.test</a></p></section>'
+    + '<p><a href="mailto:support@example.test">support@example.test</a></p></body></html>';
+  const details = contacts.extractContactDetails(html, 'emails', { html: true });
+  assert.deepEqual(details.map(item => [item.value, item.department]), [
+    ['Press@example.test', 'Presse'], ['news@example.test', 'Redaktion'], ['support@example.test', null],
+  ]);
+  assert.equal(details[0].raw, 'Press@EXAMPLE.test');
+  const addressLabel = contacts.extractContactDetails('<p><a href="mailto:press@example.test" aria-label="press@example.test">press@example.test</a></p>', 'emails', { html: true });
+  assert.equal(addressLabel[0].department, null);
+  for (const address of ['press@example.test', 'sales@example.test', 'support@example.test']) {
+    const unlabelled = contacts.extractContactDetails(`<p>E-Mail: <a href="mailto:${address}">${address}</a></p>`, 'emails', { html: true });
+    assert.equal(unlabelled[0].department, null, address);
+  }
+  const nested = '<article><section><h2>Presse</h2><p><a href="mailto:press@example.test">press@example.test</a></p></section>'
+    + '<section><h2>Kontakt</h2><p>E-Mail: <a href="mailto:info@example.test">info@example.test</a></p></section>'
+    + '<p><a href="mailto:office@example.test">office@example.test</a></p></article>';
+  assert.deepEqual(contacts.extractContactDetails(nested, 'emails', { html: true }).map(item => item.department), ['Presse', null, null]);
+});
+
 test('contact enrichment keeps plain defaults and deobfuscation opt-in through the public API', async () => {
   const html = fixture('contacts-expanded.html');
   const settings = { mode: 'http', allowPrivateNetwork: true, fetch: async () => new Response(html, { headers: { 'content-type': 'text/html' } }) };
   assert.deepEqual((await api.extractEmails('https://example.test/', settings)).data, ['Press@example.test']);
   const details = await api.extractEmails('https://example.test/', { ...settings, details: true, deobfuscate: true });
+  assert.equal(details.data[0].department, 'Presse');
   assert.equal(details.data[1].value, 'sales@example.test');
   assert.equal(details.data[1].department, 'Vertrieb');
   const plain = contacts.extractContactDetails('Write plain@example.test.', 'emails', { html: false });
