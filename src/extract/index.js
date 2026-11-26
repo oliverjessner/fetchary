@@ -173,7 +173,7 @@ async function analyse(url, options = {}) {
   const started = performance.now();
   const requestedUrl = validateUrl(url);
   const settings = extractionOptions(options);
-  contacts.validateDefaultCountry(options.defaultCountry);
+  await contacts.validateDefaultCountry(options.defaultCountry);
   if (options.binary) throw new FetcharyValidationError('binary is not supported for analyse');
   for (const name of ['selector','all','attribute','format','platform','unique','includeMetadata','sources','includeStylesheets','includeSelectors','ignoreSelectors','productSelector','priceSelector','country','language','details','deobfuscate']) {
     if (Object.hasOwn(options, name)) throw new FetcharyValidationError(`${name} is not supported for analyse`);
@@ -271,19 +271,19 @@ async function extractTrackerIntelligence(url, options = {}) {
   });
 }
 
-function extractContacts(url, options, type) {
+async function extractContacts(url, options, type) {
   extractionOptions(options);
   const includeSelectors = validateSelectors(options.includeSelectors ?? [], 'include');
   const ignoreSelectors = validateSelectors(options.ignoreSelectors ?? [], 'ignore');
-  if (type === 'telephone') contacts.validateDefaultCountry(options.defaultCountry);
+  if (type === 'telephone') await contacts.validateDefaultCountry(options.defaultCountry);
   if (type === 'telephone' && options.deobfuscate !== undefined) throw new FetcharyValidationError('deobfuscate is only supported for emails');
-  return withCapture(url, options, type, page => {
+  return withCapture(url, options, type, async (page, settings) => {
     const html = shouldRender(page.contentType);
     const content = html ? selectHtml(pageHtml(page), { includeSelectors, ignoreSelectors }) : pageHtml(page);
     const inputs = contacts.contactInputs(content, type, html);
     const data = options.details || type === 'emails' && options.deobfuscate
-      ? contacts.extractContactDetails(html ? pageHtml(page) : content, type, { html, defaultCountry: options.defaultCountry, deobfuscate: options.deobfuscate, includeSelectors, ignoreSelectors }).map(record => options.details ? record : record.value)
-      : type === 'emails' ? contacts.emails(inputs) : contacts.telephone(inputs, options.defaultCountry);
+      ? (await contacts.extractContactDetails(html ? pageHtml(page) : content, type, { html, defaultCountry: options.defaultCountry, deobfuscate: options.deobfuscate, includeSelectors, ignoreSelectors, signal: settings.signal })).map(record => options.details ? record : record.value)
+      : type === 'emails' ? contacts.emails(inputs) : await contacts.telephone(inputs, options.defaultCountry, { signal: settings.signal });
     return type === 'emails' ? { data, emails: data } : { data, numbers: data };
   });
 }

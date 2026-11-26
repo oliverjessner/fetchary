@@ -909,9 +909,13 @@ same selection rules as text/HTML. They inspect contact links, page text,
 microdata, and JSON-LD contact fields. `telephone` additionally accepts
 `defaultCountry`, a supported uppercase two-letter country code, for national
 numbers. Without it, country context is not guessed. Phone parsing uses
-[libphonenumber-js](https://github.com/catamphetamine/libphonenumber-js) with full
-numbering-plan metadata. Results use international `+` form, with `;ext=42` when
-an extension is present. Checks establish syntactic validity, not reachability.
+[@oliverj/parse-phone-number](https://github.com/oliverjessner/parse-phone-number)
+with full numbering-plan metadata and strict validation. Only numbers with a
+`valid` result are returned; unresolved or ambiguous numbers are omitted.
+Results use international `+` form, with `;ext=42` when an extension is present.
+Checks establish numbering-plan validity, not ownership or reachability.
+The `defaultCountry` type retains the supported geographic country-code union
+without requiring types from a separate phone library.
 See the [CLI contact reference](CLI.md#emails-and-telephone) for recognition limits.
 
 ```js

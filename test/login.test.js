@@ -218,15 +218,18 @@ test('real visible Chromium login submits a form, saves an HttpOnly session, the
   });
   await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
   t.after(() => new Promise(resolve => server.close(resolve)));
-  const target = `http://127.0.0.1:${server.address().port}`; let realBrowser;
+  const target = `http://127.0.0.1:${server.address().port}`; let realBrowser; let confirmError;
   const result = await api.login(target, { session: 'fixture', sessionDir, allowPrivateNetwork: true, timeout: 20_000,
     launchBrowser: async options => { realBrowser = await require('../test-support/browser.cjs').launch(options); return realBrowser; },
     confirm: async () => {
-      const contexts = realBrowser.browserContexts(); const page = (await contexts.at(-1).pages())[0];
-      assert.equal(await page.title(), 'Fetchary login test');
-      await page.type('[name=username]', 'fixture-user'); await page.type('[name=password]', 'fixture-password');
-      await Promise.all([page.waitForNavigation({ waitUntil: 'load' }), page.click('button')]); assert.equal(await page.title(), 'Signed in');
-    } });
+      // Preserve local fixture failures that the public login API redacts.
+      try {
+        const contexts = realBrowser.browserContexts(); const page = (await contexts.at(-1).pages())[0];
+        assert.equal(await page.title(), 'Fetchary login test');
+        await page.type('[name=username]', 'fixture-user'); await page.type('[name=password]', 'fixture-password');
+        await Promise.all([page.waitForNavigation({ waitUntil: 'load' }), page.click('button')]); assert.equal(await page.title(), 'Signed in');
+      } catch (error) { confirmError = error; throw error; }
+    } }).catch(error => { throw confirmError || error; });
   assert.equal(result.cookieCount, 1); assert.equal(realBrowser.connected, false);
   const bytes = fs.readFileSync(path.join(sessionDir, 'fixture.json'), 'utf8'); assert.ok(!bytes.includes('fixture-password')); assert.ok(!bytes.includes('fixture-user'));
   const options = { session: 'fixture', sessionDir, allowPrivateNetwork: true, waitAfterLoad: 0, timeout: 5000 };

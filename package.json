@@ -56,8 +56,8 @@
         "test:coverage": "node --require ./test-support/setup.cjs --test --test-concurrency=2 --experimental-test-coverage"
     },
     "dependencies": {
+        "@oliverj/parse-phone-number": "0.1.1",
         "@puppeteer/browsers": "3.3.0",
-        "libphonenumber-js": "^1.13.17",
         "linkedom": "^0.18.15",
         "puppeteer-core": "25.19.0"
     }

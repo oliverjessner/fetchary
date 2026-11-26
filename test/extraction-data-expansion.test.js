@@ -61,44 +61,44 @@ test('local JSON-LD entity table merges definitions and resolves cyclic referenc
   assert.deepEqual(based.resolved.roots, ['https://cdn.example.test/assets/#item']);
 });
 
-test('contact details preserve original values, labelled departments and only explicitly labelled phone kinds', () => {
+test('contact details preserve original values, labelled departments and only explicitly labelled phone kinds', async () => {
   const html = fixture('contacts-expanded.html');
   assert.deepEqual(contacts.emails(contacts.contactInputs(html, 'emails', true)), ['Press@example.test']);
   assert.deepEqual(contacts.emails(contacts.contactInputs(html, 'emails', true), { deobfuscate: true }), ['Press@example.test', 'sales@example.test']);
-  const emails = contacts.extractContactDetails(html, 'emails', { html: true, deobfuscate: true });
+  const emails = await contacts.extractContactDetails(html, 'emails', { html: true, deobfuscate: true });
   assert.equal(emails[0].raw, 'Press@EXAMPLE.test');
   assert.equal(emails[0].department, 'Presse');
   assert.match(emails[0].location, /a:nth-child/);
   assert.equal(emails[1].raw, 'sales [at] example [dot] test');
   assert.equal(emails[1].department, 'Vertrieb');
-  const phones = contacts.extractContactDetails(html, 'telephone', { html: true });
+  const phones = await contacts.extractContactDetails(html, 'telephone', { html: true });
   assert.deepEqual(phones.map(item => item.kind), ['mobile', 'fax', 'landline', null]);
   assert.equal(phones[1].value, '+442079460018');
   assert.equal(phones[1].label, 'Fax');
-  const labelled = contacts.extractContactDetails('<a href="tel:+442079460018" aria-label="Presse Fax">+44 20 7946 0018</a>', 'telephone', { html: true });
+  const labelled = await contacts.extractContactDetails('<a href="tel:+442079460018" aria-label="Presse Fax">+44 20 7946 0018</a>', 'telephone', { html: true });
   assert.equal(labelled[0].department, 'Presse');
   assert.equal(labelled[0].kind, 'fax');
 });
 
-test('contact department labels respect block boundaries and ignore department words inside email addresses', () => {
+test('contact department labels respect block boundaries and ignore department words inside email addresses', async () => {
   const html = '<html><body><section><h2>Presse</h2><p>E-Mail: <a href="mailto:Press@EXAMPLE.test">press@example.test</a></p></section>'
     + '<section><h2>Redaktion</h2><p><a href="mailto:news@example.test">news@example.test</a></p></section>'
     + '<p><a href="mailto:support@example.test">support@example.test</a></p></body></html>';
-  const details = contacts.extractContactDetails(html, 'emails', { html: true });
+  const details = await contacts.extractContactDetails(html, 'emails', { html: true });
   assert.deepEqual(details.map(item => [item.value, item.department]), [
     ['Press@example.test', 'Presse'], ['news@example.test', 'Redaktion'], ['support@example.test', null],
   ]);
   assert.equal(details[0].raw, 'Press@EXAMPLE.test');
-  const addressLabel = contacts.extractContactDetails('<p><a href="mailto:press@example.test" aria-label="press@example.test">press@example.test</a></p>', 'emails', { html: true });
+  const addressLabel = await contacts.extractContactDetails('<p><a href="mailto:press@example.test" aria-label="press@example.test">press@example.test</a></p>', 'emails', { html: true });
   assert.equal(addressLabel[0].department, null);
   for (const address of ['press@example.test', 'sales@example.test', 'support@example.test']) {
-    const unlabelled = contacts.extractContactDetails(`<p>E-Mail: <a href="mailto:${address}">${address}</a></p>`, 'emails', { html: true });
+    const unlabelled = await contacts.extractContactDetails(`<p>E-Mail: <a href="mailto:${address}">${address}</a></p>`, 'emails', { html: true });
     assert.equal(unlabelled[0].department, null, address);
   }
   const nested = '<article><section><h2>Presse</h2><p><a href="mailto:press@example.test">press@example.test</a></p></section>'
     + '<section><h2>Kontakt</h2><p>E-Mail: <a href="mailto:info@example.test">info@example.test</a></p></section>'
     + '<p><a href="mailto:office@example.test">office@example.test</a></p></article>';
-  assert.deepEqual(contacts.extractContactDetails(nested, 'emails', { html: true }).map(item => item.department), ['Presse', null, null]);
+  assert.deepEqual((await contacts.extractContactDetails(nested, 'emails', { html: true })).map(item => item.department), ['Presse', null, null]);
 });
 
 test('contact enrichment keeps plain defaults and deobfuscation opt-in through the public API', async () => {
@@ -109,7 +109,7 @@ test('contact enrichment keeps plain defaults and deobfuscation opt-in through t
   assert.equal(details.data[0].department, 'Presse');
   assert.equal(details.data[1].value, 'sales@example.test');
   assert.equal(details.data[1].department, 'Vertrieb');
-  const plain = contacts.extractContactDetails('Write plain@example.test.', 'emails', { html: false });
+  const plain = await contacts.extractContactDetails('Write plain@example.test.', 'emails', { html: false });
   assert.deepEqual(plain, [{ value: 'plain@example.test', raw: 'plain@example.test', label: 'Write', department: null, location: null }]);
 });
 

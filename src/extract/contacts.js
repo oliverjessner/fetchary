@@ -1,15 +1,8 @@
 'use strict';
 const { parseHTML } = require('linkedom');
-const { findPhoneNumbersInText, parsePhoneNumberFromString, isSupportedCountry } = require('libphonenumber-js/max');
+const { phoneMatches, validateDefaultCountry } = require('./phone');
 const { htmlToText } = require('../utils/html');
 const { objects } = require('../metrics/insights');
-const { FetcharyValidationError } = require('../errors');
-
-function validateDefaultCountry(value) {
-  if (value !== undefined && (typeof value !== 'string' || !/^[A-Z]{2}$/.test(value) || !isSupportedCountry(value))) {
-    throw new FetcharyValidationError('defaultCountry must be a supported uppercase two-letter country code such as AT');
-  }
-}
 
 function decode(value) {
   try { return decodeURIComponent(value); } catch { return ''; }
@@ -25,7 +18,7 @@ function contactInputs(content, type, html) {
     const href = link.getAttribute('href').trim();
     if (!href.toLowerCase().startsWith(`${scheme}:`)) continue;
     const [target, query = ''] = href.slice(scheme.length + 1).split('?');
-    inputs.push(decode(target));
+    inputs.push(type === 'telephone' ? `tel:${decode(target)}` : decode(target));
     if (type === 'emails') {
       for (const header of query.split('&')) {
         const equal = header.indexOf('=');
@@ -41,7 +34,7 @@ function contactInputs(content, type, html) {
     let root;
     try { root = JSON.parse(script.textContent); } catch { continue; }
     for (const object of objects(root)) {
-      for (const value of [object[property]].flat()) if (typeof value === 'string') inputs.push(value.replace(/^(?:mailto|tel):/i, ''));
+      for (const value of [object[property]].flat()) if (typeof value === 'string') inputs.push(type === 'telephone' ? value : value.replace(/^mailto:/i, ''));
     }
   }
   for (const element of document.querySelectorAll('script')) element.remove();
@@ -77,17 +70,12 @@ function emails(inputs, options = {}) {
   return results;
 }
 
-function telephone(inputs, defaultCountry) {
+async function telephone(inputs, defaultCountry, options = {}) {
   const results = []; const seen = new Set();
-  function add(number) {
-    if (!number?.isValid()) return;
-    const value = number.getURI().slice(4);
-    if (!seen.has(value)) { seen.add(value); results.push(value); }
-  }
   for (const input of inputs) {
-    const text = input.trim().replace(/^00(?=\d)/, '+');
-    add(parsePhoneNumberFromString(text, { defaultCountry, extract: false }));
-    for (const match of findPhoneNumbersInText(text, { defaultCountry })) add(match.number);
+    for (const { value } of await phoneMatches(input, defaultCountry, options)) {
+      if (!seen.has(value)) { seen.add(value); results.push(value); }
+    }
   }
   return results;
 }
@@ -157,7 +145,7 @@ function detailedInputs(content, type, html, options = {}) {
     const href = element.getAttribute('href').trim();
     if (!href.toLowerCase().startsWith(`${scheme}:`)) continue;
     const [target, query = ''] = href.slice(scheme.length + 1).split('?');
-    add(decode(target), element);
+    add(type === 'telephone' ? `tel:${decode(target)}` : decode(target), element);
     if (type === 'emails') for (const header of query.split('&')) {
       const equal = header.indexOf('=');
       if (['cc', 'bcc'].includes(decode(header.slice(0, equal)).toLowerCase())) add(decode(header.slice(equal + 1)), element);
@@ -171,7 +159,7 @@ function detailedInputs(content, type, html, options = {}) {
     try { root = JSON.parse(script.textContent); } catch { continue; }
     for (const object of objects(root)) for (const value of [object[property]].flat()) if (typeof value === 'string') {
       const label = typeof object.contactType === 'string' ? object.contactType : typeof object.name === 'string' ? object.name : null;
-      records.push({ raw: value.replace(/^(?:mailto|tel):/i, ''), context: label || '', location: `${locate(script)}.${property}`, explicitLabel: label });
+      records.push({ raw: type === 'telephone' ? value : value.replace(/^mailto:/i, ''), context: label || '', location: `${locate(script)}.${property}`, explicitLabel: label });
     }
   }
   for (const script of document.querySelectorAll('script')) script.remove();
@@ -186,24 +174,21 @@ function detailedInputs(content, type, html, options = {}) {
   return records;
 }
 
-function extractContactDetails(content, type, options = {}) {
+async function extractContactDetails(content, type, options = {}) {
   const byValue = new Map();
   for (const input of detailedInputs(content, type, options.html !== false, options)) {
     let matches;
     if (type === 'emails') matches = emailMatches(input.raw, options.deobfuscate === true);
     else {
-      matches = [];
-      const parsed = findPhoneNumbersInText(input.raw, { defaultCountry: options.defaultCountry });
-      for (const match of parsed) matches.push({ value: match.number.getURI().slice(4), raw: input.raw.slice(match.startsAt, match.endsAt) });
-      if (!matches.length) for (const value of telephone([input.raw], options.defaultCountry)) matches.push({ value, raw: input.raw.trim() });
+      matches = await phoneMatches(input.raw, options.defaultCountry, options);
     }
     for (const match of matches) {
       const context = compact(input.context);
       let raw = match.raw;
       let index = type === 'emails' ? context.toLowerCase().indexOf(compact(raw).toLowerCase()) : context.indexOf(compact(raw));
       if (type === 'telephone' && index < 0) {
-        const visible = findPhoneNumbersInText(context, { defaultCountry: options.defaultCountry }).find(item => item.number.getURI().slice(4) === match.value);
-        if (visible) { index = visible.startsAt; raw = context.slice(visible.startsAt, visible.endsAt); }
+        const visible = (await phoneMatches(context, options.defaultCountry, options)).find(item => item.value === match.value);
+        if (visible) { index = visible.start; raw = visible.raw; }
       }
       const prefix = index >= 0 ? context.slice(Math.max(0, index - 100), index) : context;
       const labelledContext = `${withoutEmailAddresses(prefix)} ${withoutEmailAddresses(compact(input.explicitLabel))}`;

@@ -610,9 +610,11 @@ unsupported. Script/style/comment/template text is ignored, apart from explicit
 JSON-LD contact fields. Non-HTML responses are scanned as decoded text.
 
 Telephone extraction reads `tel:` links, page text, microdata `telephone`, and
-JSON-LD `telephone` fields. Numbers must pass the bundled numbering-plan checks
-and are normalized to international `+` form; extensions use `;ext=42`. This
-checks number syntax, not ownership or reachability. Duplicates are removed after
+JSON-LD `telephone` fields. Numbers must pass strict numbering-plan validation
+through [@oliverj/parse-phone-number](https://github.com/oliverjessner/parse-phone-number)
+and are normalized to international `+` form; extensions use `;ext=42`.
+Unresolved or ambiguous numbers are omitted. These checks establish
+numbering-plan validity, not ownership or reachability. Duplicates are removed after
 normalization. Emergency/short numbers are omitted. `--default-country <code>`
 accepts a supported uppercase two-letter country code such as `AT`, `DE`, or `US`
 and applies only to `telephone`. Without it, national numbers are not inferred.
