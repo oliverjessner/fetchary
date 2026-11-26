@@ -3,6 +3,7 @@ const { validateRemoteUrl, validateUrl } = require('../utils/url');
 const { normalizeCookies, createCookieJar } = require('../capture/cookies');
 const { abortable } = require('../capture/http');
 const { browserInstallHint } = require('../capture/browser-install');
+const { launchBrowser } = require('../capture/browser-runtime');
 const { validateSessionName, sessionDirectory, saveSession } = require('./sessions');
 const { FetcharyValidationError, FetcharyBrowserError, FetcharyFetchError } = require('../errors');
 
@@ -22,7 +23,7 @@ async function login(url, options = {}) {
   const controller = new AbortController();
   const signal = options.signal ? AbortSignal.any([options.signal, controller.signal]) : controller.signal;
   const timer = setTimeout(() => controller.abort(new Error('timeout')), timeout);
-  const launch = options.launchBrowser || (settings => require('puppeteer').launch(settings));
+  const launch = options.launchBrowser || launchBrowser;
   let browser; let pending; let context; let page; let disconnected = false; let launching = false;
   const closed = () => { disconnected = true; controller.abort(); };
   try {

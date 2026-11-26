@@ -156,6 +156,10 @@ test('full publish creates the GitHub release after pushing the Homebrew formula
   const formula = fs.readFileSync(path.join(result.tapPath, 'Formula', 'fetchary.rb'), 'utf8');
   assert.match(formula, /fetchary-1\.2\.0\.tgz/);
   assert.ok(formula.includes(sha256('mock package bytes')));
+  const npmInstall = 'system "npm", "install", *std_npm_args';
+  const browserInstall = 'system "node", libexec/"lib/node_modules/fetchary/cli/index.js", "browser", "install", "--no-history"';
+  assert.ok(formula.includes(browserInstall), 'Homebrew explicitly installs the bundled browser despite skipped npm scripts');
+  assert.ok(formula.indexOf(browserInstall) > formula.indexOf(npmInstall));
   assert.match(result.stdout, /npm, Homebrew tap, GitHub release/);
 });
 

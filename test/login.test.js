@@ -123,12 +123,12 @@ test('aborted launches return promptly and close browsers delivered after cancel
   assert.equal(closed, 1); assert.equal(fs.existsSync(sessionDir), false);
 });
 
-test('missing Chromium gives a version-matched repair command through the API and CLI without replacing the session or leaking launcher details', async t => {
+test('missing Chromium gives the Fetchary repair command through the API and CLI without replacing the session or leaking launcher details', async t => {
   const { sessionDir } = await saved(t);
   const file = path.join(sessionDir, 'www.example.test.json'); const before = fs.readFileSync(file);
   const options = { sessionDir, allowPrivateNetwork: true, confirm: async () => assert.fail('browser did not launch'),
     launchBrowser: async () => { throw new Error(`Could not find Chrome (ver. 155.0.8059.79). ${secret}`, { cause: new Error(secret) }); } };
-  const command = `npx puppeteer@${require('puppeteer/package.json').version} browsers install chrome`;
+  const command = 'fetchary browser install';
   await assert.rejects(api.login(url, options), error => {
     assert.ok(error instanceof api.FetcharyBrowserError); assert.equal(error.phase, 'launch');
     assert.match(error.message, /required Chrome 155\.0\.8059\.79 is not installed/);
@@ -220,7 +220,7 @@ test('real visible Chromium login submits a form, saves an HttpOnly session, the
   t.after(() => new Promise(resolve => server.close(resolve)));
   const target = `http://127.0.0.1:${server.address().port}`; let realBrowser;
   const result = await api.login(target, { session: 'fixture', sessionDir, allowPrivateNetwork: true, timeout: 20_000,
-    launchBrowser: async options => { realBrowser = await require('puppeteer').launch(options); return realBrowser; },
+    launchBrowser: async options => { realBrowser = await require('../test-support/browser.cjs').launch(options); return realBrowser; },
     confirm: async () => {
       const contexts = realBrowser.browserContexts(); const page = (await contexts.at(-1).pages())[0];
       assert.equal(await page.title(), 'Fetchary login test');

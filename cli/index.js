@@ -10,6 +10,7 @@ const HELP = `Fetchary ${pkg.version} — Extract what matters.
 
 Usage: fetchary extract <type> <url> [options]
        fetchary analyse <url> [options]
+       fetchary browser install [--json]
        fetchary login <url> [--session <name>]
        fetchary sessions [--json]
        fetchary logout <name> [more-names...]
@@ -160,6 +161,14 @@ async function execute(argv, io, state) {
     if (options.help || !args.length) { stdout.write(HELP); return 0; }
     const command = args.shift();
     state.command = command;
+    if (command === 'browser') {
+      for (const key of Object.keys(options)) if (!['json','quiet','verbose','no-color','filepath','no-history'].includes(key)) invalid(`--${key} is not supported for browser install`);
+      if (args.length !== 1 || args[0] !== 'install') invalid('use "fetchary browser install"');
+      const result = await (io.installBrowser || require('../src/capture/browser-runtime').installBrowser)();
+      if (options.json) stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+      else stdout.write(result.skipped ? `Browser download skipped (${result.reason}).\n` : `Chrome ${result.buildId} installed for Fetchary.\n`);
+      return 0;
+    }
     if (command === 'history') {
       for (const key of Object.keys(options)) if (!['json','list','filepath','no-history','quiet','no-color','verbose'].includes(key)) invalid(`--${key} is not supported for history`);
       if (args.length) invalid('history does not take arguments');

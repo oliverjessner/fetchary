@@ -1,5 +1,6 @@
-# Unreleased
+# 2.2.1
 
+- Install the matching full Chrome for Testing build inside Fetchary's package and use it for both CLI/library browser capture and interactive login. Pin Puppeteer Core and the browser installer to keep the expected browser version stable without a second home-cache download. Add `fetchary browser install` for explicit setup or repair, honor browser cache/executable, mirror and download-skip environment settings, and prepare the browser explicitly in the generated Homebrew formula when npm install scripts are disabled.
 - Preserve block boundaries while reading contact labels and exclude email addresses from department detection, so a `Press@...` address can inherit an explicit press heading without being mistaken for a label itself.
 - Add public-page Telegram channel/post metrics and channel avatars, Hacker News post metrics and profile karma, and GitHub repository stars/forks. Extend social links with Telegram, Hacker News, repository/release types, Twitch clips and Vimeo player URLs; attribute Telegram videos to their public posts. No remote API adapters are used.
 - Discover background images in bounded stylesheet/import traversals, recognize Safari mask icons, and return all accessible favicon variants with library `all: true` or CLI `--all`. Include sitemap modification dates, frequency and priority.

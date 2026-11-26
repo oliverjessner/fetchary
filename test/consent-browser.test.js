@@ -256,7 +256,7 @@ test('long consent walls trigger automatic rendering while HTTP remains HTTP-onl
     waitAfterLoad: 150, timeout: 7000,
     launchBrowser: async options => {
       launches++;
-      return require('puppeteer').launch(options);
+      return require('../test-support/browser.cjs').launch(options);
     },
   });
   const url = `${origin}/long-wall-fallback/`;
@@ -284,7 +284,7 @@ test('consent policies isolate browser cache entries and unresolved walls are ne
     waitAfterLoad: 100, timeout: 7000,
     launchBrowser: async options => {
       launches++;
-      return require('puppeteer').launch(options);
+      return require('../test-support/browser.cjs').launch(options);
     },
   });
   const url = `${origin}/cache-policy/`;

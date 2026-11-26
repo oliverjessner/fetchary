@@ -351,6 +351,7 @@ function renderFormula(version, sha256) {
 
   def install
     system "npm", "install", *std_npm_args
+    system "node", libexec/"lib/node_modules/fetchary/cli/index.js", "browser", "install", "--no-history"
     bin.install_symlink libexec/"bin/fetchary"
   end
 

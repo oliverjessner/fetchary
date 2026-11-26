@@ -1,4 +1,5 @@
 node_modules
+.fetchary-browsers/
 tests/tmp
 screenshots/
 .DS_Store

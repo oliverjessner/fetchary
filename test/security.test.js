@@ -129,7 +129,7 @@ test('real Chromium blocks private subresources and direct WebSocket networking'
   const privateUrl=`http://127.0.0.1:${server.address().port}`;
   const options={mode:'browser',waitAfterLoad:0,timeout:15000,lookup:publicLookup,fetch:async()=>new Response(`<html><body><main>Public</main><script>new WebSocket('${privateUrl.replace('http:','ws:')}/socket').onerror=()=>{setTimeout(()=>{document.body.dataset.wsBlocked='true';},300);};</script></body></html>`,{headers:{'content-type':'text/html'}})};
   const launchBrowser=async launchOptions=>{
-    const browser=await require('puppeteer').launch(launchOptions);
+    const browser=await require('../test-support/browser.cjs').launch(launchOptions);
     return {
       newPage:async()=>{
         const page=await browser.newPage();

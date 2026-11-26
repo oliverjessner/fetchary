@@ -31,9 +31,9 @@ metrics and platform limitations.
 ## Install
 
 Use Fetchary on macOS, Linux or Windows with Node.js 26 or newer.
-Browser rendering and interactive sign-in also require the browser normally
-downloaded during installation. If it is missing, Fetchary prints the setup
-command to run; see [browser setup](docs/CLI.md#interactive-browser-login).
+Installation includes the matching browser for rendering pages and signing in,
+whether you use the CLI or the library. If your package manager skips setup,
+run `fetchary browser install`; see [browser setup](docs/CLI.md#browser-setup).
 
 ### Homebrew
 

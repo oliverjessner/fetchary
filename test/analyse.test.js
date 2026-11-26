@@ -147,7 +147,7 @@ test('browser analysis shares a single passive rendering and captures dynamicall
     document.querySelector('title').textContent='Rendered title';
     document.body.insertAdjacentHTML('beforeend','<a href="/dynamic.pdf">Dynamic guide</a>');
   </script></body>`));
-  const puppeteer=require('puppeteer');let launches=0;let closes=0;
+  const puppeteer=require('../test-support/browser.cjs');let launches=0;let closes=0;
   const report=await api.analyse(site.url,{mode:'browser',allowPrivateNetwork:true,waitAfterLoad:0,cacheTtlMs:0,launchBrowser:async options=>{
     launches++;const browser=await puppeteer.launch(options);const close=browser.close.bind(browser);browser.close=async()=>{closes++;await close();};return browser;
   }});
@@ -161,7 +161,7 @@ test('browser analysis shares a single passive rendering and captures dynamicall
 
 test('auto fallbacks share one browser and preserve HTTP-only provenance for already complete sections', async t => {
   const body='<html><head><link rel="icon" href="/icon.svg"><title>Static title</title></head><body><script>document.body.insertAdjacentHTML("beforeend",\'<a href="/guide.pdf">Guide</a><a href="https://github.com/example">GitHub</a><p>hello@example.test +43 664 1234567</p><img src="/photo.png">\');</script></body></html>';
-  const site=await localSite(t,body);const puppeteer=require('puppeteer');let launches=0;
+  const site=await localSite(t,body);const puppeteer=require('../test-support/browser.cjs');let launches=0;
   const result=await api.analyse(site.url,{mode:'auto',allowPrivateNetwork:true,waitAfterLoad:0,signal:new AbortController().signal,launchBrowser:async options=>{launches++;return puppeteer.launch(options);}});
   assert.equal(launches,1);assert.equal(site.requests.filter(target=>target==='/page').length,1);
   assert.equal(result.captureMode,'browser');assert.equal(result.results.metadata.captureMode,'http');assert.equal(result.results.documents.captureMode,'browser');

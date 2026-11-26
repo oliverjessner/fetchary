@@ -119,7 +119,7 @@ test('default browser extraction and auto fallback reach unverified HTTPS resour
   for (const mode of ['browser', 'auto']) {
     let launch;
     const result = await api.extractText(target, { ...options, mode, waitAfterLoad: 0,
-      launchBrowser: async settings => { launch = settings; return require('puppeteer').launch(settings); } });
+      launchBrowser: async settings => { launch = settings; return require('../test-support/browser.cjs').launch(settings); } });
     assert.equal(result.data, 'Rendered TLS page'); assert.equal(result.captureMode, 'browser');
     assert.equal(launch.acceptInsecureCerts, true);
   }
@@ -202,7 +202,7 @@ test('default login accepts an untrusted certificate in real Chromium and its sa
   // settings, native HTTPS navigation, cookies and CLI flag forwarding.
   const launchBrowser = async settings => {
     assert.equal(settings.acceptInsecureCerts, true);
-    return require('puppeteer').launch({ ...settings, headless: true });
+    return require('../test-support/browser.cjs').launch({ ...settings, headless: true });
   };
   let stderr = '';
   const result = await main(['login', target, '--session', 'tls', '--session-dir', directory, '--allow-private-network', '--json'], {
@@ -216,7 +216,7 @@ test('default login accepts an untrusted certificate in real Chromium and its sa
   const strict = await main(['login', target, '--secure', '--session', 'tls', '--session-dir', directory, '--allow-private-network'], {
     options: { timeout: 15000, launchBrowser: async settings => {
       assert.equal(settings.acceptInsecureCerts, false);
-      return require('puppeteer').launch({ ...settings, headless: true });
+      return require('../test-support/browser.cjs').launch({ ...settings, headless: true });
     } }, confirmLogin: async () => assert.fail('unverified login must not reach confirmation'),
     stdout: { write() {} }, stderr: { write(value) { strictStderr += value; } },
   });

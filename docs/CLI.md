@@ -9,6 +9,7 @@ the executable keeps the most recent 100 commands in a local history file.
 ```bash
 fetchary --version
 fetchary --help
+fetchary browser install [--json]
 fetchary extract <type> <url> [options]
 fetchary analyse <url> [options]
 fetchary login <url> [--session <name>] [options]
@@ -21,6 +22,72 @@ fetchary history [--json|--list]
 
 Running without arguments or with `--help` prints help and exits successfully.
 `--version` prints the package version. Help can also follow a command.
+
+## Browser setup
+
+Fetchary's installation script downloads the full Chrome for Testing build
+matched to its pinned Puppeteer Core dependency. Browser extraction, automatic
+browser fallback and interactive login use this same browser. By default, it is
+stored in `.fetchary-browsers` inside the installed Fetchary package. Browser
+lookup does not depend on the current working directory or the user's
+`~/.cache/puppeteer` directory. Extraction and login never download a browser.
+
+If installation scripts were blocked, the download was skipped or the browser
+was removed, install it explicitly and retry your command:
+
+```bash
+fetchary browser install
+fetchary extract text https://golem.de --mode browser --consent reject --json
+```
+
+This command uses the installed Fetchary's matching browser version and leaves
+an existing complete installation in place. It requires network access when the
+browser needs downloading and write permission for its installation directory.
+No browser window is opened. A failed browser installation exits with code 4.
+The command prints a status message; `--json` returns `browser`, `buildId`,
+`platform`, `executablePath` and `skipped: false` for an installed browser. With
+an external executable configured, it returns `skipped: true` and
+`reason: "PUPPETEER_EXECUTABLE_PATH"`. It also accepts `--quiet`, `--verbose`,
+`--filepath`, `--no-history` and `--no-color`.
+
+Concurrent installers cannot replace each other's browser files. If an installer
+is terminated while publishing its completed download, its lock can remain.
+Once no installer is running, remove only the `chrome/<platform>-<buildId>.lock`
+directory identified by the error from the browser cache, then retry.
+
+For a project-local library dependency, run the bundled command from that
+project:
+
+```bash
+npx --no-install fetchary browser install
+```
+
+Homebrew's generated formula explicitly installs this browser after installing
+the npm package, including when npm lifecycle scripts are disabled. Other
+package managers that block scripts, and npm's `--ignore-scripts`, need the
+explicit command above.
+
+| Environment variable | Behavior |
+| --- | --- |
+| `PUPPETEER_CACHE_DIR` | Override the package-local browser directory for installation and runtime. Use the same absolute path in both environments. |
+| `PUPPETEER_EXECUTABLE_PATH` | Use an existing trusted Chrome executable instead of the bundled browser; both automatic and explicit installation skip the download. |
+| `PUPPETEER_CHROME_DOWNLOAD_BASE_URL` | Use a Chrome download mirror for browser installation. |
+| `PUPPETEER_SKIP_DOWNLOAD` | Skip Fetchary's automatic browser download during package installation. |
+| `PUPPETEER_CHROME_SKIP_DOWNLOAD` / `PUPPETEER_SKIP_CHROME_DOWNLOAD` | Skip the automatic Chrome download during package installation. |
+
+Skip variables are enabled by any value except an empty string, `0`, `false` or
+`off` (case-insensitive). `fetchary browser install` explicitly requests an
+installation and ignores these skip variables. Fetchary selects its bundled
+Chrome independently of Puppeteer configuration files and browser/version
+settings. The pinned dependency keeps the expected browser version stable
+between Fetchary updates. A custom executable must be compatible with the
+installed Puppeteer Core.
+
+The npm tarball stays platform-neutral; the browser is downloaded for the
+installation machine. For deployment, include the complete installed Fetchary
+package, including `.fetchary-browsers`, and use the same operating system and
+architecture. Linux hosts still need Chrome's system libraries; the installer
+does not install operating-system packages.
 
 ## Save command output
 
@@ -919,21 +986,15 @@ browser networking for interactive forms and SSO; extraction keeps its existing
 guarded HTTP/browser transport. No vendor overlays are automatically dismissed
 in the login window.
 
-If the required Chrome download is missing, `login` and browser extraction print
-an installation command matched to Fetchary's installed Puppeteer version. Run
-that command, then retry. For example, an installation using Puppeteer 25.14.0
-reports:
+If the required browser is missing, install it and retry:
 
 ```bash
-npx puppeteer@25.14.0 browsers install chrome
+fetchary browser install
 fetchary login https://www.linkedin.com --session linkedin
 ```
 
-Use the version printed by your own error message. A separately installed Chrome
-or a download for another Puppeteer version does not satisfy this requirement.
-Package managers that skip dependency installation scripts can omit the browser
-download; see [Puppeteer's installation guide](https://pptr.dev/guides/installation).
-Browser setup failures keep any previous session.
+See [browser setup](#browser-setup) for installation-script settings and
+deployment. Browser setup failures keep any previous session.
 
 The default session name is the target hostname, for example
 `www.linkedin.com`. `--session` chooses a different name: 1–64 lowercase letters,

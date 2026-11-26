@@ -4,6 +4,7 @@ const { validateRemoteUrl } = require('../utils/url');
 const { readResource, abortable } = require('./http');
 const { FetcharyBrowserError } = require('../errors');
 const { browserInstallHint } = require('./browser-install');
+const { launchBrowser } = require('./browser-runtime');
 const { browserRequestBodies } = require('./browser-request-body');
 const { createConsentHandler } = require('./consent');
 const { discoverVendors, prepareVendorPage, dismissVendorOverlays, prepareVendorSnapshot } = require('../vendors');
@@ -60,10 +61,7 @@ async function waitAfterLoad(page, options, vendors) {
 class BrowserCapture {
   constructor(options = {}) {
     this.getVendors = options.getVendors || discoverVendors;
-    this.launch = options.launch || (async launchOptions => {
-      const puppeteer = require('puppeteer');
-      return puppeteer.launch(launchOptions);
-    });
+    this.launch = options.launch || launchBrowser;
     this.browserPromise = null;
     this.browser = null;
   }

@@ -2,7 +2,7 @@
 
 Fetchary is a CommonJS extraction toolkit for Node.js 26+. Importing it creates no
 database or application data directory. The CLI imports this same API.
-Puppeteer loads lazily, when rendering or interactive login is requested.
+Puppeteer Core loads lazily, when rendering or interactive login is requested.
 
 ## Get started
 
@@ -34,6 +34,56 @@ import { extractText } from 'fetchary';
 const result = await extractText('https://example.com');
 console.log(result.data);
 ```
+
+## Browser installation and deployment
+
+Installing Fetchary downloads a full Chrome for Testing build matched to the
+installed Puppeteer Core dependency into `.fetchary-browsers` inside the Fetchary
+package. The library, CLI and interactive login share this browser and resolve
+it from the installed package, independently of the calling application's
+working directory and the user's Puppeteer cache. Importing Fetchary, extracting
+content and logging in do not download browsers.
+
+If your package manager blocks install scripts or you used `--ignore-scripts`,
+run this command in the project before requesting browser mode or login:
+
+```bash
+npx --no-install fetchary browser install
+```
+
+The command uses that dependency's matching browser version, can be rerun to
+restore a missing browser, and leaves an existing complete installation in
+place. HTTP-only extraction does not need a browser installation. See the
+[CLI browser setup reference](CLI.md#browser-setup) for command output and flags.
+
+The Puppeteer Core dependency is pinned so the expected browser version stays
+stable between Fetchary updates. It does not install a second browser in the
+user's Puppeteer cache.
+
+`PUPPETEER_CACHE_DIR` changes both the install and runtime browser directory; use
+the same absolute path in both environments. `PUPPETEER_EXECUTABLE_PATH` selects
+a trusted existing Chrome executable and skips both automatic and explicitly
+requested browser downloads. The executable must be compatible with Puppeteer
+Core. `PUPPETEER_CHROME_DOWNLOAD_BASE_URL` selects a browser download mirror.
+`PUPPETEER_SKIP_DOWNLOAD`, `PUPPETEER_CHROME_SKIP_DOWNLOAD` and
+`PUPPETEER_SKIP_CHROME_DOWNLOAD` can skip the automatic download during package
+installation; values other than an empty
+string, `0`, `false` or `off` enable skipping (case-insensitive). The explicit
+`browser install` command ignores these download-skip variables; an external
+executable configured with `PUPPETEER_EXECUTABLE_PATH` still takes precedence.
+
+Fetchary's bundled-browser selection does not use Puppeteer configuration files
+or browser/version settings, and does not modify the application's Puppeteer
+configuration. A custom `launchBrowser` callback still controls its own browser
+installation and launch behavior.
+
+For a packaged application or deployment, copy the complete installed Fetchary
+package, including its `.fetchary-browsers` directory, to a machine with the same
+operating system and architecture. The npm tarball itself contains no platform
+browser binary; installation prepares the browser for the target platform. A
+custom cache directory must be deployed separately and configured at runtime.
+Linux hosts also need Chrome's system libraries; Fetchary does not install
+operating-system packages.
 
 ## Configure a library client
 

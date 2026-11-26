@@ -19,12 +19,12 @@ async function cli(flags, options, mode = 'browser') {
   return {code,stdout,stderr};
 }
 
-test('missing Chromium during extraction reports a matching install command without echoing launcher details', async () => {
+test('missing Chromium during extraction reports Fetchary browser repair without echoing launcher details', async () => {
   const result = await cli([], { ...settings(), launchBrowser: async () => {
     throw new Error('Could not find Chrome (ver. 155.0.8059.79). PRIVATE_BROWSER_PATH');
   } });
   assert.equal(result.code, 4); assert.equal(result.stdout, '');
-  assert.ok(result.stderr.includes(`npx puppeteer@${require('puppeteer/package.json').version} browsers install chrome`));
+  assert.ok(result.stderr.includes('fetchary browser install'));
   assert.ok(!result.stderr.includes('PRIVATE_BROWSER_PATH'));
 });
 
