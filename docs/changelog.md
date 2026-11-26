@@ -1,3 +1,7 @@
+# Unreleased
+
+- Install Chrome in Homebrew's post-install phase after binary relocation, preserving its prebuilt libraries and avoiding Widevine Mach-O header failures.
+
 # 2.2.2
 
 - Allow Homebrew to resolve Fetchary's three exactly pinned phone/browser dependencies immediately after publication, while retaining its npm release-age filter for other packages.

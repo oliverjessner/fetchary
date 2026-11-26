@@ -62,9 +62,11 @@ project:
 npx --no-install fetchary browser install
 ```
 
-Homebrew's generated formula explicitly installs this browser after installing
-the npm package, including when npm lifecycle scripts are disabled. Other
-package managers that block scripts, and npm's `--ignore-scripts`, need the
+Homebrew's generated formula installs this browser in its post-install phase,
+after installing the npm package and finishing binary relocation. This keeps
+Homebrew from rewriting Chrome's prebuilt libraries. npm lifecycle scripts can
+remain disabled. Other package managers that block scripts, and npm's
+`--ignore-scripts`, need the
 explicit command above.
 
 | Environment variable | Behavior |

@@ -358,8 +358,16 @@ function renderFormula(version, sha256, verifiedUrl = `https://registry.npmjs.or
            "--min-release-age-exclude=@oliverj/parse-phone-number",
            "--min-release-age-exclude=@puppeteer/browsers",
            "--min-release-age-exclude=puppeteer-core"
-    system "node", libexec/"lib/node_modules/fetchary/cli/index.js", "browser", "install", "--no-history"
     bin.install_symlink libexec/"bin/fetchary"
+  end
+
+  post_install_steps do
+    run "opt/node/bin/node", base: :homebrew_prefix,
+        args: ["{{libexec}}/lib/node_modules/fetchary/cli/index.js", "browser", "install", "--no-history"],
+        writable_paths: ["lib/node_modules/fetchary/.fetchary-browsers"],
+        writable_base: :libexec,
+        network_access: true,
+        print_stdout: true
   end
 
   test do

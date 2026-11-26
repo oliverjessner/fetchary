@@ -13,6 +13,10 @@ const { waitForPublishedTarball, releaseNotes } = require('../scripts/publish');
 const tarball = Buffer.from('published package bytes');
 const sha256 = contents => crypto.createHash('sha256').update(contents).digest('hex');
 const commit = 'a'.repeat(40);
+const homebrew = process.platform === 'darwin' && [
+  { bin: '/opt/homebrew/bin/brew', library: '/opt/homebrew/Library/Homebrew' },
+  { bin: '/usr/local/bin/brew', library: '/usr/local/Homebrew/Library/Homebrew' },
+].find(candidate => fs.existsSync(candidate.bin) && fs.existsSync(path.join(candidate.library, 'install_steps.rb')));
 
 // The subprocess tests use an isolated checkout and PATH. These stand-ins never
 // invoke real npm, git, or gh commands, including when a command is unexpected.
@@ -169,9 +173,17 @@ test('full publish creates the GitHub release after pushing the Homebrew formula
   const exceptions = [...formula.matchAll(/--min-release-age-exclude=([^"\s]+)/g)].map(match => match[1]);
   assert.deepEqual(exceptions, ['@oliverj/parse-phone-number', '@puppeteer/browsers', 'puppeteer-core']);
   assert.doesNotMatch(formula, /--min-release-age(?:=|\s+)0\b/, 'other dependencies keep Homebrew release-age filtering');
-  const browserInstall = 'system "node", libexec/"lib/node_modules/fetchary/cli/index.js", "browser", "install", "--no-history"';
-  assert.ok(formula.includes(browserInstall), 'Homebrew explicitly installs the bundled browser despite skipped npm scripts');
-  assert.ok(formula.indexOf(browserInstall) > formula.indexOf(npmInstall));
+  const installBody = /^  def install\n([\s\S]*?)^  end$/m.exec(formula)?.[1];
+  const postInstallBody = /^  post_install_steps do\n([\s\S]*?)^  end$/m.exec(formula)?.[1];
+  assert.ok(installBody, 'the npm package is installed before Homebrew binary relocation');
+  assert.ok(postInstallBody, 'the browser has an automatic post-install step');
+  assert.doesNotMatch(installBody, /"browser"|\.fetchary-browsers|cli\/index\.js/, 'prebuilt Chrome must not be present during Homebrew binary relocation');
+  assert.match(postInstallBody, /run "opt\/node\/bin\/node", base: :homebrew_prefix/);
+  assert.match(postInstallBody, /args: \["\{\{libexec\}\}\/lib\/node_modules\/fetchary\/cli\/index\.js", "browser", "install", "--no-history"\]/);
+  assert.match(postInstallBody, /writable_paths: \["lib\/node_modules\/fetchary\/\.fetchary-browsers"\]/);
+  assert.match(postInstallBody, /writable_base: :libexec/);
+  assert.match(postInstallBody, /network_access: true/);
+  assert.ok(formula.indexOf(postInstallBody) > formula.indexOf(installBody));
   assert.match(result.stdout, /npm, Homebrew tap, GitHub release/);
 });
 
@@ -180,6 +192,25 @@ test('Homebrew release-age exceptions are limited to exactly pinned direct depen
   for (const name of ['@oliverj/parse-phone-number', '@puppeteer/browsers', 'puppeteer-core']) {
     assert.match(dependencies[name], /^\d+\.\d+\.\d+(?:-[\w.-]+)?$/, `${name} must remain pinned when exempted from release-age filtering`);
   }
+});
+
+test('Homebrew loads the generated post-install step and resolves the versioned browser installer', { skip: !homebrew }, t => {
+  const result = runPublish(t, [], { brew: true });
+  assert.equal(result.status, 0, result.stderr);
+  const validation = spawnSync(homebrew.bin, ['ruby', path.join(__dirname, '../test-support/homebrew-formula.rb'),
+    path.join(result.tapPath, 'Formula/fetchary.rb')], {
+    encoding: 'utf8',
+    timeout: 30_000,
+    env: { ...process.env, HOMEBREW_NO_AUTO_UPDATE: '1', HOMEBREW_NO_ANALYTICS: '1',
+      HOMEBREW_DEV_CMD_RUN: '1', HOMEBREW_SKIP_INITIAL_GEM_INSTALL: '1' },
+  });
+  assert.ifError(validation.error);
+  assert.equal(validation.status, 0, validation.stderr);
+  const step = JSON.parse(validation.stdout);
+  assert.equal(step.version, '1.2.0');
+  assert.match(step.command, /\/opt\/node\/bin\/node$/);
+  assert.match(step.args[0], /\/Cellar\/fetchary\/1\.2\.0\/libexec\/lib\/node_modules\/fetchary\/cli\/index\.js$/);
+  assert.deepEqual(step.args.slice(1), ['browser', 'install', '--no-history']);
 });
 
 test('Homebrew push failures prevent GitHub release creation', t => {
