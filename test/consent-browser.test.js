@@ -350,3 +350,39 @@ test('existing vendor dismissal obeys consent policy and retains guest login-ove
     }
   });
 });
+
+test('the last consent click is verified when its completion exhausts the post-load budget', async t => {
+  const waitAfterLoadMs = 1000;
+  let clicks = 0;
+  const capture = new BrowserCapture({ launch: async options => {
+    const browser = await require('../test-support/browser.cjs').launch(options);
+    const newPage = browser.newPage.bind(browser);
+    browser.newPage = async () => {
+      const page = await newPage();
+      const frame = page.mainFrame();
+      const evaluateHandle = frame.evaluateHandle.bind(frame);
+      frame.evaluateHandle = async (...args) => {
+        const handle = await evaluateHandle(...args);
+        if (args[1]?.operation === 'element' && args[1]?.mode === 'accept') {
+          const element = handle.asElement();
+          const click = element.click.bind(element);
+          element.click = async () => {
+            await click();
+            clicks++;
+            // The website has handled the native click, but its protocol
+            // acknowledgement arrives only after the interaction budget.
+            await new Promise(resolve => setTimeout(resolve, waitAfterLoadMs + 100));
+          };
+        }
+        return handle;
+      };
+      return page;
+    };
+    return browser;
+  } });
+  t.after(() => capture.close());
+  const result = await capture.capture(captureOptions('onetrust', { consent: 'accept', waitAfterLoadMs }));
+  assert.equal(clicks, 1);
+  assertHandled(result, 'onetrust', 'accept');
+  assert.equal(result.cacheable, true);
+});

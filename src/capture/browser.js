@@ -55,6 +55,9 @@ async function waitAfterLoad(page, options, vendors) {
     if (remaining <= 0) break;
     await new Promise(resolve => setTimeout(resolve, Math.min(100, remaining)));
   } while (true);
+  // The last native click can finish at the deadline. Verify its resulting
+  // document without starting another action or extending the wait budget.
+  if (!options.passiveTrackerCapture) await consent.scan(page, { interact: false });
   return { dismissedOverlays, consent: consent.result() };
 }
 
