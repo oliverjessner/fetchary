@@ -1,5 +1,7 @@
-# 2.2.1
+# 2.2.2
 
+- Allow Homebrew to resolve Fetchary's three exactly pinned phone/browser dependencies immediately after publication, while retaining its npm release-age filter for other packages.
+- Use the exact SHA256-verified npm download URL in the Homebrew formula so a cached 404 on the bare tarball URL cannot bypass the publication check.
 - Replace libphonenumber-js with `@oliverj/parse-phone-number` for shared CLI/library phone extraction, using strict worldwide numbering-plan validation while retaining national-country options, extensions, detailed contact evidence and typed country codes.
 - Verify consent completion before the browser snapshot even when the final click reaches the post-load deadline, avoiding false failure reports without another interaction.
 - Install the matching full Chrome for Testing build inside Fetchary's package and use it for both CLI/library browser capture and interactive login. Pin Puppeteer Core and the browser installer to keep the expected browser version stable without a second home-cache download. Add `fetchary browser install` for explicit setup or repair, honor browser cache/executable, mirror and download-skip environment settings, and prepare the browser explicitly in the generated Homebrew formula when npm install scripts are disabled.

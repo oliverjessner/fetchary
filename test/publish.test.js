@@ -103,7 +103,11 @@ function runPublish(t, args = [], scenario = {}, version = '1.2.0') {
   // Override fetch in the publish process so the complete Homebrew workflow
   // can verify its package hash without contacting the real registry.
   const preload = path.join(directory, 'registry.js');
-  fs.writeFileSync(preload, `globalThis.fetch = async () => new Response('mock package bytes');\n`);
+  fs.writeFileSync(preload, `const fs = require('node:fs');
+globalThis.fetch = async url => {
+  fs.appendFileSync(process.env.FETCHARY_PUBLISH_TEST_LOG, JSON.stringify({ command: 'registry-download', url: String(url) }) + '\\n');
+  return new Response('mock package bytes');
+};\n`);
   const tapPath = path.join(directory, 'tap');
   fs.mkdirSync(path.join(tapPath, '.git'), { recursive: true });
   const logFile = path.join(directory, 'commands.jsonl');
@@ -155,12 +159,27 @@ test('full publish creates the GitHub release after pushing the Homebrew formula
   assert.equal(result.commands[tapPush].cwd, fs.realpathSync(result.tapPath));
   const formula = fs.readFileSync(path.join(result.tapPath, 'Formula', 'fetchary.rb'), 'utf8');
   assert.match(formula, /fetchary-1\.2\.0\.tgz/);
+  const checkedUrl = result.commands.find(entry => entry.command === 'registry-download')?.url;
+  assert.ok(checkedUrl, 'the npm tarball is checked before updating Homebrew');
+  assert.ok(new URL(checkedUrl).searchParams.has('fetchary-publish'));
+  assert.equal(/^  url "([^"]+)"$/m.exec(formula)?.[1], checkedUrl, 'the formula uses the exact URL whose bytes and SHA256 were verified');
+  assert.match(formula, /^  version "1\.2\.0"$/m, 'the cache-busting query cannot affect Homebrew version detection');
   assert.ok(formula.includes(sha256('mock package bytes')));
   const npmInstall = 'system "npm", "install", *std_npm_args';
+  const exceptions = [...formula.matchAll(/--min-release-age-exclude=([^"\s]+)/g)].map(match => match[1]);
+  assert.deepEqual(exceptions, ['@oliverj/parse-phone-number', '@puppeteer/browsers', 'puppeteer-core']);
+  assert.doesNotMatch(formula, /--min-release-age(?:=|\s+)0\b/, 'other dependencies keep Homebrew release-age filtering');
   const browserInstall = 'system "node", libexec/"lib/node_modules/fetchary/cli/index.js", "browser", "install", "--no-history"';
   assert.ok(formula.includes(browserInstall), 'Homebrew explicitly installs the bundled browser despite skipped npm scripts');
   assert.ok(formula.indexOf(browserInstall) > formula.indexOf(npmInstall));
   assert.match(result.stdout, /npm, Homebrew tap, GitHub release/);
+});
+
+test('Homebrew release-age exceptions are limited to exactly pinned direct dependencies', () => {
+  const { dependencies } = require('../package.json');
+  for (const name of ['@oliverj/parse-phone-number', '@puppeteer/browsers', 'puppeteer-core']) {
+    assert.match(dependencies[name], /^\d+\.\d+\.\d+(?:-[\w.-]+)?$/, `${name} must remain pinned when exempted from release-age filtering`);
+  }
 });
 
 test('Homebrew push failures prevent GitHub release creation', t => {
@@ -279,7 +298,7 @@ test('publish polling bypasses cached 404s and uses a new cache key on every ret
   t.after(() => { server.closeAllConnections(); server.close(); });
   const origin = `http://127.0.0.1:${server.address().port}`;
 
-  await waitForPublishedTarball('1.1.0', sha256(tarball), {
+  const verifiedUrl = await waitForPublishedTarball('1.1.0', sha256(tarball), {
     attempts: 2,
     delayMs: 0,
     fetch: (url, options) => {
@@ -290,6 +309,7 @@ test('publish polling bypasses cached 404s and uses a new cache key on every ret
   assert.equal(requests.length, 2);
   assert.equal(requests[0].pathname, '/fetchary/-/fetchary-1.1.0.tgz');
   assert.notEqual(requests[0].search, requests[1].search);
+  assert.equal(verifiedUrl, `https://registry.npmjs.org${requests[1].pathname}${requests[1].search}`);
 });
 
 test('publish polling retries transport failures and stops after the attempt limit', async () => {

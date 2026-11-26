@@ -42,9 +42,9 @@ async function main() {
   try {
     const tarball = npmPack(temporaryDirectory);
     const sha256 = await sha256File(path.join(temporaryDirectory, tarball.filename));
-    const formula = renderFormula(packageJson.version, sha256);
 
     if (options.dryRun) {
+      const formula = renderFormula(packageJson.version, sha256);
       process.stdout.write(`\n==> Homebrew formula (${formulaPath})\n${formula}`);
       if (release) {
         process.stdout.write(`\n==> GitHub release preview\nRepository: ${release.repository}\nTag: ${release.tag}\nCommit: ${release.commit}\nTitle: ${release.title}\n\n${release.notes}\n`);
@@ -66,7 +66,8 @@ async function main() {
     }
 
     if (!options.skipBrew) {
-      await waitForPublishedTarball(packageJson.version, sha256);
+      const verifiedUrl = await waitForPublishedTarball(packageJson.version, sha256);
+      const formula = renderFormula(packageJson.version, sha256, verifiedUrl);
       await fsp.mkdir(path.dirname(formulaPath), { recursive: true });
       await fsp.writeFile(formulaPath, formula);
       process.stdout.write(`\nWrote ${formulaPath}\n`);
@@ -331,7 +332,9 @@ async function waitForPublishedTarball(version, expectedSha256, options = {}) {
         throw new Error(`tarball SHA256 is ${actualSha256}, expected ${expectedSha256}`);
       }
       process.stdout.write(`npm tarball is available (attempt ${attempt}).\n`);
-      return;
+      // Homebrew must use this checked cache key, not the independently cached
+      // bare URL that may still serve a pre-publication 404.
+      return requestUrl.href;
     }
     if (attempt < attempts) await new Promise(resolve => setTimeout(resolve, delayMs));
   }
@@ -339,18 +342,22 @@ async function waitForPublishedTarball(version, expectedSha256, options = {}) {
   throw new Error(`npm tarball did not become available with the expected SHA256 after ${attempts} attempts.`);
 }
 
-function renderFormula(version, sha256) {
+function renderFormula(version, sha256, verifiedUrl = `https://registry.npmjs.org/fetchary/-/fetchary-${version}.tgz`) {
   return `class Fetchary < Formula
   desc "Stateless semantic web extraction for Node.js"
   homepage "https://github.com/oliverjessner/fetchary"
-  url "https://registry.npmjs.org/fetchary/-/fetchary-${version}.tgz"
+  url "${verifiedUrl}"
+  version "${version}"
   sha256 "${sha256}"
   license "MIT"
 
   depends_on "node"
 
   def install
-    system "npm", "install", *std_npm_args
+    system "npm", "install", *std_npm_args,
+           "--min-release-age-exclude=@oliverj/parse-phone-number",
+           "--min-release-age-exclude=@puppeteer/browsers",
+           "--min-release-age-exclude=puppeteer-core"
     system "node", libexec/"lib/node_modules/fetchary/cli/index.js", "browser", "install", "--no-history"
     bin.install_symlink libexec/"bin/fetchary"
   end
